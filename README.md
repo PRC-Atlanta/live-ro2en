@@ -42,7 +42,28 @@ Details: [BENCHMARK.md](BENCHMARK.md). Every judgment call: [DECISIONS.md](DECIS
    segments, 99% pre-filled with Google's text) in `src/correct_tool.py`.
 <!-- SUMMARY:END -->
 
-## 1. Install
+## 1. Install on a new Mac
+
+Requirements: an Apple Silicon Mac (M1 or newer; tested on an M3 Max with 36 GB RAM; 16 GB is the
+practical minimum for the Quality profile), [Homebrew](https://brew.sh), and about 30 GB of free
+disk space. You also need access to the private repository (a member of PRC-Atlanta on GitHub).
+
+```bash
+git clone https://github.com/PRC-Atlanta/live-ro2en.git
+cd live-ro2en
+./setup.sh live          # installs ffmpeg + uv if missing, 2 Python envs, downloads ~20 GB of models once, runs the tests
+.venv-mt/bin/python src/live/app.py
+```
+
+Then open http://127.0.0.1:8765, choose the audio input and press **Start**. The first setup
+needs the internet (allow about an hour on a slow connection). After that, the app runs fully
+offline. Verified 2026-10-23: a fresh clone, `./setup.sh live`, then a sandboxed run with the
+network blocked translated live with no network access.
+
+What doesn't come with the repository: sermon recordings, corrections (`data/finetune/`), the
+Google key / `.env` (dev tools only) and the benchmark data. Copy those separately if needed.
+
+## 1b. Full developer install (benchmarks too)
 
 Requirements: an Apple Silicon Mac (tested on an M3 Max with 36 GB RAM), macOS, Homebrew,
 and about 40 GB of free disk space.
