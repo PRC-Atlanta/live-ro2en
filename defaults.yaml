@@ -34,6 +34,12 @@ live:
   web_port: 8765
   web_allowed_hosts: []       # extra host names for the control page (only if web_host is not loopback)
   transcript_log_dir: logs/services
+  preload: true               # load the models at launch and keep them warm, so Start is instant
+  engine_restarts: 2          # automatic speech-engine restarts per 10 minutes, then the operator decides
+  keep_both_translators: auto # auto = keep Fast's and Best's translators loaded when the Mac has >= 24 GB
+  mt_max_ratio: 3.0           # safety: drop a translation this many times longer than the speech...
+  mt_ratio_min_words: 8       # ...once it has at least this many words (mt_overlong)
+  mt_loop_repeats: 4          # safety: cut a phrase the translator repeats this often in one answer
   autostart: false            # app only: start captioning as soon as everything is ready
 
 # Profiles override the `live` settings above. fast = lowest delay (~1.5 s after each phrase);
@@ -96,6 +102,11 @@ propresenter:
   max_lines: 2
   stage_message: false
   timeout_s: 1.5
+  health_every_s: 5           # check ProPresenter this often and put the caption back after an outage (0 = off)
+
+# Words or phrases that never reach the screen (any case, diacritics optional)
+safety:
+  blocklist: []
 
 # What the operator page shows (Settings → Advanced); no effect on captions
 ui:

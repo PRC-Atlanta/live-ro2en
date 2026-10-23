@@ -23,7 +23,7 @@
     "permissions": {"object": {"microphone": {"enum": ["granted", "denied", "restricted", "undetermined", "unknown"]}}},
     "preflight": {"object": {"checks": {"list": {"object": {"id": "str", "ok": "bool", "detail": "str", "code": "str?"}}},
                              "ok": "bool?", "t": "num?"}},
-    "summary": {"object": {"elapsed_s": "num|null", "phrases": "int", "outcomes": {"map": "int"}, "failed": "int",
+    "summary": {"object": {"elapsed_s": "num|null", "phrases": "int", "outcomes": {"map": "int"}, "failed": "int", "filtered": "int",
                            "latency_median": "num|null", "first_word_median": "num|null", "first_word_ok_pct": "num|null",
                            "pp_errors": "int", "corrections": "int", "warnings": "int", "engine_exits": "int",
                            "kind": {"enum": ["service", "rehearsal"]},
@@ -57,7 +57,9 @@
     "exported":      {"object": {"ok": "bool", "format": "str", "path": "str", "log": "str"}},
     "no_session":    {"object": {"error": {"enum": ["no_session"]}, "detail": "str"}},
     "nothing_to_change": {"object": {"error": {"enum": ["nothing_to_change"]}, "detail": "str"}},
-    "write_failed":  {"object": {"error": {"enum": ["write_failed"]}, "detail": "str"}}
+    "write_failed":  {"object": {"error": {"enum": ["write_failed"]}, "detail": "str"}},
+    "busy":          {"object": {"error": {"enum": ["busy"]}, "detail": "str"}},
+    "no_sample":     {"object": {"error": {"enum": ["no_sample"]}, "detail": "str", "samples": {"list": "str"}}}
   },
 
   "state": {
@@ -103,7 +105,6 @@
 
   "endpoints": [
     {"method": "GET",  "path": "/",                 "owner": "S1", "built": true, "response": "html"},
-    {"method": "GET",  "path": "/legacy",           "owner": "S1", "built": true, "response": "html"},
     {"method": "GET",  "path": "/ui/",              "owner": "S5a", "built": true, "response": "html"},
     {"method": "GET",  "path": "/api/state",        "owner": "S1", "built": true, "response": "@state"},
     {"method": "WS",   "path": "/ws",               "owner": "S1", "built": true, "response": "@state"},
@@ -121,15 +122,19 @@
 
     {"method": "POST", "path": "/api/clear",        "owner": "S2", "built": true, "response": "@state"},
     {"method": "POST", "path": "/api/mode",         "owner": "S2", "built": true, "request": {"mode": "str"}, "response": "@state"},
-    {"method": "POST", "path": "/api/profile",      "owner": "S2", "built": true, "request": {"profile": "str"}, "response": "@state"},
-    {"method": "POST", "path": "/api/pause",        "owner": "S2", "built": true, "request": {"on": "bool"}, "response": "@state"},
+    {"method": "POST", "path": "/api/profile",      "owner": "S2", "built": true, "request": {"profile": "str"}, "response": "@state",
+     "errors": {"400": ["@bad_request"]}},
+    {"method": "POST", "path": "/api/pause",        "owner": "S2", "built": true, "request": {"on": "bool"}, "response": "@state",
+     "errors": {"400": ["@bad_request"]}},
     {"method": "POST", "path": "/api/blank",        "owner": "S2", "built": true, "response": "@state"},
-    {"method": "POST", "path": "/api/hold",         "owner": "S2", "built": true, "request": {"on": "bool"}, "response": "@state"},
+    {"method": "POST", "path": "/api/hold",         "owner": "S2", "built": true, "request": {"on": "bool"}, "response": "@state",
+     "errors": {"400": ["@bad_request"]}},
     {"method": "POST", "path": "/api/retract",      "owner": "S2", "built": true, "response": "@state",
      "errors": {"409": ["@nothing_to_change"]}},
     {"method": "POST", "path": "/api/correct",      "owner": "S2", "built": true, "request": {"text": "str"}, "response": "@state",
      "errors": {"400": ["@bad_request"], "409": ["@nothing_to_change"]}},
-    {"method": "POST", "path": "/api/layout",       "owner": "S2", "built": true, "request": {"lines": "int?", "chars": "int?"}, "response": "@state"},
+    {"method": "POST", "path": "/api/layout",       "owner": "S2", "built": true, "request": {"lines": "int?", "chars": "int?"}, "response": "@state",
+     "errors": {"400": ["@bad_request"]}},
     {"method": "POST", "path": "/api/pp/test",      "owner": "S2", "built": true, "response": "@pp_test"},
     {"method": "POST", "path": "/api/pp/test_caption", "owner": "S2", "built": true, "response": "@pp_test_caption"},
     {"method": "POST", "path": "/api/reconnect",    "owner": "S2", "built": true, "response": "@state"},
@@ -164,7 +169,8 @@
      "response": "@exported", "errors": {"400": ["@bad_request"], "404": ["@no_session"], "507": ["@write_failed"]}},
     {"method": "POST", "path": "/api/diagnostics",  "owner": "S9", "built": true, "response": {"object": {"ok": "bool", "path": "str"}},
      "errors": {"507": ["@write_failed"]}},
-    {"method": "POST", "path": "/api/rehearsal",    "owner": "S9", "built": true, "request": {"sample": "str?"}, "response": "@state"}
+    {"method": "POST", "path": "/api/rehearsal",    "owner": "S9", "built": true, "request": {"sample": "str?"}, "response": "@state",
+     "errors": {"404": ["@no_sample"], "409": ["@busy"]}}
   ],
 
   "engine": {

@@ -30,7 +30,7 @@ Mac shell (S8, Swift)  ──spawns──▶  orchestrator: app.py (.venv-mt / s
 | `live/state.py` | `state()`, `alerts()`, `_broadcast()`, `register_state(fn)` | shared: add fields only through `register_state` |
 | `live/security.py` | `allowed_hosts`, `request_allowed`, the same-origin middleware | S11 |
 | `live/paths.py` | every data, log, cache and engine path | S3/S6/S7 (append only) |
-| `live/routes/system.py` | `/`, `/legacy`, `/api/state`, `/ws`, start/stop, preload/shutdown/health | S1 |
+| `live/routes/system.py` | `/` (redirects to `/ui/`), `/api/state`, `/ws`, start/stop, preload/shutdown/health | S1 |
 | `live/routes/output.py` | clear, mode, profile, pause, blank, retract, correct, ProPresenter tests | S2 |
 | `live/routes/settings.py` | settings, keywords, spellings, terms | S3 |
 | `live/routes/setup.py` | devices, model setup and download | S6 |
@@ -42,17 +42,17 @@ so each session edits its own file. A mixin sets up its own attributes in a
 add a `/ws` field, call `self.register_state(lambda: {"paused": self.paused})` there. Don't
 add the field to `state.py` or `app.py`.
 
-The `/` route still serves `control.html` so that the running service is never left without a working
-page. The new UI is served at `/ui/`. S5a switches `/` over to it once the Live screen works, and
-`control.html` then stays reachable at `/legacy`.
+The operator UI is served at `/ui/` with `Cache-Control: no-cache`, so an update never runs
+against a cached copy. `/` redirects there. The old `control.html` page and `/legacy` are gone;
+what it showed (outcome counts, alerts, warnings, delays) is in Settings → Advanced.
 
 ## `/ws` and `GET /api/state`
 
 On connect, `/ws` sends one state object. It sends another on every change, and at least once
 a second. See `contract.json` → `state` for every field and its type.
 
-- **Built:** `running status mode profile profiles lang partial latency_last latency_median lines screen pp_error warnings counts alerts translator stt pp paused held elapsed_s first_word_ok_pct session_terms_n corrections_n preflight`.
-- **Planned:** `phase progress audio pace backlog problem auto_actions`.
+Every field in `contract.json` → `state` is built. `audio.engine` is false when no speech
+engine runs, so a missing level means "not listening", not "no sound".
 
 `phase`: `needs_setup → loading → ready → starting → listening | captioning → stopping →
 stopped/ready … → unloading`, plus `error`.
@@ -60,7 +60,7 @@ stopped/ready … → unloading`, plus `error`.
 ## Endpoints
 
 All of these are under `/api/`. POST bodies are JSON objects, and they may be empty. Built
-actions return the new state. An endpoint that is planned but not built yet returns **501**:
+actions return the new state. Every endpoint is built; one that is planned in future returns **501**:
 
 ```json
 {"error": "not_implemented", "endpoint": "POST /api/pause", "owner": "S2"}
@@ -105,17 +105,15 @@ listed here.
 
 Audio faults always go on `audio`. There is no separate `audio_error` event.
 
-**Events, planned (S1):**
-
 - `loading {label, pct}`
 - `level {rms_db, peak_db, speech}`, sent at 5–20 Hz. It drives the sound meter, and the UI
   computes the verdict.
+- `listen {on}`: the answer to the listen command; listen off comes after the run's last clause.
+- `input {device}`: the input device opened, on every open, reopen and device switch.
 
-**Commands:**
-
-- Built: `{"cmd":"mode","mode":...}` and `{"cmd":"stop"}`.
-- Planned (S1): `listen {on}` (leave hold mode), `cfg {cfg}` (pause settings with no
-  restart; S4 sends it), and `keywords {words}` (S3 sends it).
+**Commands** (all built): `mode {mode}`, `stop`, `listen {on}` (leave or re-enter hold mode),
+`cfg {cfg}` (pause settings with no restart), `device {device}` (switch input while holding),
+`keywords {words}`.
 
 ## Environment variables
 
@@ -136,10 +134,9 @@ paths resolve to exactly where they were before.
 
 ## Orchestrator flags
 
-- **Built:** `--config --file --autostart --exit-on-eof --headless --pp-port --mode --profile
-  --port --settings`. `--port` overrides `live.web_port`; the shell passes a free port.
-- **Planned:** `--hold` (S1: preload and wait for
-  Start).
+`--config --file --autostart --exit-on-eof --headless --pp-port --mode --profile --port
+--settings --hold`, all built. `--port` overrides `live.web_port`; the shell passes a free port.
+`--hold` preloads and waits for Start. `tests/test_contract.py` checks the flags both ways.
 
 ## Bundle layout (S7/S8/S10)
 

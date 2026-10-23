@@ -42,33 +42,36 @@ Details: [BENCHMARK.md](BENCHMARK.md). Every judgment call: [DECISIONS.md](DECIS
    segments, 99% pre-filled with Google's text) in `src/correct_tool.py`.
 <!-- SUMMARY:END -->
 
-## 1. Install on a new Mac
+## 1. Install the app (volunteers)
 
-Requirements: an Apple Silicon Mac (M1 or newer; tested on an M3 Max with 36 GB RAM; 16 GB is the
-practical minimum for the Quality profile), [Homebrew](https://brew.sh), and about 30 GB of free
-disk space. You also need access to the private repository (a member of PRC-Atlanta on GitHub).
+You need an Apple Silicon Mac (M1 or newer) with macOS 14 or later, 16 GB of memory (24 GB or
+more for the Best quality), and about 25 GB of free disk space. The first setup needs the
+internet once; after that the app works with no internet at all.
 
-```bash
-git clone https://github.com/PRC-Atlanta/live-ro2en.git
-cd live-ro2en
-./setup.sh live          # installs ffmpeg + uv if missing, 2 Python envs, downloads ~20 GB of models once, runs the tests
-.venv-mt/bin/python src/live/app.py
-```
+1. Open the `Live RO2EN` DMG and drag **Live RO2EN** to **Applications**. Open it from there.
+2. **Setup** opens by itself the first time. It walks you through:
+   - **This Mac**: it suggests Quickest or Best for this Mac. Pick one and press Download
+     (about 20 minutes on a good connection). You can close the app; the download carries on
+     where it stopped next time.
+   - **Microphone**: press **Allow microphone**, then **Allow** in the macOS question.
+   - **Sound input**: pick the input that carries the mixer feed. Next turns on once it hears
+     sound, so ask the sound desk to bring the send up.
+   - **ProPresenter**: see [§4](#4-connect-propresenter-7) for the message it needs. Press
+     **Test connection**; you can also choose *Set up later*.
+   - **Usual language**: Auto-detect suits most Sundays.
+3. You land on the **Live** screen. Everything you can change later is in **Settings**.
 
-Then open http://127.0.0.1:8765, choose the audio input and press **Start**. The first setup
-needs the internet (allow about an hour on a slow connection). After that, the app runs fully
-offline. Verified 2026-10-23: a fresh clone, `./setup.sh live`, then a sandboxed run with the
-network blocked translated live with no network access.
+If something goes wrong, open **Help**: it lists what you might see and what to try first.
+**Copy diagnostics** there saves a file you can send to whoever supports the app (it never
+contains passwords or keys).
 
-What doesn't come with the repository: sermon recordings, corrections (`data/finetune/`), the
-Google key / `.env` (dev tools only) and the benchmark data. Copy those separately if needed.
-
-## 1b. Full developer install (benchmarks too)
+## 1b. Developer install (from the source)
 
 Requirements: an Apple Silicon Mac (tested on an M3 Max with 36 GB RAM), macOS, Homebrew,
 and about 40 GB of free disk space.
 
 ```bash
+git clone https://github.com/PRC-Atlanta/live-ro2en.git && cd live-ro2en
 ./setup.sh          # everything: 5 venvs, models, tests (first run downloads ~35 GB)
 ./setup.sh live     # only what the live app needs
 ```
@@ -117,22 +120,32 @@ these automatically through `google.model_locations` in config.yaml.
 .venv/bin/python src/google_stt.py status      # pending ops + minutes used (cap: 600)
 ```
 
-## 3. Run live
+## 3. Run a service
+
+The printable one-page version is [docs/sunday_quick_card.pdf](docs/sunday_quick_card.pdf) (source: `docs/sunday_quick_card.html`).
+
+- **Before:** open the app 10 minutes early. The three lights above the dial (Sound,
+  ProPresenter, Pace) should be green. **Rehearsal** plays a recording through the whole chain
+  if you want to check the big screen.
+- **Start:** press **Space** (or click the dial). The first words appear on the big screen
+  a few seconds after they are spoken.
+- **During:** **H** hides or shows the captions (the panic button). **Esc** blanks the screen
+  until the next phrase. **Backspace** removes the last caption; **E** fixes it.
+  **T** adds today's names (a guest speaker, a place). **1 / 2 / 3** lock the speaker's
+  language (Auto / Romanian / English), **Q** switches Quickest / Best.
+- **If a coloured bar appears** at the top, it says what is wrong; press its button.
+- **After:** press **Space** twice (or hold the dial) to stop. The After screen shows how it
+  went; rate it and export the transcript (txt, srt or Word) to the Desktop if you want one.
+
+Developers can still run the orchestrator from the source:
 
 ```bash
-.venv-mt/bin/python src/live/app.py
+.venv-mt/bin/python src/live/app.py             # then open http://127.0.0.1:8765
+.venv-mt/bin/python src/live/app.py --file some_sermon.mp3 --autostart   # a recording as input
 ```
 
-Open **http://127.0.0.1:8765**. From there you can pick the audio input, start and stop,
-choose the language mode (Auto / RO→EN / EN→RO), watch the live latency, see the last 10
-source and translated lines, and clear the screen.
-
-- Language: **Auto** detects RO or EN per clause and switches after 2 clauses agree. Lock it
-  for a guest speaker if the auto-switching ever hesitates.
-- Each service is logged to `logs/services/<date>_<time>.jsonl` (timestamped source,
-  translation and latencies), for future fine-tuning.
-- Rehearse with a recording instead of the mixer:
-  `.venv-mt/bin/python src/live/app.py --file some_sermon.mp3 --autostart`
+Each service is logged to `logs/services/<date>_<time>.jsonl` (in the app:
+`~/Library/Logs/Live RO2EN/services/`), for review and future fine-tuning.
 
 ## 4. Connect ProPresenter 7
 
@@ -140,8 +153,9 @@ source and translated lines, and clear the screen.
 2. Create a **Message** named `Live Translation` whose text is a single text token named
    `Text` (message text `{Text}`). Give it a theme with a lower-third text box sized for
    2 lines.
-3. Set `propresenter.host` / `port` / `message_id` / `token_name` / `max_chars_per_line` /
-   `max_lines` in config.yaml. Set `stage_message: true` to mirror the text on the stage display.
+3. In the app: **Settings → ProPresenter** (computer address, port, message name, text token,
+   lines and line width, stage display), then **Test connection**. From the source, the same keys
+   are under `propresenter:` in config.yaml (`stage_message: true` mirrors to the stage display).
 4. The app calls `POST /v1/message/{id}/trigger` with the token text on every new clause,
    `GET /v1/message/{id}/clear` for "Clear screen", and `PUT /v1/stage/message` for the stage.
    Unchanged text is not re-sent, and only whole lines scroll, so the captions don't flicker.

@@ -1,31 +1,24 @@
 """Pages, state, the /ws feed, start/stop, and the app lifecycle (preload, unload, shutdown,
 health, readiness, permissions). Owned by S1."""
 import asyncio
-import pathlib
 import threading
 
 from fastapi import APIRouter, Request, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.routing import WebSocketRoute
 
 import permissions
 from routes import body, run
 from security import request_allowed
 
-HERE = pathlib.Path(__file__).resolve().parents[1]
-PAGE = (HERE / "control.html").read_text()
 
 
 def router(live, hosts: set[str], port: int) -> APIRouter:
     r = APIRouter()
 
     @r.get("/")
-    def index():                         # becomes the new UI (/ui/) when S5 is done
-        return HTMLResponse(PAGE)
-
-    @r.get("/legacy")
-    def legacy():
-        return HTMLResponse(PAGE)
+    def index():                         # the operator UI (S5); the old control page is retired
+        return RedirectResponse("/ui/", status_code=307)
 
     @r.get("/api/state")
     def state():

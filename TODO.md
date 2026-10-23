@@ -4,32 +4,26 @@
 
 Goal: a church volunteer installs one app from a DMG, opens it, picks the audio input, and
 captions appear in ProPresenter. No Terminal, no Homebrew, no developer tools.
+Plan and status: [docs/APP_PLAN.md](docs/APP_PLAN.md).
 
-### Prep now (no behaviour change)
-- [ ] Move runtime data out of the repo folder into standard macOS locations:
-      models → `~/Library/Application Support/Live RO2EN/models`,
-      logs and service transcripts → `~/Library/Logs/Live RO2EN`,
-      settings → `~/Library/Application Support/Live RO2EN/config.yaml` (repo `config.yaml` = defaults).
-- [ ] Settings in the control page instead of editing `config.yaml`: audio input, ProPresenter
-      host/port/message/token, Fast/Quality, language lock, `keywords_en.txt`, preferred spellings.
-- [ ] One launcher that starts the orchestrator + engine, checks models are present, and shuts
-      both down cleanly.
-- [ ] First-run model download with progress and checksums (the only time the network is used);
-      `LIVE_ALLOW_NETWORK=1` only for that step.
+### Done (Phases 0–1, S11, reviewed three times)
+- [x] Orchestrator split into mixins with a checked contract (`src/live/ui/contract.json`).
+- [x] Data in `~/Library/{Application Support,Logs,Caches}/Live RO2EN` when packaged.
+- [x] Operator UI (Live, Setup wizard, Settings, After, Help) served at `/ui/`; `control.html` retired.
+- [x] First-run model download with checksums, resume, one-at-a-time lock (network only there).
+- [x] Swift shell owning the two processes; embedded relocatable Python runtime and Mach-O audit.
+- [x] Volunteer README sections and the Sunday quick card (`docs/sunday_quick_card.pdf`).
 
-### The app
-- [ ] Native macOS shell (SwiftUI window with a WKWebView showing the control page) that owns
-      the two background processes.
-- [ ] Embedded, relocatable Python runtime (python-build-standalone) with only the two live
-      environments (`.venv-nemo` engine, `.venv-mt` orchestrator); benchmark envs not shipped.
-- [ ] Info.plist: `NSMicrophoneUsageDescription`; `NSLocalNetworkUsageDescription` if
-      ProPresenter runs on another Mac.
-- [ ] Sign every embedded binary (`.dylib`/`.so`) with a Developer ID, hardened runtime,
-      notarize, staple, ship as a DMG. Requires an Apple Developer account ($99/yr).
-      Mac App Store is not realistic (sandbox vs. this ML stack).
-- [ ] Footprint check: about 19 GB of models for the live path (Gemma 4 ≈10 GB, Jackrabbit+LM ≈2.5 GB,
-      Parakeet ≈2.5 GB, NLLB ≈1.3 GB) + about 2.6 GB of runtimes. Download, don't bundle.
-- [ ] Auto-start option and a "rehearsal" mode (play a recording instead of the mixer).
+### Left
+- [ ] **S10 release pipeline** (in progress): `make dist` → assembled, signed app → DMG →
+      notarized. Needs a *Developer ID Application* certificate and a `live-ro2en`
+      notarytool keychain profile (see `docs/release.md` once S10 lands).
+- [ ] Run the macOS 14 runtime build once with the network (MLX may have no macOS 14 wheel).
+- [ ] Sparkle auto-update: EdDSA key and appcast (the user generates the key).
+- [ ] The church Hugging Face repo for the NLLB build (until then neither quality downloads in the app).
+- [ ] Clean-install test on a fresh user account (`docs/clean_install_test.md`), a usability test
+      with a volunteer, and the dress rehearsal at church (sets the meter's GOOD band).
+- [ ] Try the Swift shell's Try again / hang restart in the running app; the microphone in real use.
 
 ### Later (optional)
 - [ ] Swift-native live path: Parakeet (CoreML builds exist), Gemma via MLX-Swift, Jackrabbit

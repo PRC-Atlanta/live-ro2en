@@ -55,3 +55,12 @@ def test_a_failing_state_provider_is_logged_once_and_skipped(app):
     assert app.c.post("/api/clear", headers=ME).status_code == 200
     log = (app.home / "logs" / "app_errors.log").read_text()
     assert log.count("RuntimeError: provider bug") == 1 and "broken" in log
+
+
+def test_root_opens_the_operator_ui_and_the_ui_is_never_cached(app):
+    r = app.c.get("/", follow_redirects=False)
+    assert r.status_code == 307 and r.headers["location"] == "/ui/"
+    for path in ("/ui/", "/ui/screens/live.js", "/ui/contract.json"):
+        r = app.c.get(path)
+        assert r.status_code == 200 and r.headers["cache-control"] == "no-cache", path
+    assert app.c.get("/legacy").status_code == 404

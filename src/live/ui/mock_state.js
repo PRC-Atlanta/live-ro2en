@@ -63,7 +63,7 @@ for (const [code, severity] of Object.entries(PROBLEMS)) {
 export function startMock(store, name = "live") {
   const fn = SCENARIOS[name] || SCENARIOS.live;
   let t = 0;
-  const tick = () => store.set({ ...baseState(), ...fn(t++) });
+  const tick = () => store.set({ ...baseState(), ...fn(t++), ...mockBackend.over });   // + what the operator changed
   tick();
   return setInterval(tick, 250);
 }
@@ -100,12 +100,15 @@ const MOCK_FIELDS = {
   "propresenter.max_lines": { group: "propresenter", type: "int", min: 1, max: 3, apply: "now" },
   "propresenter.max_chars_per_line": { group: "propresenter", type: "int", min: 20, max: 80, apply: "now" },
   "propresenter.stage_message": { group: "propresenter", type: "bool", apply: "now" },
+  "propresenter.health_every_s": { group: "propresenter", type: "int", min: 0, max: 60, apply: "launch" },
   "live.en_recognizer": { group: "advanced", type: "enum", choices: ["parakeet", "parakeet-stream", "whistle"], apply: "start" },
   "live.vad_threshold": { group: "advanced", type: "num", min: 0.1, max: 0.95, apply: "start" },
   "live.hold_min_words": { group: "advanced", type: "int", min: 0, max: 12, apply: "now" },
   "live.hold_s": { group: "advanced", type: "num", min: 0, max: 5, apply: "now" },
   "live.partial_every_s": { group: "advanced", type: "num", min: 0, max: 5, apply: "start" },
   "live.lag_warn_s": { group: "advanced", type: "num", min: 2, max: 30, apply: "now" },
+  "live.keep_both_translators": { group: "advanced", type: "enum", choices: ["auto", true, false], apply: "now" },
+  "live.engine_restarts": { group: "advanced", type: "int", min: 0, max: 5, apply: "now" },
   "ui.show_latency": { group: "advanced", type: "bool", apply: "now", default: false },
   "ui.show_counts": { group: "advanced", type: "bool", apply: "now", default: false },
 };
@@ -115,6 +118,7 @@ const MOCK_DEFAULTS = {
   "propresenter.token_name": "Text", "propresenter.max_lines": 2, "propresenter.max_chars_per_line": 42,
   "propresenter.stage_message": false, "live.en_recognizer": "parakeet", "live.vad_threshold": 0.5,
   "live.hold_min_words": 4, "live.hold_s": 1.2, "live.partial_every_s": 0, "live.lag_warn_s": 6.0,
+  "propresenter.health_every_s": 5, "live.keep_both_translators": "auto", "live.engine_restarts": 2,
   "ui.show_latency": false, "ui.show_counts": false,
 };
 // model_lock.py items: each profile includes the ones before it
@@ -135,10 +139,10 @@ const clean = w => (typeof w === "string" && w.trim() && w.trim().length <= 120 
 
 export const mockBackend = {
   now: () => Date.now(),
-  name: null, data: null, storage: null, selT: 0,
+  name: null, data: null, storage: null, selT: 0, over: {},
   // use("fresh_install", storage?, reset?) loads the scenario's saved data (or a fresh copy)
   use(name, storage = (typeof localStorage !== "undefined" ? localStorage : null), reset = false) {
-    this.name = name; this.storage = storage;
+    this.name = name; this.storage = storage; this.over = {};
     let saved = null;
     try {
       if (reset) storage?.removeItem(`lt.mock.${name}`);
@@ -280,8 +284,11 @@ const LOG = "2026-10-25_10-02-11.jsonl";
 // the /ws state the scenario shows now, for the endpoints that answer with the new state
 function stateNow() {
   const fn = SCENARIOS[mockBackend.name] || SCENARIOS.live;
-  return { ...baseState(), ...fn(0) };
+  return { ...baseState(), ...fn(0), ...mockBackend.over };
 }
+// the Live screen's actions change the practice state like the real ones (not saved)
+const live = (patch = {}) => { Object.assign(mockBackend.over, patch); return status(200, stateNow()); };
+const nothing = detail => status(409, { error: "nothing_to_change", detail });
 
 export async function mockApi(method, path, body = {}) {
   const B = mockBackend;
@@ -400,7 +407,7 @@ export async function mockApi(method, path, body = {}) {
       const rating = { score, tags: tags.map(t => t.trim().slice(0, 40)).filter(Boolean), note: String(note ?? "").trim() };
       D.ratings.push(rating); B.save();
       return status(200, { ok: true, log: LOG, summary: {
-        elapsed_s: 2712, phrases: 422, outcomes: { ok: 412, empty_mt: 3, mt_echo: 2, pp_error: 1, caught_up: 4 }, failed: 10,
+        elapsed_s: 2712, phrases: 422, outcomes: { ok: 412, empty_mt: 3, mt_echo: 2, pp_error: 1, caught_up: 4, mt_loop: 1 }, failed: 10, filtered: 1,
         latency_median: 2.1, first_word_median: 3.4, first_word_ok_pct: 94, pp_errors: 1, corrections: 2, warnings: 1,
         engine_exits: 0, kind: "service", rating } });
     }
@@ -408,8 +415,29 @@ export async function mockApi(method, path, body = {}) {
       const fmt = body.format ?? "txt";
       if (!["txt", "srt", "docx"].includes(fmt)) return status(400, { error: "bad_request", detail: "format must be txt, srt or docx" });
       if (!B.hadService()) return status(404, { error: "no_session", detail: "There is no transcript to export yet." });
-      return status(200, { ok: true, format: fmt, path: `/Users/church/Desktop/Live Translate 2026-10-25.${fmt}`, log: LOG });
+      return status(200, { ok: true, format: fmt, path: `/Users/church/Desktop/Live RO2EN transcript 2026-10-25 1002.${fmt}`, log: LOG });
     }
+
+    // --- the Live screen (routes/system.py, routes/output.py) ---
+    case "POST start": return live({ running: true, phase: "captioning" });
+    case "POST stop": return live({ running: false, phase: "ready" });
+    case "POST pause": case "POST hold":
+      if (typeof body.on !== "boolean") return status(400, { error: "bad_request", detail: "on must be true or false" });
+      return live({ [path === "pause" ? "paused" : "held"]: body.on });
+    case "POST blank": case "POST clear": case "POST reconnect": case "POST layout": return live();
+    case "POST retract":
+      return stateNow().screen ? live() : nothing("there is no caption to remove");
+    case "POST correct":
+      if (typeof body.text !== "string" || !body.text.trim()) return status(400, { error: "bad_request", detail: "text is required" });
+      return stateNow().screen ? live() : nothing("there is no caption to fix");
+    case "POST profile":
+      if (!(stateNow().profiles || []).includes(body.profile)) return status(400, { error: "bad_request", detail: "unknown profile" });
+      return live({ profile: body.profile });
+    case "POST rehearsal":
+      if (stateNow().running) return status(409, { error: "busy", detail: "Stop captioning before starting a rehearsal." });
+      return live({ running: true, phase: "captioning" });
+    case "POST diagnostics":
+      return status(200, { ok: true, path: "/Users/church/Desktop/Live RO2EN diagnostics 2026-10-25 1102.zip" });
 
     // --- S1 lifecycle (routes/system.py) ---
     case "GET permissions":

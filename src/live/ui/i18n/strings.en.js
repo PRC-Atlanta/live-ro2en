@@ -95,7 +95,7 @@ export const S = {
                 action: { id: "help", label: "What to check" } },
     device_lost: { msg: "The sound input went away. Plug it back in: it reconnects by itself.",
                    action: { id: "settings", label: "Choose another input" } },
-    mic_denied: { msg: "This Mac isn't letting the app hear the sound input. Open System Settings → Privacy & Security → Microphone and turn on Live Translate.",
+    mic_denied: { msg: "This Mac isn't letting the app hear the sound input. Open System Settings → Privacy & Security → Microphone and turn on Live RO2EN.",
                   action: { id: "help", label: "Show me how" } },
     recognition_behind: { msg: "The translator is falling behind the speaker. It is catching up, and nothing is lost.",
                           action: { id: "quickest", label: "Switch to Quickest" } },

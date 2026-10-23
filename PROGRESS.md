@@ -25,9 +25,21 @@ Venvs (uv, Python 3.12): `.venv` (core/scoring/Google), `.venv-nemo` (Jackrabbit
 - Whisper second-opinion transcripts of the archive (transcripts/local/whisper-large-v3-mlx/archive) → clean correction mode works.
 - Fast profile retuned: NLLB, 2.5 s chunks, so 98% within 6 s. BENCHMARK.md (Phase 3b + Google terms), README summary, DECISIONS updated.
 
+## Done 2026-10-23: the Mac app (Phases 0–1, S11)
+- Phase 0: orchestrator split along session seams, contract + tests. Phase 1 (S1–S9) built in
+  parallel worktrees and merged: lifecycle/preload, ProPresenter controls, layered settings, hot
+  Fast/Quality switch + safety filter, Live/Setup/Settings/After/Help UI, model download,
+  preflight/report/diagnostics, embedded runtime, Swift shell. ffmpeg no longer needed.
+- Three independent review rounds; every finding fixed with a test (287+ tests pass, also with
+  LIVE_HOME set). S11 cleanup: stats, settings keys, contract docs, `/` → `/ui/` (no-cache),
+  control.html retired, practice-data actions, volunteer README, Sunday quick card.
+- S10 (signed/notarized DMG) in progress. Plan and open items: docs/APP_PLAN.md, TODO.md.
+
 ## Waiting on the user
 - Send the Google terms question (draft in conversation); correct sermons in clean mode for training data.
 - Rehearsal on the church Mac with the soundboard and the real ProPresenter.
+- Developer ID Application certificate + `xcrun notarytool store-credentials live-ro2en` (for S10).
+- The church Hugging Face repo for the NLLB build.
 - More sermons: drop into ./Audio and rerun `GOOGLE=chirp_3 scripts/run_sermon_pipeline.sh`.
 - Human corrections of review_packet → `src/review_packet.py rescore review_packet/corrections.json`.
 

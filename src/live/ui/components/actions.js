@@ -8,24 +8,22 @@ const ROUTES = { help: "#help", settings: "#settings", setup: "#setup", after: "
 
 export function routeFor(id) { return ROUTES[id] || null; }
 
-// With ?mock there is no backend: answer as the real one would today, from contract.json
-// (a built endpoint says ok, a planned one says 501).
+// With ?mock there is no backend: mock_state.js answers as the real one would (same shapes,
+// refusals and 501s; tests/test_ui_mock_contract.py checks them against contract.json).
 const MOCK = typeof location !== "undefined" && new URLSearchParams(location.search).has("mock");
-let contract = null;
-async function mockAnswer(action) {
-  contract ||= await fetch(new URL("../contract.json", import.meta.url)).then(r => r.json()).catch(() => ({ endpoints: [] }));
-  const e = contract.endpoints.find(x => x.method === "POST" && x.path === `/api/${action}`);
-  if (!e) return [404, null];
-  return e.built ? [200, {}] : [501, { error: "not_implemented", endpoint: `POST /api/${action}`, owner: e.owner }];
+async function mockAnswer(action, body) {
+  const { mockApi } = await import("../mock_state.js");
+  const r = await mockApi("POST", action, body);
+  return [r.status, r.data];
 }
 
 export async function send(action, body = {}) {
   const rec = { action, body, status: null, t: Date.now() };
   (window.__liveCalls ||= []).push(rec);
   if (MOCK) {
-    const [status, data] = await mockAnswer(action);
+    const [status, data] = await mockAnswer(action, body);
     rec.status = status;
-    return status === 200 ? { ok: true, data, mock: true } : { ok: false, notBuilt: status === 501, data, mock: true };
+    return status === 200 ? { ok: true, data, mock: true } : { ok: false, notBuilt: status === 501, status, data, mock: true };
   }
   try {
     const r = await fetch(`/api/${action}`, {

@@ -112,7 +112,7 @@ export function render(el, store) {
       const facts = h("dl.fx-facts");
       const picker = h("div");
       const msg = note();
-      body.append(h("p.fx-text", "Live Translate runs entirely on this Mac. First it downloads the translator; " +
+      body.append(h("p.fx-text", "Live RO2EN runs entirely on this Mac. First it downloads the translator; " +
                                  "after that it never needs the internet."), facts, h("span.fx-label", "What to download"), picker, msg);
       loadInfo().then(r => {
         const info = ctx.info, lim = profileLimits(info);
@@ -191,7 +191,7 @@ export function render(el, store) {
       const fix = h("div.fx-fix", { hidden: true });
       const ask = button("Allow microphone", async () => { await call("POST", "preload", {}); check(); }, ".primary");
       const again = button("Check again", () => check());
-      body.append(h("p.fx-text", "macOS asks once whether Live Translate may use the microphone and sound inputs. " +
+      body.append(h("p.fx-text", "macOS asks once whether Live RO2EN may use the microphone and sound inputs. " +
                                  "Choose Allow."), status, fix, h("div.fx-row", ask, again));
       const check = async () => {
         const r = await call("GET", "permissions");
@@ -200,8 +200,8 @@ export function render(el, store) {
         ask.hidden = ctx.mic !== "undetermined";
         again.hidden = ctx.mic === "granted" || ctx.mic === "unknown";
         fix.hidden = ctx.mic !== "denied";
-        fix.textContent = "The microphone is turned off for Live Translate. Open System Settings → Privacy & Security → " +
-                          "Microphone, turn on Live Translate, then press Check again.";
+        fix.textContent = "The microphone is turned off for Live RO2EN. Open System Settings → Privacy & Security → " +
+                          "Microphone, turn on Live RO2EN, then press Check again.";
         if (ctx.mic === "restricted") ctx.mic = "denied";   // blocked by a Mac profile: the same fix applies
         fix.hidden = ctx.mic !== "denied";
         status.say({ granted: "Microphone allowed.", denied: "Microphone not allowed.",

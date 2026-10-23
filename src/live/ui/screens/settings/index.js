@@ -12,7 +12,8 @@ const OUTCOMES = {
   ok: "Shown", caught_up: "Merged to catch up", passthrough: "Shown unchanged", mt_truncated: "Translation cut short",
   empty_stt: "Nothing heard", empty_mt: "No translation came back", mt_echo: "Came back untranslated",
   stt_error: "Listening error", error: "Error", late: "Too late to show", pp_error: "ProPresenter error",
-  paused: "Heard while hidden",
+  paused: "Heard while hidden", held: "Collected while held",
+  mt_loop: "Dropped: translation repeated itself", mt_overlong: "Dropped: translation far too long",
 };
 
 export function render(el, store) {

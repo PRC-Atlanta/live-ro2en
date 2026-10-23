@@ -454,15 +454,15 @@ The hot-switch rehearsal passes: one engine, the switch adds 0.45 s and 0.79 s, 
 and 3.16 s including the speaker's ~2.4 s pause. The relocated embedded runtime runs end to end
 and passes the Mach-O audit. The Swift shell quits clean and cleans up after a Force Quit.
 
-Left for S11, found during the merges:
-- `report.py` and `e2e.py` count `paused`, `held`, `mt_loop` and `mt_overlong` as failures.
-- `defaults.yaml` and the settings whitelist lack S4's keys (`keep_both_translators`,
-  `mt_max_ratio`, `mt_ratio_min_words`, `mt_loop_repeats`, `safety.blocklist`), S2's
-  `propresenter.health_every_s`, and S1's `live.preload` and `live.engine_restarts`.
-- `docs/app_contract.md` still lists S1/S4 fields and the new engine events and commands
-  (`listen`, `input`, `device`) as planned.
-- Switch `/` to `/ui/`, with `Cache-Control: no-cache` on the UI files.
-- The Live screen's `?mock` actions use contract stubs, not `mockApi`.
+Left for S11, found during the merges (all done 2026-10-23):
+- ~~`report.py` and `e2e.py` count `paused`, `held`, `mt_loop` and `mt_overlong` as failures~~:
+  Hide/Hold are not failures, the safety drops count as `filtered`.
+- ~~`defaults.yaml` and the settings whitelist lack S4's, S2's and S1's keys~~: all in
+  `defaults.yaml`/`config.yaml`; `keep_both_translators`, `engine_restarts` and
+  `propresenter.health_every_s` are also in Settings.
+- ~~`docs/app_contract.md` lists S1/S4 fields and engine events/commands as planned~~: updated.
+- ~~Switch `/` to `/ui/`, with `Cache-Control: no-cache`~~: done; `control.html` and `/legacy` removed.
+- ~~The Live screen's `?mock` actions use contract stubs~~: they go through `mockApi` now.
 - ~~One full-suite run under `LIVE_HOME` had a single failure~~: two services started in the same
   second shared one log. Fixed with the review fixes below.
 - Not verified yet:

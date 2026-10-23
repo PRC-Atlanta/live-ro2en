@@ -67,6 +67,19 @@ CALLS = [
     ["after", "POST", "export", {"format": "docx"}],
     ["after", "POST", "export", {"format": "pdf"}],
     ["after", "POST", "unload", {}],
+    ["live", "POST", "start", {}],
+    ["live", "POST", "pause", {"on": True}],
+    ["live", "POST", "pause", {"on": "yes"}],
+    ["live", "POST", "hold", {"on": False}],
+    ["live", "POST", "retract", {}],
+    ["live", "POST", "correct", {"text": "Grace and peace"}],
+    ["live", "POST", "correct", {}],
+    ["live", "POST", "profile", {"profile": "quality"}],
+    ["live", "POST", "rehearsal", {}],
+    ["live", "POST", "stop", {}],
+    ["live", "POST", "blank", {}],
+    ["live", "POST", "diagnostics", {}],
+    ["settings", "POST", "retract", {}],
 ]
 
 

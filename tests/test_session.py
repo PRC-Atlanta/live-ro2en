@@ -364,3 +364,10 @@ def test_docx_survives_control_characters_and_csv_notes_cannot_be_formulas(tmp_p
         xml.dom.minidom.parseString(z.read("word/document.xml"))         # Word would refuse a bad one
     assert report._cell("=HYPERLINK(\"http://x\")").startswith("'=") and report._cell("@SUM").startswith("'")
     assert report._cell("fine, thanks") == "fine, thanks"
+
+
+def test_hide_hold_and_safety_drops_are_not_failures():
+    recs = [_rec(1, T0 + 1, 2.0), _rec(2, T0 + 3, 0, "paused"), _rec(3, T0 + 5, 0, "held"),
+            _rec(4, T0 + 7, 0, "mt_loop"), _rec(5, T0 + 9, 0, "mt_overlong"), _rec(6, T0 + 11, 0, "empty_mt")]
+    s = report.summary(recs, T0)
+    assert s["failed"] == 1 and s["filtered"] == 2 and s["outcomes"]["paused"] == 1

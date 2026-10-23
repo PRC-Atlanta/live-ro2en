@@ -29,6 +29,7 @@ ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE.parent)); sys.path.insert(0, str(HERE))
 from app import Live                         # noqa: E402
 import paths                                 # noqa: E402
+from report import FILTERED, OPERATOR        # noqa: E402
 from mock_propresenter import serve          # noqa: E402
 
 EN_TEXT = ("For God so loved the world, that he gave his only begotten Son, that whosoever believeth "
@@ -135,7 +136,8 @@ def main() -> None:
     fw = sorted(r["first_word_s"] for r in recs)
     summary = {"name": name, "audio": a.audio, "profile": live.profile, "stt": live.lc["stt_model"],
                "translator": live.lc["translator"], "mode": cfg["live"]["language_mode"], "clauses": len(recs), "pp_triggers": len(triggers),
-               "failed_chunks": sum(v for k, v in outcomes.items() if k != "ok"), "outcomes": outcomes,
+               "failed_chunks": sum(v for k, v in outcomes.items() if k not in ("ok", *OPERATOR, *FILTERED)),
+               "filtered": sum(outcomes.get(k, 0) for k in FILTERED), "outcomes": outcomes,
                "eof_reached": live.eof.is_set(), "engine_exit": live.engine.returncode if live.engine else None,
                "warnings": live.warnings,
                "pp_errors": sum(1 for r in recs if not r["pp_ok"]),
@@ -174,7 +176,7 @@ def gate(summary: dict, recs: list[dict], a) -> dict:
         reasons.append("did not reach the end of the audio")
     if summary["engine_exit"] not in (0, None):
         reasons.append(f"engine exited with {summary['engine_exit']}")
-    total = summary["clauses"] + summary["failed_chunks"]
+    total = summary["clauses"] + summary["failed_chunks"] + summary.get("filtered", 0)
     if total == 0:
         reasons.append("no captions at all")
     elif summary["failed_chunks"] / total > a.max_failed_frac:

@@ -4,7 +4,7 @@
 import { MODES, PROFILES } from "../setup/kit.js";
 
 export const NEVER_EXPOSED = [
-  "translator", "stt_model", "stt_venv", "context_s", "lookahead_words", "context_clauses",
+  "live.translator", "stt_model", "stt_venv", "context_s", "lookahead_words", "context_clauses",
   "max_clause_s", "max_chunk_s", "min_pause_ms", "catchup", "paths", "google", "bible_testset",
   "whistle.weights", "whistle.lib", "profiles.", "web_host", "web_port", "transcript_log_dir",
 ];
@@ -30,6 +30,8 @@ export const FIELDS = {
       options: [[1, "1 line"], [2, "2 lines"], [3, "3 lines"]] },
     { key: "propresenter.max_chars_per_line", label: "Line width (letters)", kind: "number", min: 20, max: 80 },
     { key: "propresenter.stage_message", label: "Also show on the stage display", kind: "toggle" },
+    { key: "propresenter.health_every_s", label: "Check the connection every (seconds)", kind: "number", min: 0, max: 60,
+      hint: "Puts the caption back after ProPresenter restarts. 0 turns the check off. Applies when the app next opens." },
   ],
   advanced: [
     { key: "live.en_recognizer", label: "English listener", kind: "choice",
@@ -40,6 +42,10 @@ export const FIELDS = {
     { key: "live.hold_min_words", label: "Wait for phrases shorter than (words)", kind: "number", min: 1, max: 10 },
     { key: "live.hold_s", label: "…for at most (seconds)", kind: "number", min: 0, max: 3, step: 0.1 },
     { key: "live.partial_every_s", label: "Show interim words on the Live screen", kind: "toggle", on: 0.5, off: 0 },
+    { key: "live.keep_both_translators", label: "Keep both qualities ready", kind: "choice",
+      options: [["auto", "Automatic", "When this Mac has enough memory"], [true, "Always", "Switching is instant"],
+                [false, "Never", "Saves memory; switching takes longer"]] },
+    { key: "live.engine_restarts", label: "Restart listening after a problem (times per 10 minutes)", kind: "number", min: 0, max: 5 },
   ],
 };
 

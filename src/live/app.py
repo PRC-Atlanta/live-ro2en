@@ -120,7 +120,12 @@ def build_app(live: Live):
     app.include_router(system.router(live, hosts, port))
     for mod in (output, settings, setup, session):
         app.include_router(mod.router(live))
-    app.mount("/ui", StaticFiles(directory=HERE / "ui", html=True), name="ui")   # new UI (S5)
+    class NoCache(StaticFiles):          # an app update must never run against yesterday's cached UI
+        async def get_response(self, path, scope):
+            r = await super().get_response(path, scope)
+            r.headers["Cache-Control"] = "no-cache"
+            return r
+    app.mount("/ui", NoCache(directory=HERE / "ui", html=True), name="ui")   # the operator UI (S5)
     return app
 
 

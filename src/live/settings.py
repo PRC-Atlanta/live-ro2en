@@ -49,6 +49,7 @@ FIELDS: dict[str, dict] = {
     "propresenter.max_lines":  {"group": "propresenter", "type": "int", "min": 1, "max": 3, "apply": "now"},
     "propresenter.max_chars_per_line": {"group": "propresenter", "type": "int", "min": 20, "max": 80, "apply": "now"},
     "propresenter.stage_message": {"group": "propresenter", "type": "bool", "apply": "now"},
+    "propresenter.health_every_s": {"group": "propresenter", "type": "int", "min": 0, "max": 60, "apply": "launch"},
     # Advanced
     "live.en_recognizer":      {"group": "advanced", "type": "enum", "choices": ["parakeet", "parakeet-stream", "whistle"], "apply": "start"},
     "live.vad_threshold":      {"group": "advanced", "type": "num", "min": 0.1, "max": 0.95, "apply": "start"},
@@ -56,6 +57,8 @@ FIELDS: dict[str, dict] = {
     "live.hold_s":             {"group": "advanced", "type": "num", "min": 0, "max": 5, "apply": "now"},
     "live.partial_every_s":    {"group": "advanced", "type": "num", "min": 0, "max": 5, "apply": "start"},
     "live.lag_warn_s":         {"group": "advanced", "type": "num", "min": 2, "max": 30, "apply": "now"},
+    "live.keep_both_translators": {"group": "advanced", "type": "enum", "choices": ["auto", True, False], "apply": "now"},
+    "live.engine_restarts":    {"group": "advanced", "type": "int", "min": 0, "max": 5, "apply": "now"},
     "ui.show_latency":         {"group": "advanced", "type": "bool", "apply": "now", "default": False},
     "ui.show_counts":          {"group": "advanced", "type": "bool", "apply": "now", "default": False},
 }
@@ -160,7 +163,8 @@ def check_value(key: str, value, cfg: dict):
         return (True, value) if isinstance(value, bool) else (False, "must be true or false")
     if t == "enum":
         ch = _choices(spec, cfg)
-        return (True, value) if value in ch else (False, f"must be one of {ch}")
+        ok = any(value == c and type(value) is type(c) for c in ch)     # True is not 1 here
+        return (True, value) if ok else (False, f"must be one of {ch}")
     if t == "device":
         if value is None or (isinstance(value, int) and not isinstance(value, bool) and value >= 0):
             return True, value

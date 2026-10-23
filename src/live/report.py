@@ -73,6 +73,12 @@ def captions(recs: list[dict]) -> list[dict]:
     return sorted(ok, key=lambda r: r.get("t_start") or 0)
 
 
+# outcomes that are not failures: the operator's Hide/Hold, and output the safety filter dropped
+# on purpose (a translator loop or an overlong answer; counted as `filtered`)
+OPERATOR = ("paused", "held")
+FILTERED = ("mt_loop", "mt_overlong")
+
+
 def summary(recs: list[dict], start: float | None = None, first_word_ok_s: float = FIRST_WORD_OK_S) -> dict:
     """Duration, phrases, delays, failures, ProPresenter errors, corrections and the rating."""
     caps = captions(recs)
@@ -89,7 +95,8 @@ def summary(recs: list[dict], start: float | None = None, first_word_ok_s: float
         "elapsed_s": round(max(times) - start, 1) if times and start is not None else None,
         "phrases": len(caps),
         "outcomes": dict(outcomes),
-        "failed": sum(v for k, v in outcomes.items() if k != "ok"),
+        "failed": sum(v for k, v in outcomes.items() if k not in ("ok", *OPERATOR, *FILTERED)),
+        "filtered": sum(outcomes[k] for k in FILTERED),
         "latency_median": round(statistics.median(lat), 2) if lat else None,
         "first_word_median": round(statistics.median(fw), 2) if fw else None,
         "first_word_ok_pct": round(100 * sum(x <= first_word_ok_s for x in fw) / len(fw), 1) if fw else None,
