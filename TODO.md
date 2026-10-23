@@ -24,7 +24,10 @@ Plan and status: [docs/APP_PLAN.md](docs/APP_PLAN.md).
 - [ ] The church Hugging Face repo for the NLLB build (until then neither quality downloads in the app).
 - [ ] Clean-install test on a fresh user account (`docs/clean_install_test.md`), a usability test
       with a volunteer, and the dress rehearsal at church (sets the meter's GOOD band).
-- [ ] Try the Swift shell's Try again / hang restart in the running app; the microphone in real use.
+- [x] Release workflow runs on GitHub (macos-14): ad-hoc DMG artifact, VERIFY PASS (2026-10-23).
+- [x] Running app checked: every screen against the real backend, the hang restart (20 s, then
+      SIGKILL, back in 1 s) and a clean quit. The window itself was not seen (no screen access).
+- [ ] The microphone in real use (macOS's question, then the mixer feed).
 
 ### Later (optional)
 - [ ] Swift-native live path: Parakeet (CoreML builds exist), Gemma via MLX-Swift, Jackrabbit
