@@ -156,7 +156,9 @@ def rescore(path: pathlib.Path) -> None:
     rows = []
     for m, exs in sorted(hyps.items()):
         items = [score(key_tokens(corr[ex]), key_tokens(exs[ex]), free_ends=False) for ex in corr if ex in exs]
-        if len(items) == len(corr):
+        if len(items) < len(corr):          # a failed or partial run: say so, don't vanish
+            print(f"SKIPPED {m}: transcripts for {len(items)}/{len(corr)} corrected clips", file=sys.stderr)
+        else:
             c = corpus_score(items)
             rows.append({"model": m, "wer": round(100 * c["wer"], 2), "cer": round(100 * c["cer"], 2), "n_words": c["n_ref"]})
     rows.sort(key=lambda r: r["wer"])

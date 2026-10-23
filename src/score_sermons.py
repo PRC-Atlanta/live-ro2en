@@ -77,7 +77,9 @@ def main() -> None:
     terms = load_terms()
     rows = []
     for m in sorted(hyps):
-        if not all(ex in hyps[m] for ex in excerpts):
+        if not all(ex in hyps[m] for ex in excerpts):     # a failed or partial run: say so, don't vanish
+            print(f"SKIPPED {m}: transcripts for {sum(ex in hyps[m] for ex in excerpts)}/{len(excerpts)} excerpts",
+                  file=sys.stderr)
             continue
         cons_items, silver_items = [], []
         tagg = [0, 0, 0]

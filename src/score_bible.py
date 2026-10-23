@@ -12,6 +12,7 @@ from __future__ import annotations
 import csv
 import json
 import re
+import statistics
 from collections import Counter
 import pathlib
 import sys
@@ -21,7 +22,7 @@ import pandas as pd
 from rapidfuzz import fuzz
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
-from scoring import corpus_score, score                                   # noqa: E402
+from scoring import align, corpus_score, score                            # noqa: E402
 from textnorm import cyr_to_latin, fold_diacritics, key_tokens, phon_key, strip_headers, tokens  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -125,6 +126,20 @@ def speed(model: str) -> float | None:
     return sum(r["infer_s"] for r in rows) / max(sum(r["audio_s"] for r in rows), 1e-9)
 
 
+def excerpt_spans(hk_of: dict[tuple[str, str], list[str]], ex_book: dict[str, int],
+                  ref_key: dict[int, list[str]]) -> dict[str, tuple[int, int]]:
+    """One reference span per excerpt: where the read passage sits in the whole book.
+    Each non-empty hypothesis locates it with a free-ends alignment; the median start and
+    end over all models is the span every model is then scored on."""
+    starts, ends = defaultdict(list), defaultdict(list)
+    for (m, ex), hk in hk_of.items():
+        if hk:
+            a = align(ref_key[ex_book[ex]], hk, free_ends=True)
+            starts[ex].append(a.ref_start); ends[ex].append(a.ref_end)
+    return {ex: (int(statistics.median_low(starts[ex])), int(statistics.median_high(ends[ex])))
+            for ex in starts}
+
+
 def main() -> None:
     RES.mkdir(exist_ok=True)
     man = pd.read_csv(ROOT / "work" / "bible" / "manifest.csv")
@@ -135,17 +150,22 @@ def main() -> None:
     ref_keyf = {b: [fold_diacritics(k) for k in ks] for b, ks in ref_key.items()}
     terms = load_terms()
     hyps = load_hyps(man)
+    hk_of = {(m, ex): strip_headers(key_tokens(t)) for m, exs in hyps.items() for ex, t in exs.items()}
+    span = excerpt_spans(hk_of, ex_book, ref_key)
     per_ex, summary, term_rows = [], [], []
     n_ex = len(ex_book)
     for m, exs in sorted(hyps.items()):
         strict, folded, tagg = [], [], defaultdict(lambda: [0, 0, 0])
         for ex, text in exs.items():
             b = ex_book[ex]
-            hk = strip_headers(key_tokens(text))
-            s = score(ref_key[b], hk)
-            sf_ = score(ref_keyf[b], [fold_diacritics(k) for k in hk])
+            lo, hi = span[ex]
+            hk = hk_of[(m, ex)]
+            # every model is scored on the same reference words: empty or truncated output
+            # counts as deletions instead of shrinking its own denominator
+            s = score(ref_key[b][lo:hi], hk, free_ends=False)
+            sf_ = score(ref_keyf[b][lo:hi], [fold_diacritics(k) for k in hk], free_ends=False)
             strict.append(s); folded.append(sf_)
-            ts = term_stats(ref_tok[b][s["ref_start"]:s["ref_end"]], tokens(text), terms)
+            ts = term_stats(ref_tok[b][lo:hi], tokens(text), terms)
             for k, v in ts.items():
                 for i in range(3):
                     tagg[k][i] += v[i]

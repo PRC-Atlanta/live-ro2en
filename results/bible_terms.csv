@@ -23,7 +23,7 @@ canary-asr,făgăduința,1,0,1,0
 canary-asr,făgăduință,1,1,0,0
 canary-asr,galileea,2,0,2,0
 canary-asr,harul,2,2,0,0
-canary-asr,hristos,12,9,3,0
+canary-asr,hristos,13,9,4,0
 canary-asr,hristosul,2,2,0,0
 canary-asr,ierusalim,3,3,0,0
 canary-asr,ilie,1,1,0,0
@@ -538,7 +538,7 @@ jackrabbit-ctc-lm-boost,împărăția cerurilor,2,2,0,0
 jackrabbit-stream-tdt,adunarea,1,1,0,0
 jackrabbit-stream-tdt,avraam,1,0,1,0
 jackrabbit-stream-tdt,binecuvântat,1,1,0,0
-jackrabbit-stream-tdt,cer,6,5,0,1
+jackrabbit-stream-tdt,cer,7,5,0,2
 jackrabbit-stream-tdt,ceruri,2,0,0,2
 jackrabbit-stream-tdt,cerurile,1,1,0,0
 jackrabbit-stream-tdt,credința,5,3,2,0
@@ -827,7 +827,7 @@ parakeet-redux,făgăduința,1,0,0,1
 parakeet-redux,făgăduință,1,0,1,0
 parakeet-redux,galileea,2,2,0,0
 parakeet-redux,harul,2,2,0,0
-parakeet-redux,hristos,12,6,6,0
+parakeet-redux,hristos,13,6,7,0
 parakeet-redux,hristosul,2,0,2,0
 parakeet-redux,ierusalim,3,3,0,0
 parakeet-redux,ilie,1,1,0,0
@@ -967,7 +967,7 @@ sped-tdt,ierusalim,3,3,0,0
 sped-tdt,ilie,1,1,0,0
 sped-tdt,ioan,4,3,0,1
 sped-tdt,ioan botezătorul,2,2,0,0
-sped-tdt,israel,2,1,0,1
+sped-tdt,israel,1,1,0,0
 sped-tdt,isus,15,3,12,0
 sped-tdt,isus hristos,4,0,4,0
 sped-tdt,judecători,1,1,0,0
@@ -1076,12 +1076,15 @@ whisper-turbo-ro-hf,avraam,1,0,0,1
 whisper-turbo-ro-hf,binecuvântat,1,0,0,1
 whisper-turbo-ro-hf,cer,7,5,0,2
 whisper-turbo-ro-hf,ceruri,2,0,0,2
+whisper-turbo-ro-hf,cerurile,1,0,0,1
 whisper-turbo-ro-hf,credința,5,3,1,1
 whisper-turbo-ro-hf,credință,5,1,4,0
 whisper-turbo-ro-hf,cruce,2,2,0,0
+whisper-turbo-ro-hf,david,1,1,0,0
 whisper-turbo-ro-hf,diavolul,2,1,0,1
 whisper-turbo-ro-hf,domnul,5,3,1,1
-whisper-turbo-ro-hf,dumnezeu,45,36,2,7
+whisper-turbo-ro-hf,duhul lui dumnezeu,1,0,0,1
+whisper-turbo-ro-hf,dumnezeu,49,36,2,11
 whisper-turbo-ro-hf,evanghelia,1,0,0,1
 whisper-turbo-ro-hf,fariseii,1,0,1,0
 whisper-turbo-ro-hf,fiul,4,2,0,2
@@ -1092,14 +1095,14 @@ whisper-turbo-ro-hf,făgăduința,1,0,1,0
 whisper-turbo-ro-hf,făgăduință,1,0,1,0
 whisper-turbo-ro-hf,galileea,2,1,0,1
 whisper-turbo-ro-hf,harul,2,2,0,0
-whisper-turbo-ro-hf,hristos,12,2,7,3
+whisper-turbo-ro-hf,hristos,13,2,7,4
 whisper-turbo-ro-hf,hristosul,2,0,2,0
 whisper-turbo-ro-hf,ierusalim,3,1,0,2
 whisper-turbo-ro-hf,ilie,1,1,0,0
 whisper-turbo-ro-hf,ioan,4,3,0,1
 whisper-turbo-ro-hf,ioan botezătorul,2,1,0,1
-whisper-turbo-ro-hf,israel,2,1,0,1
-whisper-turbo-ro-hf,isus,14,5,0,9
+whisper-turbo-ro-hf,israel,1,1,0,0
+whisper-turbo-ro-hf,isus,15,5,0,10
 whisper-turbo-ro-hf,isus hristos,4,2,0,2
 whisper-turbo-ro-hf,judecători,1,1,0,0
 whisper-turbo-ro-hf,lege,3,3,0,0

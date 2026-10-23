@@ -52,6 +52,15 @@ def _offset_s(v) -> float:
     return float(v)
 
 
+def output_stem(blob_name: str, stems: list[str]) -> str | None:
+    """Input stem for a batch output file named '<stem>_transcript_<id>.json'. The stem must
+    end at the '_' separator and the longest one wins, so 'br-random-10_transcript...' is
+    never taken for 'br-random-1'."""
+    hits = [f for f in stems if blob_name.startswith(f + "_transcript")] or \
+           [f for f in stems if blob_name.startswith(f + "_")]
+    return max(hits, key=len) if hits else None
+
+
 def parse_results(data: dict) -> tuple[str, list[dict]]:
     """BatchRecognizeResults JSON -> (full transcript, segments with timings)."""
     segs, prev_end = [], 0.0
@@ -346,7 +355,7 @@ class GoogleSTT:
         for blob in self.storage.list_blobs(self.bucket_name, prefix=prefix):
             if not blob.name.endswith(".json"):
                 continue
-            stem = next((f for f in info["files"] if pathlib.Path(blob.name).name.startswith(f)), None)
+            stem = output_stem(pathlib.Path(blob.name).name, info["files"])
             if stem is None or (dest / f"{stem}.json").exists():
                 continue
             data = json.loads(blob.download_as_bytes())

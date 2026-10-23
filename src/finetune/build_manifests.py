@@ -4,12 +4,15 @@
 Input: data/finetune/manifest_clean.jsonl and manifest_google.jsonl (exported by src/correct_tool.py).
 Output: data/finetune/train.jsonl, data/finetune/holdout.jsonl, data/finetune/split.json.
 Rules: split BY SERMON (no speaker/session leakage); Bible audio is always rejected;
+sermons used for STT evaluation (work/*/manifest.csv sermon sets, review_packet/) always go
+to the holdout, never to training, so later sermon WERs are not inflated;
 rows whose text is unedited Google output ("pending_terms_check") are excluded unless
 --allow-pending is given, which should only happen after DECISIONS.md records that
 Google's terms allow it."""
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import pathlib
 import random
@@ -17,6 +20,27 @@ import random
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 D = ROOT / "data" / "finetune"
 FORBIDDEN = ("BibleAudio", "work/bible", "work/e2e")
+NOT_SERMON_EVAL = ("bible", "e2e", "archive")   # Bible/e2e: rejected above; archive: training pool
+
+
+def eval_sermons(root: pathlib.Path = ROOT) -> set[str]:
+    """Stems of every sermon an STT evaluation was run on."""
+    stems = set()
+    for man in (root / "work").glob("*/manifest.csv"):
+        if man.parent.name not in NOT_SERMON_EVAL:
+            stems |= {r["book_stem"] for r in csv.DictReader(open(man))}
+    pk = root / "review_packet" / "packet.json"
+    if pk.exists():
+        stems |= {c["excerpt"].rsplit("_", 1)[0] for c in json.loads(pk.read_text())["clips"]}
+    return stems
+
+
+def split_sermons(sermons: list[str], holdout_frac: float, seed: int, forced: set[str]) -> set[str]:
+    """Holdout sermons: every evaluation sermon, plus a random share of the rest."""
+    rest = sorted(set(sermons) - forced)
+    random.Random(seed).shuffle(rest)
+    n_hold = max(1, round(len(sermons) * holdout_frac)) if len(sermons) > 1 else 0
+    return (set(sermons) & forced) | set(rest[:max(0, n_hold - len(set(sermons) & forced))])
 
 
 def main() -> None:
@@ -41,9 +65,8 @@ def main() -> None:
         rows = [r for r in rows if not r.get("pending_terms_check")]
     rows = [r for r in rows if r["text"].strip() and 0.5 <= r["duration"] <= 30]
     sermons = sorted({r["sermon"] for r in rows})
-    random.Random(a.seed).shuffle(sermons)
-    n_hold = max(1, round(len(sermons) * a.holdout_frac)) if len(sermons) > 1 else 0
-    hold = set(sermons[:n_hold])
+    forced = eval_sermons()
+    hold = split_sermons(sermons, a.holdout_frac, a.seed, forced)
     keys = ("audio_filepath", "duration", "text")
     for name, sel in (("train", lambda r: r["sermon"] not in hold), ("holdout", lambda r: r["sermon"] in hold)):
         with open(D / f"{name}.jsonl", "w") as f:
@@ -51,6 +74,7 @@ def main() -> None:
                 if sel(r):
                     f.write(json.dumps({k: r[k] for k in keys}, ensure_ascii=False) + "\n")
     info = {"sermons_train": sorted(set(sermons) - hold), "sermons_holdout": sorted(hold),
+            "sermons_eval_forced_holdout": sorted(set(sermons) & forced),
             "rows": len(rows), "excluded_pending_terms": 0 if a.allow_pending else len(pend),
             "hours_train": round(sum(r["duration"] for r in rows if r["sermon"] not in hold) / 3600, 2)}
     (D / "split.json").write_text(json.dumps(info, indent=1))

@@ -23,7 +23,7 @@ Machine: Apple M3 Max, 36 GB. All timings were taken on an otherwise idle machin
 | Live translation (default "quality" profile) | **Gemma 4 12B** (MLX 4-bit), 2.5 s chunks, 4 chunks of context | Repairs STT slips, 100% glossary adherence on sermons; **92% of first words on screen within the 6 s ceiling** (Phase 3b) |
 | "Fast" profile | NLLB-200-distilled-1.3B (CTranslate2 int8), 2.5 s chunks | 98% within 6 s and lower delay, but translates STT errors literally ("bread to the Germans") |
 | Not live (yet) | EuroLLM-22B | Best translations (chrF++ 66) but 3.2 s median end to end on this Mac |
-| Silver reference (dev) | **Google Chirp 3** | Only system better than the best local model on the Bible (3.75% vs 4.78% WER) |
+| Silver reference (dev) | **Google Chirp 3** | Only system better than the best local model on the Bible (3.78% vs 4.78% WER) |
 
 Jackrabbit is CC-BY-NC-4.0: fine for internal church use, not for commercial redistribution.
 The Apache-2.0 fallback is SpeD 110M (9.0% WER).
@@ -43,25 +43,29 @@ live engine uses; "clause 6 s" is the STT time for a 6 s clause, and "stream lat
 
 | Model | WER % | WER-nodiac % | CER % | Term acc % (near) | vs Google silver WER % | RTF | Clause 6 s (p90) | Sim. stream latency | License |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| Google Chirp 3 (cloud, dev only) | **3.75** | 3.63 | 1.73 | 86.8 (13.2) | — | — | — | — | Google ToS |
+| Google Chirp 3 (cloud, dev only) | **3.78** | 3.65 | 1.76 | 86.8 (13.2) | — | — | — | — | Google ToS |
 | Jackrabbit CTC + LM (beam 32) | 4.78 | 4.71 | 1.95 | 95.1 (3.9) | 4.23 | 0.088 | 0.51 (0.56) | 0.91 s | CC-BY-NC-4.0 |
 | Jackrabbit CTC + LM + phrase boost | 4.86 | 4.76 | 1.96 | **96.1** (3.4) | 4.26 | 0.129 | 0.78 (0.86) | 1.21 s | CC-BY-NC-4.0 |
 | **Jackrabbit CTC + LM, beam 8 (live)** | 4.96 | 4.89 | 2.01 | 95.1 (3.9) | 4.33 | 0.035 | 0.20 (0.21) | **0.56 s** | CC-BY-NC-4.0 |
 | Jackrabbit CTC + Bible LM (held-out) | 5.01 | 4.84 | 2.07 | 93.7 (5.4) | 4.85 | — | — | — | CC-BY-NC-4.0 |
-| Google Chirp 2 + phrase set (dev only) | 5.14 | 4.93 | 2.59 | 87.8 (11.7) | 3.83 | — | — | — | Google ToS |
+| Google Chirp 2 + phrase set (dev only) | 5.16 | 4.96 | 2.62 | 87.8 (11.7) | 3.83 | — | — | — | Google ToS |
 | Jackrabbit TDT greedy + phrase boost | 7.25 | 6.82 | 2.70 | 92.2 (5.4) | 6.30 | 0.006 | 0.04 (0.04) | 0.39 s | CC-BY-NC-4.0 |
 | Jackrabbit TDT greedy | 7.38 | 6.93 | 2.68 | 90.7 (5.9) | 6.47 | 0.006 | 0.03 (0.04) | 0.39 s | CC-BY-NC-4.0 |
 | Jackrabbit CTC greedy | 8.23 | 8.08 | 3.05 | 91.2 (7.3) | 7.47 | — | — | — | CC-BY-NC-4.0 |
-| Whisper large-v3 (MLX) | 7.90 | 7.50 | 2.56 | 84.4 (15.1) | 7.19 | 0.086 | 0.85 (0.93) | 1.28 s | MIT |
-| Jackrabbit 110M **streaming** (TDT, offline use) | 9.00 | 8.75 | 3.37 | 90.2 (6.4) | 8.54 | 0.007 | 0.03 (0.03) | 0.38 s | CC-BY-NC-4.0 |
-| SpeD 110M TDT | 8.81 | 7.87 | 3.29 | 80.1 (13.6) | 8.26 | 0.006 | 0.03 (0.03) | 0.38 s | Apache-2.0 |
-| Canary-1B-v2 (ASR) | 10.85 | 10.30 | 3.88 | 83.8 (10.3) | 9.88 | 0.229 | 2.37 (2.46) | 2.81 s | CC-BY-4.0 |
-| SpeD 110M CTC | 11.18 | 10.24 | 4.01 | 75.1 (17.6) | 10.50 | — | — | — | Apache-2.0 |
-| Parakeet-TDT-0.6B-v3 (MLX) | 14.52 | 13.89 | 4.55 | 73.2 (20.0) | 13.36 | 0.015 | 0.14 (0.14) | 0.49 s | CC-BY-4.0 |
-| Parakeet Redux (1.58-bit) | 15.24 | 14.51 | 4.99 | 75.5 (15.7) | 14.14 | 0.019 | 0.07 (0.07) | 0.42 s | CC-BY-4.0 |
-| whisper-large-v3-turbo_ro (TransferRapid) | 31.44 | 30.80 | 22.71 | 56.9 (14.2) | 32.23 | 0.072 | 0.82 (0.89) | 1.24 s | CC-BY-NC-4.0 |
+| Whisper large-v3 (MLX) | 7.91 | 7.50 | 2.58 | 84.4 (15.1) | 7.19 | 0.086 | 0.85 (0.93) | 1.28 s | MIT |
+| Jackrabbit 110M **streaming** (TDT, offline use) | 9.09 | 8.84 | 3.39 | 89.8 (6.3) | 8.54 | 0.007 | 0.03 (0.03) | 0.38 s | CC-BY-NC-4.0 |
+| SpeD 110M TDT | 8.81 | 7.88 | 3.32 | 80.5 (13.7) | 8.26 | 0.006 | 0.03 (0.03) | 0.38 s | Apache-2.0 |
+| Canary-1B-v2 (ASR) | 10.85 | 10.30 | 3.87 | 83.4 (10.7) | 9.88 | 0.229 | 2.37 (2.46) | 2.81 s | CC-BY-4.0 |
+| SpeD 110M CTC | 11.18 | 10.25 | 3.99 | 75.1 (17.6) | 10.50 | — | — | — | Apache-2.0 |
+| Parakeet-TDT-0.6B-v3 (MLX) | 14.56 | 13.93 | 4.57 | 73.2 (20.0) | 13.36 | 0.015 | 0.14 (0.14) | 0.49 s | CC-BY-4.0 |
+| Parakeet Redux (1.58-bit) | 15.26 | 14.53 | 4.93 | 75.1 (16.1) | 14.14 | 0.019 | 0.07 (0.07) | 0.42 s | CC-BY-4.0 |
+| whisper-large-v3-turbo_ro (TransferRapid) | 31.88 | 31.25 | 23.15 | 55.1 (13.7) | 32.23 | 0.072 | 0.82 (0.89) | 1.24 s | CC-BY-NC-4.0 |
 
 Notes
+- **Same reference words for every model** (2026-10-23): each excerpt's place in the book is
+  the median of all models' alignments, and every model is scored on exactly those 3,971 words.
+  Before, each model was scored only on the words it reached, so missing words at the excerpt
+  edges were free. Rankings are unchanged; whisper-large-v3-turbo_ro moved most (31.44 → 31.88).
 - **Known baseline**: Jackrabbit TDT greedy was quoted at ~2.8% on Genesis 1–3. Our Genesis
   excerpt (first 4 min) gives 3.9%. The difference is mostly segment-edge hallucinations ("…a
   fost 301.") at our ≤20 s silence cuts, which are counted as insertions.
