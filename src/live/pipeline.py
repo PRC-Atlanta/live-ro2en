@@ -193,7 +193,8 @@ class PipelineMixin:
             tr = self._load_warm(lc)
             with self._proc_lock:
                 if spec != self.lc["translator"]:
-                    self._spare_tr.setdefault(spec, tr)
+                    if self._keep_both_translators():  # "Never" may have been chosen while it loaded
+                        self._spare_tr.setdefault(spec, tr)
                 elif self.tr is None:            # switched to this profile while it loaded
                     self.tr = tr
 

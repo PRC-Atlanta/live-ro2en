@@ -358,5 +358,12 @@ def test_keep_both_translators_applies_at_once(tmp_path, monkeypatch):
     live._spares_thread.join(5)
     assert "fake:quality" in live._spare_tr                          # Always: the other one is loaded now
     assert live.put_settings({"values": {"live.keep_both_translators": False}})[0] == 200
+    deadline = time.time() + 2
+    while live._spare_tr and time.time() < deadline:
+        time.sleep(0.01)
     assert live._spare_tr == {}                                      # Never: freed at once
+    answers = iter([True, False])                                    # Never chosen while it loads
+    live._keep_both_translators = lambda: next(answers, False)
+    live.preload_translators()
+    assert live._spare_tr == {}                                      # the late spare is not kept
 

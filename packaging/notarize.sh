@@ -26,7 +26,7 @@ cannot be notarized. Install one (Xcode -> Settings -> Accounts -> Manage Certif
 + -> Developer ID Application), then rebuild with: make dist   (docs/release.md)"
 codesign -dvv "$APP" 2>&1 | grep 'flags=.*runtime' >/dev/null || die "the app is not signed with the hardened runtime"
 KC=(); [ -n "${NOTARY_KEYCHAIN:-}" ] && KC=(--keychain "$NOTARY_KEYCHAIN")   # CI: the job's own keychain
-xcrun notarytool history --keychain-profile "$PROFILE" "${KC[@]}" >/dev/null 2>&1 || die "no usable notarytool keychain profile '$PROFILE'.
+xcrun notarytool history --keychain-profile "$PROFILE" ${KC[@]+"${KC[@]}"} >/dev/null 2>&1 || die "no usable notarytool keychain profile '$PROFILE'.
 Create it once (it asks for an app-specific password from appleid.apple.com and keeps it in
 your keychain):
   xcrun notarytool store-credentials $PROFILE --apple-id <your Apple ID> --team-id <TEAMID>
@@ -35,13 +35,13 @@ echo "identity: $AUTH · profile: $PROFILE"
 
 submit() {   # $1 = file; waits, prints the log on failure
   local out id status
-  out=$(xcrun notarytool submit "$1" --keychain-profile "$PROFILE" "${KC[@]}" --wait --output-format plist) ||
+  out=$(xcrun notarytool submit "$1" --keychain-profile "$PROFILE" ${KC[@]+"${KC[@]}"} --wait --output-format plist) ||
     true
   id=$(/usr/libexec/PlistBuddy -c 'Print :id' /dev/stdin <<< "$out" 2>/dev/null || true)
   status=$(/usr/libexec/PlistBuddy -c 'Print :status' /dev/stdin <<< "$out" 2>/dev/null || true)
   echo "  submission ${id:-?}: ${status:-unknown}"
   if [ "$status" != Accepted ]; then
-    [ -n "$id" ] && xcrun notarytool log "$id" --keychain-profile "$PROFILE" "${KC[@]}" || echo "$out"
+    [ -n "$id" ] && xcrun notarytool log "$id" --keychain-profile "$PROFILE" ${KC[@]+"${KC[@]}"} || echo "$out"
     die "notarization of $(basename "$1") was not accepted (log above)"
   fi
 }

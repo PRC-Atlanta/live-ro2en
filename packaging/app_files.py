@@ -38,10 +38,17 @@ def imports(f: pathlib.Path) -> set[str]:
     return out
 
 
-def tracked(repo: pathlib.Path, live: pathlib.Path) -> list[pathlib.Path]:
+def tracked(repo: pathlib.Path, sub: pathlib.Path) -> list[pathlib.Path]:
     """Only the files git tracks: an untracked note, recording, key or tool cache (.ruff_cache)
-    left in src/live must never be sealed into a distributed app."""
-    out = subprocess.run(["git", "-C", str(repo), "ls-files", "-z", "--", str(live.relative_to(repo))],
+    left in src/ must never be sealed into a distributed app."""
+    try:
+        top = subprocess.run(["git", "-C", str(repo), "rev-parse", "--show-toplevel"],
+                             capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        sys.exit("app_files.py: build the app from a git checkout (the bundle takes only tracked files)")
+    if pathlib.Path(top).resolve() != repo.resolve():
+        sys.exit(f"app_files.py: {repo} is not the root of its git checkout ({top})")
+    out = subprocess.run(["git", "-C", str(repo), "ls-files", "-z", "--", str(sub.relative_to(repo))],
                          capture_output=True, check=True).stdout
     return [repo / f for f in out.decode().split("\0") if f]
 
@@ -49,23 +56,32 @@ def tracked(repo: pathlib.Path, live: pathlib.Path) -> list[pathlib.Path]:
 def main(repo: pathlib.Path) -> list[str]:
     src = repo / "src"
     live = src / "live"
-    files = [p for p in tracked(repo, live) if p.is_file()
+    in_git = tracked(repo, src)
+    files = [p for p in in_git if p.is_file() and p.is_relative_to(live)
              and not SKIP_PARTS & set(p.relative_to(live).parts) and p.suffix not in SKIP_SUFFIX
              and p.name != ".DS_Store"]
-    top = {p.stem: p for p in src.glob("*.py")}
-    local = {p.stem for p in live.rglob("*.py")}
+    top = {p.stem: p for p in in_git if p.parent == src and p.suffix == ".py"}
+    local = {p.stem for p in files if p.suffix == ".py"}
+    # a module someone forgot to `git add` would be left out and fail only on a volunteer's Mac
+    untracked = {p.stem for p in live.rglob("*.py") if not SKIP_PARTS & set(p.relative_to(live).parts)} - local
+    untracked |= {p.stem for p in src.glob("*.py")} - set(top)
     todo = [p for p in files if p.suffix == ".py"]
     seen: set[pathlib.Path] = set()
     extra: set[pathlib.Path] = set()
+    missing: set[str] = set()
     while todo:
         f = todo.pop()
         if f in seen:
             continue
         seen.add(f)
         for m in imports(f):
-            if m in top and m not in local:
+            if m in untracked:
+                missing.add(f"{m} (imported by {f.relative_to(repo)})")
+            elif m in top and m not in local:
                 extra.add(top[m])
                 todo.append(top[m])
+    if missing:
+        sys.exit("app_files.py: imported but not in git (git add them): " + ", ".join(sorted(missing)))
     for d in DATA:
         if not (repo / d).is_file():
             sys.exit(f"app_files.py: missing {d}")

@@ -146,6 +146,9 @@ class LifecycleMixin:
             restart = self.running and engine_up and any(new.get(k) != self.lc.get(k) for k in keys)
             if restart:
                 self.stop()
+            sp = self._spares_thread                   # it may be loading this very translator:
+            if sp is not None and sp.is_alive() and new["translator"] != self.lc["translator"]:
+                sp.join()                              # take it, not a second copy in memory
             try:
                 info = self._swap_profile(name, new)
             except Exception as e:
@@ -566,9 +569,11 @@ class LifecycleMixin:
             threading.Thread(target=self._rewarm, daemon=True, name="rewarm").start()
         if "live.keep_both_translators" in changed and hasattr(self, "_spare_tr"):
             if not self._keep_both_translators():          # Never: free the spare now
-                with self._proc_lock:
-                    self._spare_tr.clear()
-                self._free_memory()
+                def free():                                # not under _settings_lock: _proc_lock can
+                    with self._proc_lock:                  # be held for a whole translator load
+                        self._spare_tr.clear()
+                    self._free_memory()
+                threading.Thread(target=free, daemon=True, name="free-spare").start()
             elif self.tr is not None and not (self._spares_thread and self._spares_thread.is_alive()):
                 self._spares_thread = threading.Thread(target=self._spares, daemon=True, name="spare-translators")
                 self._spares_thread.start()                # Always/auto: load the other one now
