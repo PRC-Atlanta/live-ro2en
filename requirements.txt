@@ -1,0 +1,12 @@
+# Core (pinned). Model-specific runtimes are added as they are verified; see DECISIONS.md.
+google-cloud-speech==2.33.0
+google-cloud-storage==3.4.1
+python-dotenv==1.1.1
+PyYAML==6.0.2
+numpy==2.2.6
+pandas==2.3.3
+pyarrow==21.0.0
+rapidfuzz==3.14.1
+soundfile==0.13.1
+huggingface_hub==0.35.3
+pytest==8.4.2

@@ -1,0 +1,175 @@
+"""Score every local model + Google on the Bible test set.
+
+  .venv/bin/python src/score_bible.py
+Writes results/bible_scores.csv, results/bible_by_excerpt.csv, results/bible_terms.csv.
+WER: phonetic-key tokens (script variants neutral), diacritics kept ('wer') and folded
+('wer_nodiac'). Term accuracy: per terms.txt occurrence inside the aligned reference span,
+'hit' = exact spelling (case-insensitive, diacritics required), 'near' = same word with
+wrong/missing diacritics or a close misspelling, else 'miss'.
+"""
+from __future__ import annotations
+
+import csv
+import json
+import re
+from collections import Counter
+import pathlib
+import sys
+from collections import defaultdict
+
+import pandas as pd
+from rapidfuzz import fuzz
+
+sys.path.insert(0, str(pathlib.Path(__file__).parent))
+from scoring import corpus_score, score                                   # noqa: E402
+from textnorm import cyr_to_latin, fold_diacritics, key_tokens, phon_key, strip_headers, tokens  # noqa: E402
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+RES = ROOT / "results"
+
+
+def _latin_df() -> pd.DataFrame:
+    cache = ROOT / "data" / "ref" / "cornilescu_latin.parquet"
+    if cache.exists():
+        return pd.read_parquet(cache)
+    d = pd.read_parquet(ROOT / "data/ref/cornilescu/data/data.parquet")
+    d = d.sort_values(["book_number", "chapter", "verse_number"])
+    d["latin"] = d["text"].map(cyr_to_latin)
+    d = d[["book_number", "chapter", "verse_number", "latin"]].reset_index(drop=True)
+    d.to_parquet(cache)
+    return d
+
+
+def book_verses(book_numbers: set[int]) -> dict[int, list[tuple[int, int, str]]]:
+    """book -> [(chapter, verse, latin_text)] with glued words repaired
+    ('darvoi' -> 'dar voi': the dataset lost some spaces)."""
+    d = _latin_df()
+    freq = Counter(t for x in d["latin"] for t in tokens(x))
+
+    def unglue(m):
+        w = m.group(0); lw = w.lower()
+        if freq[lw] > 2 or len(lw) < 5:
+            return w
+        best = max(((min(freq[lw[:i]], freq[lw[i:]]), i) for i in range(2, len(lw) - 1)), default=(0, 0))
+        return w[:best[1]] + " " + w[best[1]:] if best[0] > 20 else w
+    out = {}
+    for b, g in d[d.book_number.isin(book_numbers)].groupby("book_number"):
+        g = g.sort_values(["chapter", "verse_number"])
+        out[b] = [(int(c), int(v), re.sub(r"[^\W\d_]+", unglue, t))
+                  for c, v, t in zip(g.chapter, g.verse_number, g.latin)]
+    return out
+
+
+def book_texts(book_numbers: set[int]) -> dict[int, str]:
+    return {b: " ".join(t for _, _, t in vs) for b, vs in book_verses(book_numbers).items()}
+
+
+def load_terms() -> list[list[str]]:
+    out = []
+    for l in (ROOT / "terms.txt").read_text().splitlines():
+        if l.strip() and not l.startswith("#"):
+            out.append(tokens(l))
+    return out
+
+
+def _count(seq: list[str], pat: list[str]) -> int:
+    n = len(pat)
+    return sum(1 for i in range(len(seq) - n + 1) if seq[i:i + n] == pat)
+
+
+def term_stats(ref_toks: list[str], hyp_toks: list[str], terms: list[list[str]]) -> dict:
+    fk = lambda ts: [fold_diacritics(phon_key(t)) for t in ts]
+    ref_f, hyp_f = fk(ref_toks), fk(hyp_toks)
+    out = {}
+    for t in terms:
+        n_ref = _count(ref_f, fk(t))
+        if not n_ref:
+            continue
+        exact = _count(hyp_toks, t)
+        loose = _count(hyp_f, fk(t))
+        # close misspellings: windows of the same length that fuzzy-match the term
+        joined = " ".join(t)
+        n = len(t)
+        fuzzy = sum(1 for i in range(len(hyp_toks) - n + 1)
+                    if hyp_f[i:i + n] != fk(t) and fuzz.ratio(" ".join(hyp_toks[i:i + n]), joined) >= 85)
+        hit = min(n_ref, exact)
+        near = min(n_ref - hit, max(loose - exact, 0) + fuzzy)
+        out[" ".join(t)] = (n_ref, hit, near)
+    return out
+
+
+def load_hyps(manifest: pd.DataFrame) -> dict[str, dict[str, str]]:
+    """model -> excerpt -> concatenated text."""
+    hyps: dict[str, dict[str, str]] = defaultdict(dict)
+    order = manifest.groupby("excerpt")["segment"].apply(list).to_dict()
+    for f in sorted((ROOT / "transcripts" / "local").glob("*/bible.jsonl")):
+        if f.parent.name.startswith("canary-ast"):          # English output, scored in Phase 2
+            continue
+        rows = {j["segment"]: j for j in map(json.loads, f.read_text().splitlines()) if j}
+        for ex, segs in order.items():
+            if all(s in rows for s in segs):
+                hyps[f.parent.name][ex] = " ".join(rows[s]["text"] for s in segs)
+    for d in sorted((ROOT / "transcripts" / "google").glob("*/")):
+        for ex in order:
+            p = d / f"{ex}.txt"
+            if p.exists():
+                hyps[f"google-{d.name}"][ex] = p.read_text()
+    return hyps
+
+
+def speed(model: str) -> float | None:
+    f = ROOT / "transcripts" / "local" / model / "bible.jsonl"
+    if not f.exists():
+        return None
+    rows = [json.loads(l) for l in f.read_text().splitlines() if l.strip()]
+    return sum(r["infer_s"] for r in rows) / max(sum(r["audio_s"] for r in rows), 1e-9)
+
+
+def main() -> None:
+    RES.mkdir(exist_ok=True)
+    man = pd.read_csv(ROOT / "work" / "bible" / "manifest.csv")
+    ex_book = man.groupby("excerpt")["book_number"].first().to_dict()
+    books = book_texts(set(ex_book.values()))
+    ref_tok = {b: tokens(t) for b, t in books.items()}
+    ref_key = {b: key_tokens(t) for b, t in books.items()}
+    ref_keyf = {b: [fold_diacritics(k) for k in ks] for b, ks in ref_key.items()}
+    terms = load_terms()
+    hyps = load_hyps(man)
+    per_ex, summary, term_rows = [], [], []
+    n_ex = len(ex_book)
+    for m, exs in sorted(hyps.items()):
+        strict, folded, tagg = [], [], defaultdict(lambda: [0, 0, 0])
+        for ex, text in exs.items():
+            b = ex_book[ex]
+            hk = strip_headers(key_tokens(text))
+            s = score(ref_key[b], hk)
+            sf_ = score(ref_keyf[b], [fold_diacritics(k) for k in hk])
+            strict.append(s); folded.append(sf_)
+            ts = term_stats(ref_tok[b][s["ref_start"]:s["ref_end"]], tokens(text), terms)
+            for k, v in ts.items():
+                for i in range(3):
+                    tagg[k][i] += v[i]
+            per_ex.append({"model": m, "excerpt": ex, "wer": round(s["wer"], 4),
+                           "wer_nodiac": round(sf_["wer"], 4), "cer": round(s["cer"], 4), "n_ref": s["n_ref"]})
+        cs, cf = corpus_score(strict), corpus_score(folded)
+        n_t = sum(v[0] for v in tagg.values())
+        rtf = speed(m)
+        summary.append({"model": m, "excerpts": f"{len(exs)}/{n_ex}", "wer": round(cs["wer"] * 100, 2),
+                        "wer_nodiac": round(cf["wer"] * 100, 2), "cer": round(cs["cer"] * 100, 2),
+                        "term_acc": round(100 * sum(v[1] for v in tagg.values()) / max(n_t, 1), 1),
+                        "term_near": round(100 * sum(v[2] for v in tagg.values()) / max(n_t, 1), 1),
+                        "term_n": n_t, "rtf": round(rtf, 4) if rtf is not None else "",
+                        "n_ref_words": cs["n_ref"]})
+        for k, (n, h, nr) in sorted(tagg.items()):
+            term_rows.append({"model": m, "term": k, "n_ref": n, "hit": h, "near": nr, "miss": n - h - nr})
+    summary.sort(key=lambda r: r["wer"])
+    for name, rows in [("bible_scores.csv", summary), ("bible_by_excerpt.csv", per_ex), ("bible_terms.csv", term_rows)]:
+        if rows:
+            with open(RES / name, "w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=list(rows[0]))
+                w.writeheader(); w.writerows(rows)
+    print(pd.DataFrame(summary).to_string(index=False))
+
+
+if __name__ == "__main__":
+    main()

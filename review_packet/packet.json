@@ -1,0 +1,40 @@
+{
+ "set": "sermon",
+ "clips": [
+  {
+   "excerpt": "br-random-1_00349",
+   "reference_model": "google-chirp_3",
+   "local_model": "jackrabbit-ctc-lm-b8",
+   "disagreements": 17,
+   "seconds": 146.7
+  },
+  {
+   "excerpt": "br-random-1_00612",
+   "reference_model": "google-chirp_3",
+   "local_model": "jackrabbit-ctc-lm-b8",
+   "disagreements": 16,
+   "seconds": 146.48
+  },
+  {
+   "excerpt": "br-random-1_00874",
+   "reference_model": "google-chirp_3",
+   "local_model": "jackrabbit-ctc-lm-b8",
+   "disagreements": 12,
+   "seconds": 148.52
+  },
+  {
+   "excerpt": "br-random-1_01399",
+   "reference_model": "google-chirp_3",
+   "local_model": "jackrabbit-ctc-lm-b8",
+   "disagreements": 31,
+   "seconds": 145.64
+  },
+  {
+   "excerpt": "br-recalo_00399",
+   "reference_model": "google-chirp_3",
+   "local_model": "jackrabbit-ctc-lm-b8",
+   "disagreements": 22,
+   "seconds": 148.08
+  }
+ ]
+}

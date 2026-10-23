@@ -1,0 +1,14 @@
+model,cedilla_chars,consensus_cer,consensus_wer,diacritic_acc,silver_cer,silver_wer,term_hit,term_n,term_near
+google-chirp_3,0,3.08,7.51,96.2,,,87.1,240,12.9
+jackrabbit-ctc-lm,0,2.18,5.51,96.1,3.14,7.73,91.1,237,8.9
+jackrabbit-ctc-lm-b8,0,1.13,2.8,96.3,3.13,7.75,91.2,240,8.8
+jackrabbit-ctc-lm-boost,0,1.24,3.02,96.2,3.19,7.86,91.2,240,8.8
+whisper-large-v3-mlx,0,2.64,7.34,96.3,3.02,7.86,83.7,239,14.2
+jackrabbit-tdt-boost,0,1.85,4.9,96.1,3.06,8.4,89.2,240,9.6
+jackrabbit-tdt,0,1.82,4.9,96.2,3.05,8.5,88.3,240,10.0
+jackrabbit-ctc-biblelm,0,2.48,6.01,96.4,3.98,9.33,90.0,240,9.6
+sped-tdt,0,3.75,9.08,96.9,4.14,10.72,80.2,242,15.3
+jackrabbit-stream-tdt,0,3.43,7.95,96.1,4.44,11.39,84.6,241,11.2
+canary-asr,0,3.12,8.35,95.7,4.11,11.76,81.3,241,12.0
+parakeet-redux,0,3.64,10.83,95.9,5.0,14.39,81.7,240,11.7
+parakeet-mlx,0,5.87,16.73,94.6,6.81,19.41,71.8,241,19.5

@@ -1,0 +1,120 @@
+# All non-secret settings. Secrets live only in .env.
+paths:
+  audio_dir: Audio
+  bible_audio_dir: BibleAudio
+  bible_ref_parquet: data/ref/cornilescu/data/data.parquet
+  terms: terms.txt
+  glossary: glossary.csv
+  work: work
+  logs: logs
+  transcripts: transcripts
+
+google:            # dev-only reference transcription; never used by the live app
+  location_default: us-central1
+  model: chirp_2
+  language_codes: ["ro-RO"]
+  strategy: DYNAMIC_BATCHING   # falls back to standard batch if rejected
+  usage_cap_minutes: 600
+  input_prefix: input/
+  output_prefix: output/
+  poll_initial_s: 30
+  poll_max_s: 900
+  poll_timeout_h: 30
+  max_file_minutes: 19          # BatchRecognize rejects files > 20 min; longer ones are split at a pause
+  max_files_per_request: 5      # API limit: "Number of files is restricted to 5"
+  phrase_boost: 10
+  model_locations: {chirp_2: europe-west4, chirp_3: us}   # overrides GOOGLE_STT_LOCATION per model
+  no_adaptation_models: [chirp_3]   # chirp_3 + adaptation + word offsets -> 404 (see DECISIONS.md)
+
+bible_testset:
+  # book file stem -> list of [start_s, length_s]; cut points snap to silence gaps
+  excerpts:
+    01-Gen: [[0, 240]]
+    19-Ps: [[6000, 240]]
+    40-Mat: [[3000, 240]]
+    43-Ioan: [[1200, 240, "43-Ioan_01"]]   # _00 at 4200 s ran into ch. 11, missing from the reference
+    49-Efes: [[300, 180]]
+    59-Iac: [[200, 180]]
+    60-1Pet: [[400, 180]]
+    66-Apoc: [[2400, 300]]
+  max_segment_s: 20
+  min_silence_s: 0.25
+
+live:
+  sample_rate: 16000
+  input_device: null          # null = system default; name or index
+  language_mode: auto         # auto | ro-en | en-ro
+  vad_threshold: 0.5
+  min_pause_ms: 350           # pause that may close a clause
+  max_clause_s: 7.0           # force a commit if no pause arrives
+  hold_min_words: 4           # shorter fragments (except ?/!) wait for the next clause...
+  hold_s: 1.2                 # ...for at most this long
+  partial_every_s: 0           # >0 shows interim text on the control page (adds load)
+  stt_model: jackrabbit-ctc-lm-b8          # Jackrabbit CTC + 4-gram LM, beam 8 (see BENCHMARK.md)
+  stt_venv: .venv-nemo
+  translator: "nllb:nllb-200-distilled-1.3B"   # meets the 2 s target; quality option: "mlx:mlx-community/gemma-4-12B-it-qat-4bit"
+  profile: quality            # fast | quality (switchable on the control page)
+  context_s: 6.0              # each short chunk is recognised with the previous 6 s of audio (halves errors)
+  lookahead_words: 0          # look-ahead (hold last word at mid-speech cuts): tested, breaks the 6 s ceiling for RO, no RO gain
+  en_recognizer: parakeet     # English speech (EN→RO): parakeet | parakeet-stream | whistle  — A/B switch
+  context_clauses: 2          # previous commits shown to an LLM translator as context
+  web_host: 127.0.0.1
+  web_port: 8765
+  transcript_log_dir: logs/services
+
+# Profiles override the `live` settings above. fast = lowest delay (~1.5 s after each phrase);
+# quality = whole sentences, stronger decoding, LLM translation (~3-5 s budget).
+# English streaming (EN→RO locked): chunk_s / vad_threshold / pause_s / max_chunk_s below apply to
+# both streaming recognizers (whistle, parakeet-stream). Cactus Whistle — English only. Fully offline: telemetry off,
+# engine + weights vendored in models/whistle (fetched once by setup.sh).
+whistle:
+  weights: models/whistle/whistle.cact      # depth "full" (the shipped model)
+  lib: models/whistle/libneedle.dylib
+  depth: full                 # decoder depth; other depths need a .cact built with
+  weights_by_depth: {}        #   `needle whistle build --layers N` (2..8), e.g. {4: models/whistle/whistle-d4.cact}
+  keywords_file: keywords_en.txt
+  stream: true                # EN→RO locked: stream and send only committed words
+  chunk_s: 0.5                # audio per streaming pass: 0.5 s commits ~1.3 s sooner than 1.0 s and was more accurate
+  vad_threshold: 0.6          # frames below this VAD score (music, choir) are sent as silence
+  pause_s: 0.35               # gap between committed words that closes a clause
+  max_chunk_s: 2.5            # longest clause (keeps the first word within the 6 s ceiling)
+
+# Preferred spellings applied to every transcript the system shows or translates
+# (live captions, translator input, correction-tool starting text). variant: preferred
+spellings:
+  Filadelfia: Philadelphia
+  Filadelfiei: Philadelphiei
+  Iisus: Isus
+  Iisuse: Isuse
+  Iisusului: Isusului
+
+profiles:
+  fast:                       # NLLB: lowest delay (98% of first words <= 6 s) but translates STT slips literally
+    stt_model: jackrabbit-ctc-lm-b8
+    translator: "nllb:nllb-200-distilled-1.3B"
+    min_pause_ms: 250
+    max_clause_s: 2.5
+    max_chunk_s: 2.5
+    min_commit_s: 0
+    max_commit_s: 0
+  quality:                    # default: Gemma 4 repairs STT slips; first word on screen <= 6 s for ~92% of chunks
+    stt_model: jackrabbit-ctc-lm-b8
+    translator: "mlx:mlx-community/gemma-4-12B-it-qat-4bit"
+    min_pause_ms: 250
+    max_clause_s: 2.5         # cut long phrases at the quietest point after 2.5 s of speech
+    max_chunk_s: 2.5          # and never merge fragments beyond that span
+    min_commit_s: 0
+    max_commit_s: 0
+    hold_min_words: 4
+    context_clauses: 4        # Gemma sees the previous 4 chunks, so short chunks still read as sentences
+
+propresenter:
+  host: 127.0.0.1
+  port: 50001
+  password: ""                # optional; set in .env as PROPRESENTER_PASSWORD to override
+  message_id: "Live Translation"
+  token_name: "Text"
+  max_chars_per_line: 42
+  max_lines: 2
+  stage_message: false
+  timeout_s: 1.5

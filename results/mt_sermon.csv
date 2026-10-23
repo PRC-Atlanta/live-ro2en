@@ -1,0 +1,5 @@
+system,clauses,backtrans_chrf,glossary_pct,glossary_n,lat_med_s,lat_p90_s
+nllb-200-distilled-1.3B,60,57.38,88.1,42,0.762,1.527
+nllb-200-3.3B,60,57.26,95.2,42,1.458,2.798
+gemma-4-12B-it-qat-4bit,60,59.33,100.0,42,1.171,2.055
+EuroLLM-22B-Instruct-2512-mlx-4bit,60,62.09,100.0,42,1.619,2.521

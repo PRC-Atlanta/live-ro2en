@@ -1,0 +1,369 @@
+# Romanian theological/biblical terms and names (comma-below ș ț). One per line; # = comment.
+# Divinity
+Dumnezeu
+Dumnezeul
+Domnul
+Isus
+Isus Hristos
+Hristos
+Hristosul
+Mesia
+Mântuitorul
+Răscumpărătorul
+Duhul Sfânt
+Duhul lui Dumnezeu
+Sfântul Duh
+Tatăl
+Fiul
+Fiul Omului
+Fiul lui Dumnezeu
+Mielul lui Dumnezeu
+Atotputernicul
+Cel Preaînalt
+Iehova
+Emanuel
+Domnul oștirilor
+Sfânta Treime
+Treimea
+Mângâietorul
+Păstorul
+# Theology
+mântuire
+mântuirea
+har
+harul
+îndurare
+îndurarea
+milostivire
+neprihănire
+neprihănirea
+neprihănit
+sfințire
+sfințirea
+îndreptățire
+îndreptățirea
+răscumpărare
+răscumpărarea
+ispășire
+ispășirea
+jertfă
+jertfa
+jertfelnic
+pocăință
+pocăința
+pocăit
+pocăiți
+credință
+credința
+credincioși
+credincios
+nădejde
+nădejdea
+dragoste
+dragostea
+iertare
+iertarea
+păcat
+păcatul
+păcatele
+păcătos
+păcătoși
+fărădelege
+fărădelegile
+nelegiuire
+nelegiuirea
+ispită
+ispita
+ispitire
+legământ
+legământul
+legământului
+făgăduință
+făgăduința
+binecuvântare
+binecuvântarea
+binecuvântat
+blestem
+proorocie
+proorociei
+prooroc
+proorocul
+proorocii
+profeție
+apostol
+apostolul
+apostolii
+ucenic
+ucenicii
+evanghelie
+Evanghelia
+Evangheliei
+botez
+botezul
+botezat
+Cina Domnului
+Sfânta Cină
+cuminecare
+împărăția
+Împărăția lui Dumnezeu
+Împărăția cerurilor
+veșnicie
+veșnicia
+viața veșnică
+înviere
+învierea
+răstignire
+răstignirea
+răstignit
+crucea
+cruce
+sângele
+Satana
+Diavolul
+diavol
+demon
+demonii
+iad
+iadul
+rai
+raiul
+cer
+ceruri
+cerurile
+îngeri
+îngerul
+heruvimi
+serafimi
+slavă
+slava
+proslăvit
+închinare
+închinarea
+rugăciune
+rugăciunea
+post
+postul
+smerenie
+smerenia
+ascultare
+sfânt
+sfinți
+sfinții
+Biserica
+biserică
+adunare
+adunarea
+frați
+frații
+surori
+pastor
+pastorul
+prezbiter
+diacon
+predică
+predica
+amin
+aleluia
+osana
+Scriptura
+Scripturile
+Biblia
+Cuvântul lui Dumnezeu
+Vechiul Testament
+Noul Testament
+Legea
+Lege
+Sabat
+Sabatul
+Paște
+Paștele
+Rusalii
+Cincizecimea
+templu
+templul
+cortul întâlnirii
+chivotul
+chivotul legământului
+preot
+preoți
+marele preot
+fariseii
+fariseu
+cărturarii
+saducheii
+neamuri
+neamurile
+Israel
+israeliți
+Ierusalim
+Ierusalimul
+Sionul
+Sion
+# Books of the Bible
+Geneza
+Exodul
+Leviticul
+Numeri
+Deuteronomul
+Iosua
+Judecători
+Rut
+Samuel
+Împărați
+Cronici
+Ezra
+Neemia
+Estera
+Iov
+Psalmi
+Psalmul
+Proverbe
+Eclesiastul
+Cântarea cântărilor
+Isaia
+Ieremia
+Plângerile lui Ieremia
+Ezechiel
+Daniel
+Osea
+Ioel
+Amos
+Obadia
+Iona
+Mica
+Naum
+Habacuc
+Țefania
+Hagai
+Zaharia
+Maleahi
+Matei
+Marcu
+Luca
+Ioan
+Faptele Apostolilor
+Romani
+Corinteni
+Galateni
+Efeseni
+Filipeni
+Coloseni
+Tesaloniceni
+Timotei
+Tit
+Filimon
+Evrei
+Iacov
+Petru
+Iuda
+Apocalipsa
+# People
+Adam
+Eva
+Cain
+Abel
+Set
+Enoh
+Noe
+Sem
+Avraam
+Sara
+Isaac
+Rebeca
+Esau
+Rahela
+Lea
+Iosif
+Levi
+Beniamin
+Moise
+Aaron
+Miriam
+Caleb
+Ghedeon
+Samson
+Saul
+David
+Solomon
+Ilie
+Elisei
+Ezechia
+Iosia
+Nebucadnețar
+Zorobabel
+Ioan Botezătorul
+Maria
+Marta
+Lazăr
+Iosif din Arimateea
+Nicodim
+Zacheu
+Pavel
+Saul din Tars
+Barnaba
+Sila
+Ștefan
+Filip
+Andrei
+Toma
+Bartolomeu
+Iacov fiul lui Zebedei
+Pilat
+Irod
+Caiafa
+Iuda Iscarioteanul
+Lot
+Agar
+Ismael
+Faraon
+Faraonul
+Melhisedec
+Boaz
+Naomi
+Mardoheu
+Goliat
+Absalom
+Natan
+Ieroboam
+Roboam
+Ahab
+Izabela
+# Places
+Egipt
+Egiptul
+Canaan
+Babilon
+Babilonul
+Betleem
+Nazaret
+Galileea
+Iudeea
+Samaria
+Capernaum
+Betania
+Ghetsimani
+Golgota
+Calvarul
+Iordan
+Iordanul
+Sinai
+Muntele Sinai
+Horeb
+Eden
+grădina Eden
+Sodoma
+Gomora
+Ninive
+Ierihon
+Hebron
+Damasc
+Antiohia
+Efes
+Corint
+Roma
+Patmos
+Marea Roșie
+Marea Galileii
+Muntele Măslinilor
+# Church
+Philadelphia

@@ -1,0 +1,14 @@
+model,wer,cer,n_words
+google-chirp_3,1.21,0.53,1824
+whisper-large-v3-mlx,6.74,2.21,1824
+jackrabbit-ctc-lm-b8,7.07,2.63,1824
+jackrabbit-ctc-lm,7.24,2.68,1824
+jackrabbit-ctc-lm-boost,7.35,2.74,1824
+jackrabbit-tdt,8.06,2.75,1824
+jackrabbit-tdt-boost,8.22,2.83,1824
+jackrabbit-ctc-biblelm,9.27,3.63,1824
+canary-asr,10.75,3.49,1824
+sped-tdt,10.86,3.71,1824
+jackrabbit-stream-tdt,11.18,4.26,1824
+parakeet-redux,13.32,4.21,1824
+parakeet-mlx,18.97,6.29,1824

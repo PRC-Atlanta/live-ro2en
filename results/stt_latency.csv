@@ -1,0 +1,13 @@
+model,runtime_path,rtf,clause3s_med,clause6s_med,clause6s_p90,sim_stream_latency_s
+jackrabbit-tdt,nemo-mps-encoder,0.0063,0.027,0.033,0.036,0.386
+jackrabbit-tdt-boost,nemo-mps-encoder,0.0063,0.03,0.037,0.039,0.389
+jackrabbit-stream-tdt,nemo-mps-encoder,0.0067,0.026,0.032,0.034,0.384
+sped-tdt,nemo-mps-encoder,0.0055,0.026,0.032,0.033,0.383
+canary-asr,file-api,0.2294,1.985,2.369,2.461,2.811
+whisper-turbo-ro-hf,file-api,0.072,0.645,0.824,0.886,1.236
+parakeet-mlx,mlx,0.015,0.104,0.14,0.144,0.494
+whisper-large-v3-mlx,file-api,0.0863,0.639,0.845,0.926,1.276
+jackrabbit-ctc-lm-b8,nemo-mps-encoder,0.0353,0.104,0.195,0.208,0.558
+jackrabbit-ctc-lm,nemo-mps-encoder,0.0876,0.252,0.509,0.563,0.913
+jackrabbit-ctc-lm-boost,nemo-mps-encoder,0.1288,0.407,0.781,0.862,1.212
+parakeet-redux,file-api,0.0193,0.043,0.068,0.07,0.42

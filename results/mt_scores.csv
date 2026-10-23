@@ -1,0 +1,6 @@
+system,chrf_clean,chrf_doc_stt,chrf_en2ro,chrf_stt,gloss_clean,gloss_en2ro,gloss_stt,lat_med_clean,lat_med_en2ro,lat_med_stt,lat_p90_clean,lat_p90_en2ro,lat_p90_stt,n_clean,n_en2ro,n_stt
+EuroLLM-22B-Instruct-2512-mlx-4bit,66.37,70.33,51.82,65.64,93.8,76.7,93.4,2.111,2.233,2.121,3.035,3.327,3.051,177,40,177
+gemma-4-12B-it-qat-4bit,54.01,61.09,37.15,53.29,98.2,83.3,98.3,1.555,1.786,1.549,2.284,2.97,2.359,177,40,177
+nllb-200-3.3B,50.89,57.79,47.34,50.52,87.6,70.0,81.0,2.284,2.186,2.196,3.691,3.621,3.673,177,40,177
+nllb-200-distilled-1.3B,49.84,57.12,47.49,49.51,86.7,70.0,81.0,1.201,1.248,1.198,1.835,2.073,1.882,177,40,177
+canary-1b-v2-ast (speech->EN),,48.15,,,,,,,,4.107,,,,,,8

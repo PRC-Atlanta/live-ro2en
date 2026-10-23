@@ -1,0 +1,63 @@
+# English keywords for Whistle (English speech recognition, EN→RO).
+# One word or phrase per line; lines starting with # are ignored. Loaded at startup:
+# restart the live app after editing.
+
+# --- Biblical names and places ---
+Nebuchadnezzar
+Melchizedek
+Habakkuk
+Zephaniah
+Zechariah
+Malachi
+Ezekiel
+Isaiah
+Jeremiah
+Deuteronomy
+Leviticus
+Ecclesiastes
+Thessalonians
+Philippians
+Colossians
+Corinthians
+Galatians
+Ephesians
+Hebrews
+Gethsemane
+Golgotha
+Calvary
+Bethlehem
+Bethany
+Nazareth
+Capernaum
+Galilee
+Jerusalem
+Zion
+Pharisees
+Sadducees
+Pentecost
+Passover
+Messiah
+Emmanuel
+Elijah
+Elisha
+Abraham
+Isaac
+Jacob
+Moses
+Pontius Pilate
+
+# --- Theology ---
+propitiation
+justification
+sanctification
+atonement
+redemption
+righteousness
+tabernacle
+covenant
+hallelujah
+hosanna
+amen
+
+# --- Our church: pastors, guest speakers, church and ministry names ---
+Philadelphia

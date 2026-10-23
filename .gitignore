@@ -1,0 +1,33 @@
+# Secrets — never commit
+.env
+*.json.key
+*service-account*.json
+
+# Audio: sermon recordings (church-private) and the Bible audio (unknown licence: never redistribute)
+Audio/
+BibleAudio/
+*.wav
+*.mp3
+*.ogg
+*.flac
+*.m4a
+*.aiff
+
+# Large / regenerable
+models/
+.venv*/
+work/
+logs/
+data/ref/
+data/samples/*.wav
+transcripts/
+review_packet/clips/
+review_packet/corrections.json
+data/finetune/
+results/mt/
+results/en_test/
+__pycache__/
+.pytest_cache/
+.DS_Store
+*.partial
+data/propresenter/
