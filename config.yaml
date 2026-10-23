@@ -61,6 +61,7 @@ live:
   audio_watchdog_s: 2.0       # no frames from the input device this long -> NO AUDIO alert
   digital_silence_s: 10.0     # exact zeros this long (muted/dead interface) -> NO AUDIO alert
   lag_warn_s: 6.0             # a caption later than this after the speech -> CAPTIONS BEHIND alert
+  catchup_max_words: 60       # when behind, waiting clauses are merged (up to this) into one translation
   web_host: 127.0.0.1
   web_port: 8765
   web_allowed_hosts: []       # extra host names for the control page (only if web_host is not loopback)

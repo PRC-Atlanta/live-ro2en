@@ -32,11 +32,17 @@ def _fk(text: str) -> list[str]:
     return [fold_diacritics(phon_key(t)) for t in tokens(text)]
 
 
+def _en_alts(en: str) -> list[list[str]]:
+    """English renderings of a glossary cell: 'Passover / Easter' is two alternatives, and a
+    leading article is optional ('the Holy Spirit' matches 'Holy Spirit')."""
+    return [tokens(re.sub(r"^\s*the\s+", "", alt, flags=re.I)) for alt in en.split("/") if alt.strip()]
+
+
 class Glossary:
     def __init__(self, path: pathlib.Path | str = ROOT / "glossary.csv"):
         self.rows = [r for r in csv.DictReader(open(path)) if r.get("ro") and r.get("en")]
         self._ro = [(_fk(r["ro"]), r) for r in self.rows]
-        self._en = [(tokens(r["en"].replace("the ", "")), r) for r in self.rows]
+        self._en = [(alt, r) for r in self.rows for alt in _en_alts(r["en"])]
 
     @staticmethod
     def _contains(seq: list[str], pat: list[str]) -> bool:
@@ -49,7 +55,7 @@ class Glossary:
             hits = [r for k, r in self._ro if self._contains(seq, k)]
         else:
             seq = tokens(src)
-            hits = [r for k, r in self._en if self._contains(seq, k)]
+            hits = list({id(r): r for k, r in self._en if self._contains(seq, k)}.values())
         # prefer longer matches (Duhul Sfânt over Duhul)
         return sorted(hits, key=lambda r: -len(r["ro"]))
 
@@ -57,9 +63,8 @@ class Glossary:
         """(n_terms_in_source, n_rendered_as_glossary_prefers)."""
         rel = self.relevant(src, src_lang)
         if src_lang == "ro":
-            o = " " + " ".join(tokens(out)) + " "
-            ok = sum(any(" " + " ".join(tokens(alt.replace("the ", ""))) + " " in o
-                         for alt in r["en"].split("/")) for r in rel)
+            o = tokens(out)
+            ok = sum(any(self._contains(o, alt) for alt in _en_alts(r["en"])) for r in rel)
         else:
             o = _fk(out)
             ok = sum(self._contains(o, _fk(r["ro"])) for r in rel)
@@ -76,12 +81,14 @@ class NLLBTranslator:
                                          compute_type=compute_type, intra_threads=threads)
         self.tok = transformers.AutoTokenizer.from_pretrained(f"facebook/{name}")
         self.beam = beam
+        self.last_truncated = False               # the last output hit the decoding limit
 
     def translate(self, text: str, src: str = "ro", tgt: str = "en", glossary=None) -> str:
         self.tok.src_lang = NLLB_CODES[src]
         pieces = self.tok.convert_ids_to_tokens(self.tok.encode(text))
         res = self.tr.translate_batch([pieces], target_prefix=[[NLLB_CODES[tgt]]],
                                       beam_size=self.beam, max_decoding_length=256)
+        self.last_truncated = len(res[0].hypotheses[0]) >= 256
         out = res[0].hypotheses[0][1:]
         out = self.tok.decode(self.tok.convert_tokens_to_ids(out), skip_special_tokens=True).strip()
         return postedit(out, tgt)
@@ -105,8 +112,9 @@ class MLXLLMTranslator:
         self.repo = repo
         self.model, self.tok = load(repo)
         self.max_tokens = max_tokens
-        self.context: list[tuple[str, str]] = []
+        self.context: list[tuple[str, str, str]] = []    # (source, translation, source language)
         self.context_clauses = context_clauses
+        self.last_truncated = False               # the last output hit max_tokens (cut off)
 
     def _prompt(self, text, src, tgt, glossary):
         lines = []
@@ -117,7 +125,7 @@ class MLXLLMTranslator:
                 lines.append("Glossary (use these renderings):\n" + "\n".join(f"- {a} = {b}" for a, b in pairs))
         if self.context:
             lines.append("Previous sentences (context only, do not translate again):\n" +
-                         "\n".join(s for s, _ in self.context[-self.context_clauses:]))
+                         "\n".join(s for s, _, _ in self.context[-self.context_clauses:]))
         lines.append(f"Translate:\n{text}")
         msgs = [{"role": "system", "content": SYSTEM[(src, tgt)]},
                 {"role": "user", "content": "\n\n".join(lines)}]
@@ -132,15 +140,16 @@ class MLXLLMTranslator:
                   use_context: bool = False) -> str:
         from mlx_lm import generate
         from mlx_lm.sample_utils import make_sampler
-        if not use_context:
-            self.context = []
+        if not use_context or (self.context and self.context[-1][2] != src):
+            self.context = []                     # a language switch starts a fresh context
         out = generate(self.model, self.tok, prompt=self._prompt(text, src, tgt, glossary),
                        max_tokens=self.max_tokens, sampler=make_sampler(temp=0.0), verbose=False)
+        self.last_truncated = len(self.tok.encode(out)) >= self.max_tokens - 1
         out = re.sub(r"<think>.*?</think>", "", out, flags=re.S).strip().strip('"').strip()
         out = out.split("\n\n")[0].strip()
         out = postedit(out, tgt)
         if use_context:
-            self.context.append((text, out))
+            self.context = (self.context + [(text, out, src)])[-max(self.context_clauses, 1):]
         return out
 
 

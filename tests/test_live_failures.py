@@ -20,7 +20,7 @@ import live.engine as engmod
 CFG = pathlib.Path(__file__).resolve().parents[1] / "config.yaml"
 
 
-def _live(tmp_path, translate=lambda t, *a, **k: f"<{t}>"):
+def _live(tmp_path, translate=lambda t, *a, **k: f"EN: {t}"):
     live = Live(yaml.safe_load(open(CFG)), types.SimpleNamespace(file=None))
     live.log_path = tmp_path / "log.jsonl"
     live.tr = types.SimpleNamespace(translate=translate)
@@ -139,7 +139,7 @@ def test_stop_commits_buffered_speech_then_eof(monkeypatch):
 
 def test_mode_switch_commits_speech_under_old_mode(monkeypatch):
     fed = []
-    streamer = types.SimpleNamespace(start_stream=lambda cb: None, feed=fed.append, end_stream=lambda: None)
+    streamer = types.SimpleNamespace(start_stream=lambda cb: None, feed=fed.append, end_stream=lambda **k: None)
     e = _bare_engine("auto", streamer)
     q = queue.Queue()
     _frames(q, 20, speech=True)          # Romanian half sentence
@@ -283,3 +283,82 @@ def test_control_api_end_to_end(tmp_path):
     with pytest.raises(Exception):
         with c.websocket_connect("/ws", headers={**me, "origin": "https://evil.example"}) as ws:
             ws.receive_json()
+
+
+def test_backlog_is_merged_into_one_translation(tmp_path):
+    calls = []
+    live = _live(tmp_path, translate=lambda t, *a, **k: calls.append(t) or "Translated text here now.")
+    live.lang.set_mode("ro-en")
+    texts = ["Frați și surori, astăzi", "citim din epistola către Romani,", "capitolul opt,", "versetul unu."]
+    for i, t in enumerate(texts[1:], 2):
+        live._work.put(_clause(i, ago=6, ro=t))
+    ev, n = live._catch_up(_clause(1, ago=7, ro=texts[0]))
+    assert n == 4 and ev["caught_up"] == 4 and live._work.qsize() == 0
+    live._handle(ev)
+    assert calls == [" ".join(texts)]                       # one call for the whole backlog
+    assert _log(live)[0]["caught_up"] == 4 and live.counts["caught_up"] == 4
+    on_time, n = live._catch_up(_clause(9, ago=0.5, ro="Pavel scrie."))
+    assert n == 1 and "caught_up" not in on_time            # not behind: clause by clause
+
+
+def test_echoed_and_cut_off_translations(tmp_path):
+    live = _live(tmp_path, translate=lambda t, *a, **k: t)     # returns the source unchanged
+    live.lang.set_mode("ro-en")
+    live._handle(_clause(1, ro="Frați și surori, astăzi citim din Romani."))
+    live._handle(_clause(2, ro="Amin."))                        # short: may legitimately match
+    assert [r["outcome"] for r in _log(live)] == ["mt_echo", "ok"]
+    live.tr = types.SimpleNamespace(translate=lambda t, *a, **k: "Brothers and sisters, today we",
+                                    last_truncated=True)
+    live._handle(_clause(3, ro="Frați și surori, astăzi citim din Romani."))
+    assert _log(live)[-1]["mt_truncated"] is True and live.counts["mt_truncated"] == 1
+
+
+def test_glossary_alternatives_and_optional_article():
+    from live.translate import Glossary
+    g = Glossary(CFG.parent / "glossary.csv")
+    assert any(r["ro"] == "Paște" for r in g.relevant("Today we celebrate Easter together", "en"))
+    assert any(r["ro"] == "Paște" for r in g.relevant("They kept the Passover", "en"))
+    assert any(r["en"] == "the Holy Spirit" for r in g.relevant("filled with Holy Spirit", "en"))
+    n, ok = g.adherence("Astăzi sărbătorim Paștele, Paște fericit", "Today we celebrate Easter", "ro")
+    assert n >= 1 and ok == n
+
+
+def test_llm_context_resets_on_language_switch(monkeypatch):
+    import live.translate as T
+    prompts = []
+    monkeypatch.setitem(sys.modules, "mlx_lm", types.SimpleNamespace(
+        generate=lambda model, tok, prompt, **k: prompts.append(prompt) or "out"))
+    monkeypatch.setitem(sys.modules, "mlx_lm.sample_utils", types.SimpleNamespace(make_sampler=lambda **k: None))
+    tr = T.MLXLLMTranslator.__new__(T.MLXLLMTranslator)
+    tr.model, tr.max_tokens, tr.context, tr.context_clauses = None, 200, [], 2
+    tr.tok = types.SimpleNamespace(apply_chat_template=lambda m, **k: m[-1]["content"], encode=lambda s: s.split())
+    for t in ("Unu doi trei.", "Patru cinci.", "Șase șapte."):
+        tr.translate(t, "ro", "en", use_context=True)
+    assert len(tr.context) == 2 and "Patru cinci." in prompts[-1]       # bounded, same language
+    tr.translate("And now in English.", "en", "ro", use_context=True)
+    assert "Previous sentences" not in prompts[-1]                       # no Romanian context
+    assert tr.context == [("And now in English.", "out", "en")]
+
+
+def test_mode_switch_does_not_wait_for_stream_tail():
+    from live.whistle_en import WhistleSTT
+    w = WhistleSTT.__new__(WhistleSTT)
+    w.lock, w.keywords, w._q, w._thread, w.error = threading.Lock(), None, None, None, None
+    events = []
+
+    def stream(chunks, **k):
+        for c in chunks:
+            yield {"text": "x"}
+        time.sleep(1.0)                  # a slow final pass over the tail
+        yield {"text": "tail"}
+    w.model = types.SimpleNamespace(stream=stream)
+    w.start_stream(events.append)
+    w.feed(np.zeros(160))
+    t = time.time()
+    w.end_stream(wait=0)
+    assert time.time() - t < 0.2         # the audio loop is not held up
+    w.start_stream(events.append)        # switching straight back gets a fresh queue
+    new_q = w._q
+    w._thread.join(3)                    # (waits for the old stream's lock)
+    assert w._q is new_q and {"text": "tail"} in events
+    w.end_stream(wait=2)

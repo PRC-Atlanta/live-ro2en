@@ -80,12 +80,12 @@ class WhistleSTT:
     # --- streaming --------------------------------------------------------------------
     def start_stream(self, on_event) -> None:
         """Run Whistle.stream over chunks fed via feed(); on_event(dict) gets every result."""
-        self._q = queue.Queue()
-        self.error = None
+        q = self._q = queue.Queue()              # this stream's own queue: an ending stream
+        self.error = None                        # and the next one never share or clobber it
 
         def chunks():
             while True:
-                c = self._q.get()
+                c = q.get()
                 if c is None:
                     return
                 yield c
@@ -108,10 +108,12 @@ class WhistleSTT:
             self._q.put(np.ascontiguousarray(chunk, dtype=np.float32))
 
     def end_stream(self, wait: float = 10.0) -> None:
-        if self._q is not None:
-            self._q.put(None)
-            self._thread.join(wait)
-            self._q = None
+        """wait=0: return at once; the stream thread finishes the tail on its own."""
+        q, t, self._q = self._q, self._thread, None
+        if q is not None:
+            q.put(None)
+            if wait:
+                t.join(wait)
 
     @property
     def streaming(self) -> bool:

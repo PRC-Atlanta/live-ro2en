@@ -259,7 +259,7 @@ class Engine:
         want = self.streamer is not None and self.mode == "en-ro" and self.wcfg.get("stream", True) \
             and not getattr(self.streamer, "error", None)      # a failed stream: use the clause path
         if not want:
-            self._stop_whistle_stream()
+            self._stop_whistle_stream(wait=False)        # mode switch: never stall the audio loop
             return False
         if self._wstream is None:
             from whistle_en import ClauseAssembler, words_from_event
@@ -291,11 +291,13 @@ class Engine:
             st["buf"], st["n"] = [], 0
         return True
 
-    def _stop_whistle_stream(self) -> None:
+    def _stop_whistle_stream(self, wait: bool = True) -> None:
+        """End the English stream. Its tail is still recognised and emitted by the stream's own
+        thread; only end of input waits for it (so eof comes after the last clause)."""
         if self._wstream is not None:
             if self._wstream["buf"]:
                 self.streamer.feed(np.concatenate(self._wstream["buf"]))
-            self.streamer.end_stream()                   # yields the final tail -> flush
+            self.streamer.end_stream(**({} if wait else {"wait": 0}))
             self._wstream = None
 
     def run(self, q: queue.Queue, stop: threading.Event | None = None) -> None:

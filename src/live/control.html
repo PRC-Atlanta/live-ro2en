@@ -80,11 +80,12 @@ function render(s) {
   $('status').textContent = s.status;
   $('models').textContent = (s.stt || '') + ' · ' + (s.translator || '').split('/').pop();
   $('screen').textContent = s.screen || '';
-  const c = s.counts || {}, failed = (c.error || 0) + (c.stt_error || 0) + (c.empty_stt || 0) + (c.empty_mt || 0);
+  const c = s.counts || {}, failed = (c.error || 0) + (c.stt_error || 0) + (c.empty_stt || 0) + (c.empty_mt || 0) + (c.mt_echo || 0);
   $('pperr').textContent = [...(s.alerts || []), s.pp_error ? 'ProPresenter: ' + s.pp_error : '',
     ...(s.warnings || []).map(w => 'Warning: ' + w),
     failed ? `Chunks without a caption: ${failed} (error ${(c.error || 0) + (c.stt_error || 0)}, no speech text ${c.empty_stt || 0}, ` +
-             `no translation ${c.empty_mt || 0}) of ${failed + (c.ok || 0)}` : ''].filter(Boolean).join('\n');
+             `no translation ${(c.empty_mt || 0) + (c.mt_echo || 0)}) of ${failed + (c.ok || 0)}` : '',
+    c.mt_truncated ? `Cut-off translations (hit the length limit): ${c.mt_truncated}` : ''].filter(Boolean).join('\n');
   $('partial').textContent = s.partial ? '… ' + s.partial : '';
   document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === s.mode));
   document.querySelectorAll('#profiles button').forEach(b => b.classList.toggle('on', b.dataset.profile === s.profile));

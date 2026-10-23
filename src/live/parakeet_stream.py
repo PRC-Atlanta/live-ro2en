@@ -64,15 +64,16 @@ class ParakeetStreamSTT:
             return
         self._ready.set()
         while True:
-            cmd, on_event = self._cmd.get()          # ("start", callback)
+            cmd, payload = self._cmd.get()           # ("start", (callback, done event))
             if cmd != "start":                       # audio left over from a failed session
                 continue
+            on_event, done = payload
             try:
                 self._session(model, mx, on_event)
             except Exception as e:                   # noqa: BLE001  report, never die silently
                 self.error = f"{type(e).__name__}: {e}"
                 on_event({"error": self.error})
-            self._done.set()
+            done.set()                               # this session's event, not a later one's
 
     def _session(self, model, mx, on_event) -> None:
         committed, prev, received = 0, [], 0.0
@@ -105,9 +106,9 @@ class ParakeetStreamSTT:
         on_event({"end": True})
 
     def start_stream(self, on_event) -> None:
-        self._done.clear()
+        self._done = threading.Event()
         self.error = None
-        self._cmd.put(("start", on_event))
+        self._cmd.put(("start", (on_event, self._done)))
         self.streaming = True
 
     def feed(self, chunk: np.ndarray) -> None:
@@ -115,7 +116,9 @@ class ParakeetStreamSTT:
             self._cmd.put(("audio", np.ascontiguousarray(chunk, dtype=np.float32)))
 
     def end_stream(self, wait: float = 15.0) -> None:
+        """wait=0: return at once; the worker finishes the tail, then takes the next start."""
         if self.streaming:
-            self._cmd.put(("audio", None))
-            self._done.wait(wait)
             self.streaming = False
+            self._cmd.put(("audio", None))
+            if wait:
+                self._done.wait(wait)

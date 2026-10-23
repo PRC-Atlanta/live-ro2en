@@ -45,7 +45,21 @@ from langid import LangTracker                       # noqa: E402
 from propresenter import ProPresenter                # noqa: E402
 from segmenter import split_clauses                  # noqa: E402
 from translate import Glossary, make_translator      # noqa: E402
-from textnorm import apply_spellings                 # noqa: E402
+from textnorm import apply_spellings, fold_diacritics, tokens   # noqa: E402
+
+
+def is_echo(src: str, out: str, min_words: int = 4) -> bool:
+    """The translator returned the source unchanged (same words, diacritics ignored).
+    Short clauses are exempt: a name or 'Amin' may legitimately be the same."""
+    s, o = [fold_diacritics(t) for t in tokens(src)], [fold_diacritics(t) for t in tokens(out)]
+    return len(s) >= min_words and s == o
+
+
+def merge_clauses(a: dict, b: dict) -> dict:
+    """Clause `a` followed by clause `b` as one clause (text fields joined, a's start)."""
+    return {**b, **{k: f"{a.get(k) or ''} {b.get(k) or ''}".strip() for k in ("ro", "multi", "en")},
+            "t_start": a["t_start"], "t_speech": a.get("t_speech", a["t_start"]),
+            "stt_s": a["stt_s"] + b["stt_s"], "audio_s": a["audio_s"] + b["audio_s"]}
 
 
 class Live:
@@ -221,9 +235,7 @@ class Live:
                 self._submit(p)
                 p = None
             if p:
-                ev = {**ev, **{k: f"{p.get(k) or ''} {ev.get(k) or ''}".strip() for k in ("ro", "multi", "en")},
-                      "t_start": p["t_start"], "t_speech": p.get("t_speech", p["t_start"]), "stt_s": p["stt_s"] + ev["stt_s"],
-                      "audio_s": p["audio_s"] + ev["audio_s"]}
+                ev = merge_clauses(p, ev)
             self._pending = None
             text = ev.get("multi") if self.lang.current == "en" else ev["ro"]
             text = text or ev["ro"] or ""
@@ -252,11 +264,35 @@ class Live:
     def _work_loop(self):
         while True:
             ev = self._work.get()
+            n = 1
             try:
+                ev, n = self._catch_up(ev)
                 self._handle(ev)
                 self._broadcast()
             finally:
-                self._work.task_done()
+                for _ in range(n):
+                    self._work.task_done()
+
+    def _catch_up(self, ev: dict) -> tuple[dict, int]:
+        """Behind (this clause already late, more waiting): merge the waiting clauses into
+        one, translated in a single call, so the captions get back to the speaker instead of
+        falling further behind clause by clause. Nothing is dropped."""
+        warn_s = float(self.lc.get("lag_warn_s", 6.0))
+        cap = int(self.lc.get("catchup_max_words", 60))
+        if not warn_s or not cap or time.time() - ev["t_end"] < warn_s / 2:
+            return ev, 1
+        n = 1
+        while max(len((ev.get(k) or "").split()) for k in ("ro", "multi", "en")) < cap:
+            try:
+                nxt = self._work.get_nowait()
+            except queue.Empty:
+                break
+            ev, n = merge_clauses(ev, nxt), n + 1
+        if n > 1:
+            ev = {**ev, "caught_up": n}
+            with self.lock:
+                self.counts["caught_up"] += n
+        return ev, n
 
     def _drain(self):
         """Wait until every submitted clause has been translated, shown and logged."""
@@ -317,16 +353,26 @@ class Live:
         tgt = "en" if lang == "ro" else "ro"
         clauses, tail = split_clauses(src_text)
         parts = clauses + ([tail] if tail else [])        # at a pause everything is committed
+        if ev.get("caught_up"):
+            parts = [src_text]                            # catching up: one call for the backlog
         t0 = time.time()
-        out = []
+        out, truncated = [], False
         for p in parts:
             out.append(self.tr.translate(p, lang, tgt, self.gloss, use_context=True)
                        if hasattr(self.tr, "context") else self.tr.translate(p, lang, tgt, self.gloss))
+            truncated |= bool(getattr(self.tr, "last_truncated", False))
         translation = " ".join(o for o in out if o)
         t_tr = time.time() - t0
         if not translation.strip():                     # nothing new to show: not a success
             self._log_failure(ev, "empty_mt", lang=lang, source=src_text, mt_s=round(t_tr, 3))
             return
+        if is_echo(src_text, translation):              # untranslated source is not a caption
+            self._log_failure(ev, "mt_echo", lang=lang, source=src_text, translation=translation,
+                              mt_s=round(t_tr, 3))
+            return
+        if truncated:                                   # shown (better than nothing), but counted
+            with self.lock:
+                self.counts["mt_truncated"] += 1
         shown = self.caps.add(translation)
         t1 = time.time()
         ok = self.pp.show(shown)
@@ -342,6 +388,7 @@ class Live:
                "first_word_s": round(t_disp - ev.get("t_speech", ev["t_start"]), 3),  # what a bilingual listener notices
                "stt_s": ev["stt_s"], "vad_wait_s": round(ev["t_emit"] - ev["t_end"] - ev["stt_s"], 3),
                "mt_s": round(t_tr, 3), "pp_s": round(t_disp - t1, 4), "pp_ok": ok,
+               "caught_up": ev.get("caught_up", 1), "mt_truncated": truncated,
                "pp_error": self.pp.last_error, "audio_s": ev["audio_s"], "glossary": [n_g, ok_g],
                "time": dt.datetime.now().isoformat(timespec="milliseconds")}
         warn_s = float(self.lc.get("lag_warn_s", 6.0))
