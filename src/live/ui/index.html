@@ -7,12 +7,9 @@
 <link rel="stylesheet" href="styles/tokens.css">
 </head>
 <body>
-<nav class="bar" id="nav">
-  <span class="logo">RO⇄EN</span>
-  <a href="#live">Live</a><a href="#setup">Setup</a><a href="#settings">Settings</a>
-  <a href="#after">After</a><a href="#help">Help</a>
-  <span class="conn" id="conn">connecting…</span>
-</nav>
+<!-- No header here: every screen draws the shared toolbar itself (components/frame.js). This
+     line only shows while the /ws connection is lost, or which mock scenario is running. -->
+<p class="conn" id="conn" role="status" aria-live="polite" hidden></p>
 <main id="screen"></main>
 <script type="module">
   // ?mock=<scenario> drives the UI from mock_state.js instead of the live /ws feed
@@ -26,9 +23,17 @@
   if (mock !== null) {
     const { startMock } = await import("./mock_state.js");
     startMock(store, mock || "live");
-    conn.textContent = `mock: ${mock || "live"}`;
+    conn.textContent = `Practice data: ${mock || "live"}`;
+    conn.dataset.kind = "mock";
+    conn.hidden = false;
   } else {
-    connect(store, ok => { conn.textContent = ok ? "connected" : "reconnecting…"; conn.dataset.ok = ok; });
+    let seen = false;                      // say nothing while the first connection opens
+    connect(store, ok => {
+      seen ||= ok;
+      conn.textContent = ok ? "" : "Lost contact with the app. Trying again…";
+      conn.hidden = ok || !seen;
+    });
+    setTimeout(() => { if (!seen) { conn.textContent = "Connecting to the app…"; conn.hidden = false; } }, 3000);
   }
   startRouter(document.getElementById("screen"), store);
 </script>
