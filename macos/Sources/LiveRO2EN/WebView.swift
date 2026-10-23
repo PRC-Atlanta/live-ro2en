@@ -134,7 +134,9 @@ final class WebViewController: NSObject, WKNavigationDelegate, WKUIDelegate, WKD
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let url = action.request.url {
-            if isOurs(url) { webView.load(action.request) } else { NSWorkspace.shared.open(url) }
+            // same rule as decidePolicyFor: only web and mail links leave the app (no file://, no app schemes)
+            if isOurs(url) { webView.load(action.request) }
+            else if ["http", "https", "mailto"].contains(url.scheme ?? "") { NSWorkspace.shared.open(url) }
         }
         return nil
     }

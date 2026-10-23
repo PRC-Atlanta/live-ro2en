@@ -181,8 +181,7 @@ class OutputMixin:
         if not hasattr(pp, "health") or not pp.health_due(every):
             return
         before = (pp.status(), pp.resends)
-        with self._out_lock:                   # a resend must not overtake a caption
-            pp.health()
+        pp.health()                            # its resend takes pp's own lock: never overtakes a caption
         if (pp.status(), pp.resends) != before:
             self._log_event({"event": "pp_health", **pp.status(), "resends": pp.resends})
             self._broadcast()
@@ -212,6 +211,8 @@ class OutputMixin:
     def pp_test_caption(self, restore_after_s: float = 4.0) -> dict:
         """Show a test caption, then put back what was there."""
         with self._out_lock:
+            if getattr(self.pp, "_want", None) != TEST_CAPTION:
+                self._before_test = getattr(self.pp, "_want", None)   # Hold puts this back
             ok = self.pp.show(TEST_CAPTION)
         if self._test_timer:
             self._test_timer.cancel()
@@ -227,7 +228,11 @@ class OutputMixin:
     def _restore_after_test(self):
         with self._out_lock:
             if getattr(self.pp, "_want", TEST_CAPTION) == TEST_CAPTION:   # nothing newer shown since
-                self._push()
+                before = getattr(self, "_before_test", None)
+                if self.held and not self.paused:    # Hold: the screen goes back to what it held
+                    self.pp.show(before) if before else self.pp.clear()
+                else:
+                    self._push()
         self._broadcast()
 
     def reconnect(self):

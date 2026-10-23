@@ -5,6 +5,7 @@ import { S, clock } from "../i18n/strings.en.js";
 import { isLive } from "./keys.js";
 
 export function phaseOf(s) {
+  if (s.offline) return "offline";                       // no contact with the app: nothing is known
   if (s.phase) return s.phase;
   return s.running ? "captioning" : "ready";            // before S1 lands: only running/status exist
 }
@@ -16,7 +17,7 @@ export function dialFor(s, now = Date.now()) {
   const [big, small] = S.dial[key] || S.dial.ready;
   const fill = t => t.replace("{pct}", Math.round(s.progress?.pct ?? 0)).replace("{t}", clock(s.elapsed_s ?? 0));
   const ring = phase === "error" ? "err" : key === "hidden" ? "hidden" : isLive(s) ? "live"
-             : ["loading", "starting", "stopping", "unloading"].includes(phase) ? "busy"
+             : ["loading", "starting", "stopping", "unloading", "offline"].includes(phase) ? "busy"
              : phase === "needs_setup" ? "setup" : "ready";
   const hint = phase === "needs_setup" ? S.dialHint.setup : isLive(s) ? S.dialHint.live : S.dialHint.idle;
   return { phase, big: fill(big), small, ring, hint, live: isLive(s) };
@@ -36,8 +37,9 @@ export function delayOf(s) {
 
 // pill: [cls '', 'warn', 'err'] + words. Sound uses the meter's verdict key.
 export function pillsFor(s, meterKey) {
+  if (s.offline) return { sound: ["", S.pills.sound.unknown], pp: ["", S.pills.pp.unknown], pace: ["", S.pills.pace.unknown] };
   const out = {};
-  const vk = s.audio && s.audio.ok === false ? "none" : meterKey || "good";
+  const vk = s.audio?.engine === false ? "idle" : s.audio && s.audio.ok === false ? "none" : meterKey || "good";
   const [vword] = S.meter.verdict[vk];
   out.sound = vk === "idle" ? ["", S.pills.sound.unknown] : vk === "good" ? ["", S.pills.sound.ok] : [vk === "none" || vk === "clip" ? "err" : "warn", vword];
 
@@ -56,7 +58,7 @@ export function pillsFor(s, meterKey) {
 // -> null or {code, severity, msg, action:{id,label}}
 export function bannerFor(s) {
   const p = s.problem;
-  if (!p) return null;
+  if (!p || s.offline) return null;
   const str = S.problems[p.code];
   // the strings file decides the words and the action; the backend's action is only used for
   // a code this file does not know yet

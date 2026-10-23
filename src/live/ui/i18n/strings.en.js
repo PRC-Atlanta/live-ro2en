@@ -26,6 +26,7 @@ export const S = {
     stopping: ["…", "Stopping"],
     unloading: ["…", "Freeing memory"],
     error: ["!", "Problem"],
+    offline: ["…", "Connecting to the app"],
   },
   dialLabel: "Captions",
   dialHint: { idle: "Space or click to start", live: "Hold, or press Space twice, to stop", setup: "Click to open Setup" },
@@ -37,6 +38,7 @@ export const S = {
   phaseWord: {
     needs_setup: "Setup needed", loading: "Getting ready", ready: "Ready", stopped: "Ready", starting: "Starting",
     listening: "Listening", captioning: "Captioning", stopping: "Stopping", unloading: "Freeing memory", error: "Problem",
+    offline: "Connecting",
   },
   hiddenWord: "Captions hidden",
 
@@ -67,8 +69,9 @@ export const S = {
 
   pills: {
     sound: { ok: "Sound OK", none: "No sound", unknown: "Sound" },
-    pp: { ok: "ProPresenter connected", down: "ProPresenter not connected", missing: "ProPresenter message not found" },
-    pace: { ok: "Keeping up", slow: "A bit slow", behind: "Falling behind", behindBy: s => `About ${Math.round(s)} s behind` },
+    pp: { ok: "ProPresenter connected", down: "ProPresenter not connected", missing: "ProPresenter message not found",
+          unknown: "ProPresenter" },
+    pace: { unknown: "Pace", ok: "Keeping up", slow: "A bit slow", behind: "Falling behind", behindBy: s => `About ${Math.round(s)} s behind` },
   },
 
   meter: {
@@ -128,6 +131,7 @@ export const S = {
     started: "Captioning", stopped: "Stopped",
     mode: m => `Speaker: ${m}`, quality: q => `Quality: ${q}`,
     nothingToFix: "There is no caption to fix yet.",
+    nothingToRemove: "There is no caption to remove.",
     rehearsal: "Rehearsal started", diagnostics: "Saved a diagnostics file to the Desktop",
   },
 

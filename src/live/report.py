@@ -155,13 +155,26 @@ def to_srt(recs: list[dict], start: float | None = None) -> str:
     return "\n".join(blocks)
 
 
+XML_BAD = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
+
+
+def _xml_ok(text: str) -> str:
+    """Drop the characters XML 1.0 forbids (a stray control character makes Word refuse the file)."""
+    return XML_BAD.sub("", str(text))
+
+
+def _cell(text: str) -> str:
+    """Typed text in index.csv: a leading = + - @ would run as a formula in Excel or Numbers."""
+    return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
+
+
 def to_docx(recs: list[dict], start: float | None = None, title: str = "") -> bytes:
     """A minimal Word document (stdlib only): a heading, then one timestamped source line and
     its caption per phrase."""
     def para(text, bold=False, grey=False):
         rpr = ("<w:b/>" if bold else "") + ('<w:color w:val="555555"/>' if grey else "")
         rpr = f"<w:rPr>{rpr}</w:rPr>" if rpr else ""
-        return f'<w:p><w:r>{rpr}<w:t xml:space="preserve">{escape(text)}</w:t></w:r></w:p>'
+        return f'<w:p><w:r>{rpr}<w:t xml:space="preserve">{escape(_xml_ok(text))}</w:t></w:r></w:p>'
     body = [para(title or "Live RO2EN transcript", bold=True), para("")]
     for off, src, s, t in _pairs(recs, start):
         body += [para(f"[{_clock(off)}] {s}", grey=True), para(t), para("")]
@@ -259,7 +272,7 @@ def update_index(index, log) -> dict:
            "kind": s["kind"], "elapsed_s": s["elapsed_s"], "phrases": s["phrases"], "failed": s["failed"],
            "first_word_ok_pct": s["first_word_ok_pct"], "latency_median": s["latency_median"],
            "pp_errors": s["pp_errors"], "corrections": s["corrections"], "score": r.get("score"),
-           "tags": ";".join(r.get("tags") or []), "note": r.get("note") or ""}
+           "tags": _cell(";".join(r.get("tags") or [])), "note": _cell(r.get("note") or "")}
     row = {k: "" if v is None else v for k, v in row.items()}
     with _index_lock:
         rows = []
@@ -309,7 +322,8 @@ def is_secret_file(path: pathlib.Path) -> bool:
     if any(fnmatch.fnmatch(name, pat) for pat in DENY):
         return True
     try:
-        head = path.read_bytes()[:65536]
+        with open(path, "rb") as f:                         # the head only: logs can be large
+            head = f.read(65536)
     except OSError:
         return True
     return (b"-----BEGIN" in head and b"PRIVATE KEY" in head) or b'"private_key"' in head

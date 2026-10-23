@@ -7,7 +7,7 @@
 //                    profile, done_bytes, total_bytes, pct, rate_bps, eta_s, error, error_code}}
 //   POST /api/setup/download {profile} -> @setup (409 {error: live, msg} while captioning)
 //   POST /api/setup/cancel -> @setup; it really stops, and the next download resumes the partial files
-//   GET  /api/permissions  (S1, planned: 501 until built) {microphone: granted|denied|undetermined}
+//   GET  /api/permissions  (S1) {microphone: granted|denied|undetermined|restricted|unknown}
 //   GET  /api/devices      [{index, name}]
 //   POST /api/pp/test      (S2) @pp_test {ok, detail, messages, message_found, pp: @pp_status}
 //   POST /api/pp/test_caption  @pp_test_caption {ok, detail, pp}
@@ -75,6 +75,7 @@ const DL_ERRORS = {
   not_published: "part of the translator is not available to download yet.",
   network_not_allowed: "this version is not allowed to use the internet.",
   busy: "the last download is still finishing. Wait a minute, then",
+  unavailable: "the model files are not available on the server right now. Ask for help, or",
 };
 
 // Download progress in words.

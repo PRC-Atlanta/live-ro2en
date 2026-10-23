@@ -20,7 +20,7 @@ export function intentFor(e) {
 }
 
 export const LIVE_PHASES = new Set(["listening", "captioning"]);
-export const isLive = s => LIVE_PHASES.has(s.phase) || (!s.phase && s.running);
+export const isLive = s => !s.offline && (LIVE_PHASES.has(s.phase) || (!s.phase && s.running));
 
 // -> [action, body] for api.post, or null when the intent needs no call (or a second press)
 export function callFor(intent, s, extra = {}) {
@@ -48,6 +48,7 @@ export function callFor(intent, s, extra = {}) {
 export function spaceGate(ms = 500) {
   let last = 0;
   return (s, now = Date.now()) => {
+    if (s.offline) return null;
     if (!isLive(s)) return ["ready", "stopped", "error"].includes(s.phase ?? "ready") ? "start" : null;
     if (now - last <= ms) { last = 0; return "stop"; }
     last = now;

@@ -51,7 +51,8 @@ def router(live) -> APIRouter:
 
     @r.post("/api/retract")
     async def retract():
-        await run(live.retract)
+        if not await run(live.retract):
+            return JSONResponse({"error": "nothing_to_change", "detail": "there is no caption to remove"}, 409)
         return live.state()
 
     @r.post("/api/correct")
@@ -59,7 +60,8 @@ def router(live) -> APIRouter:
         text = (await body(request)).get("text")
         if not isinstance(text, str) or not text.strip():
             return _bad("text is required")
-        await run(live.correct, text)
+        if not await run(live.correct, text):
+            return JSONResponse({"error": "nothing_to_change", "detail": "there is no caption to fix"}, 409)
         return live.state()
 
     @r.post("/api/layout")

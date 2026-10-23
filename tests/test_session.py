@@ -54,6 +54,7 @@ def _live(tmp_path, pp_port=None):
     live = Live(cfg, types.SimpleNamespace(file=None))
     live.lc["preflight_min_free_gb"] = 0
     live._models_missing = lambda: []     # phase must not depend on this machine's model cache
+    live._models_missing_for = lambda profile: []
     live.tr =types.SimpleNamespace(translate=lambda t, *a, **k: f"EN: {t}")
     live.pp = types.SimpleNamespace(show=lambda text: True, clear=lambda: True, last_error=None)
     return report.attach(live)
@@ -116,6 +117,22 @@ def test_preflight_missing_message_and_low_disk(tmp_path):
     assert not by["pp_message"]["ok"] and by["pp_message"]["code"] == "pp_message_missing"
     assert '"Sermon Notes"' in by["pp_message"]["detail"]
     assert not by["disk"]["ok"] and by["disk"]["code"] == "disk_full"
+
+
+def test_preflight_wants_the_text_token_and_the_chosen_quality_s_models(tmp_path):
+    port = free_port()
+    srv, _ = serve(port, state=MockState(token="Body"))       # the message exists, without a Text token
+    try:
+        live = _live(tmp_path, port)
+        live._models_missing_for = lambda profile: ["org/best"] if profile == "quality" else []
+        live.profile = "quality"
+        res = preflight.run(live)
+    finally:
+        srv.shutdown()
+    by = {c["id"]: c for c in res["checks"]}
+    assert not res["ok"]
+    assert not by["pp_message"]["ok"] and '"Text"' in by["pp_message"]["detail"] and "Body" in by["pp_message"]["detail"]
+    assert not by["profile_models"]["ok"] and by["profile_models"]["code"] == "models_missing"
 
 
 def test_preflight_reads_s1_health_from_the_state(tmp_path):
@@ -289,6 +306,26 @@ def test_session_routes(tmp_path, sandbox):
     live.running = False
 
 
+def test_export_and_diagnostics_fall_back_when_the_desktop_cannot_be_written(tmp_path, sandbox):
+    pytest.importorskip("fastapi")
+    from live.app import build_app
+    live = _live(tmp_path)
+    app = build_app(live)
+    _fixture(paths.services_dir(live.lc["transcript_log_dir"], live.root) / NAME)
+    sandbox.write_text("not a folder")                      # like macOS refusing the Desktop
+    alt = paths.log_dir(live.root) / "exports"
+    st, res = _call(app, "POST", "/api/export", {"format": "docx"})
+    assert st == 200 and pathlib.Path(res["path"]).parent == alt
+    st, res = _call(app, "POST", "/api/diagnostics", {})
+    assert st == 200 and pathlib.Path(res["path"]).parent == alt
+    for p in alt.iterdir():
+        p.unlink()
+    alt.rmdir()
+    alt.write_text("also not a folder")                     # nowhere to write: a clear refusal, not a 500
+    st, res = _call(app, "POST", "/api/export", {"format": "txt"})
+    assert st == 507 and res["error"] == "write_failed" and res["detail"].endswith(".")
+
+
 def test_rehearsal_plays_the_file_once_then_stops(tmp_path, monkeypatch):
     samples = tmp_path / "data" / "samples"
     samples.mkdir(parents=True)
@@ -317,3 +354,13 @@ def test_rehearsal_plays_the_file_once_then_stops(tmp_path, monkeypatch):
     th.join(5)
     assert stops == [1] and not th.is_alive()
     assert report.summary(report.load(tmp_path / "r.jsonl"))["kind"] == "rehearsal"
+
+
+def test_docx_survives_control_characters_and_csv_notes_cannot_be_formulas(tmp_path):
+    import xml.dom.minidom
+    import io as _io
+    recs = [_rec(1, T0 + 1, 2.0, source="frați\x0bsurori", translation="brothers \x01and sisters\x1f")]
+    with zipfile.ZipFile(_io.BytesIO(report.to_docx(recs, T0, "t"))) as z:
+        xml.dom.minidom.parseString(z.read("word/document.xml"))         # Word would refuse a bad one
+    assert report._cell("=HYPERLINK(\"http://x\")").startswith("'=") and report._cell("@SUM").startswith("'")
+    assert report._cell("fine, thanks") == "fine, thanks"

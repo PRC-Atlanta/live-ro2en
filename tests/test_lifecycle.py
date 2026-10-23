@@ -332,7 +332,7 @@ def test_killed_engine_restarts_and_captions_resume(sandbox):
         assert any("restarted" in w for w in st["warnings"])
         events = [json.loads(l).get("event") for l in open(live.log_path)]
         assert "engine_exit" in events and "engine_restart" in events
-        for _ in range(2):                                                    # the budget: 2 per minute
+        for _ in range(2):                                                    # the budget: 2 per 10 min
             eng = live.engine
             os.kill(eng.pid, signal.SIGKILL)
             assert until(lambda: live.engine is not eng or not live.running, 5)
@@ -340,6 +340,27 @@ def test_killed_engine_restarts_and_captions_resume(sandbox):
         st = live.state()
         assert st["phase"] == "error" and st["problem"]["code"] == "engine_stopped"
         assert "ENGINE STOPPED" in st["status"]
+    finally:
+        live.shutdown()
+
+
+def test_a_crash_while_a_switch_holds_control_restarts_after_it(sandbox):
+    """A crash during a slow translator reload (set_profile holds _control) must not end the
+    service: the restart waits for the switch, then the captions resume."""
+    live = _live(sandbox)
+    try:
+        live.preload(wait=True)
+        live.start()
+        assert until(lambda: live.counts.get("ok", 0) >= 1, 5)
+        first = live.engine
+        with live._control:                                                   # the switch is reloading
+            os.kill(first.pid, signal.SIGKILL)
+            time.sleep(1.0)
+            assert live.running and live._engine_dead is None
+        assert until(lambda: live.engine is not first and live._listening, 5)
+        n = live.counts["ok"]
+        assert until(lambda: live.counts["ok"] > n, 5)
+        assert live.state()["problem"] is None
     finally:
         live.shutdown()
 
@@ -494,6 +515,104 @@ def test_two_services_in_the_same_second_get_their_own_logs(sandbox):
     assert report.log_start(second) is not None and abs(report.log_start(second) - time.time()) < 5
 
 
+def test_changing_the_english_recogniser_while_idle_rewarms(sandbox):
+    live = _live(sandbox)
+    live.settings_path = sandbox / "settings.yaml"
+    try:
+        live.preload(wait=True)
+        assert until(lambda: live.state()["phase"] == "ready", 10)
+        first = live.engine
+        other = "whistle" if live.lc.get("en_recognizer") != "whistle" else "parakeet"
+        assert live.put_settings({"values": {"live.en_recognizer": other}})[0] == 200
+        assert until(lambda: live.engine is not first and live.state()["phase"] == "ready", 10)
+        assert live._engine_spec == live._spec()
+    finally:
+        live.shutdown()
+
+
+def test_engine_dying_during_stop_is_not_reported_warm(sandbox):
+    live = _live(sandbox)
+    try:
+        live.preload(wait=True)
+        live.start()
+        assert until(lambda: live._listening, 5)
+        first, real = live.engine, live._send
+
+        def send(cmd):
+            if cmd.get("cmd") == "listen" and cmd.get("on") is False:
+                os.kill(first.pid, signal.SIGKILL)                   # dies instead of answering
+                return True
+            return real(cmd)
+        live._send = send
+        live.stop()
+        live._send = real
+        assert live.status != "ready" or live.engine is not first
+        assert until(lambda: live.engine is not first and live.state()["phase"] == "ready", 10)   # warmed again
+    finally:
+        live.shutdown()
+
+
+def test_usual_language_from_settings_reaches_the_warm_engine(sandbox):
+    live = _live(sandbox)
+    live.settings_path = sandbox / "settings.yaml"
+    try:
+        live.preload(wait=True)
+        assert until(lambda: live.state()["phase"] == "ready", 10)
+        sent, real = [], live._send
+        live._send = lambda cmd: sent.append(cmd) or real(cmd)
+        new = "ro-en" if live.lang.mode != "ro-en" else "auto"
+        assert live.put_settings({"values": {"live.language_mode": new}})[0] == 200
+        assert {"cmd": "mode", "mode": new} in sent and live.lang.mode == new
+    finally:
+        live.shutdown()
+
+
+def test_a_big_engine_log_is_rotated_when_the_engine_starts(sandbox, monkeypatch):
+    monkeypatch.setattr(lifecycle, "ENGINE_LOG_MAX", 1000)
+    logs = sandbox / "logs"
+    logs.mkdir()
+    (logs / "engine.log").write_bytes(b"x" * 2000)
+    live = _live(sandbox)
+    try:
+        live.preload(wait=True)
+        assert (logs / "engine.old.log").stat().st_size == 2000
+        assert (logs / "engine.log").stat().st_size < 2000
+    finally:
+        live.shutdown()
+
+
+def test_idle_switch_while_the_spare_still_loads_does_not_load_it_twice(sandbox, monkeypatch):
+    import translate
+    live = _live(sandbox)
+    del live.preload_translators                     # the real spares loader this time
+    loads, lock, inflight = [], threading.Lock(), [0, 0]
+
+    def fake_make(spec):
+        with lock:
+            inflight[0] += 1
+            inflight[1] = max(inflight[1], inflight[0])
+        time.sleep(0.5)
+        with lock:
+            inflight[0] -= 1
+        loads.append(spec)
+        return types.SimpleNamespace(translate=lambda t, *a, **k: "Brothers and sisters.")
+    monkeypatch.setattr(translate, "make_translator", fake_make)
+    monkeypatch.setattr(lifecycle, "make_translator", fake_make)
+    other = next(p for p in live.cfg["profiles"] if p != live.profile)
+    for p in live.cfg["profiles"].values():
+        p["keep_both_translators"] = True
+    live.cfg["live"]["keep_both_translators"] = live.lc["keep_both_translators"] = True
+    try:
+        live.preload(wait=True)
+        assert until(lambda: live._spares_thread is not None and live._spares_thread.is_alive(), 5)
+        spec = live._profile_cfg(other)["translator"]
+        live.set_profile(other)                          # while that spare is still loading
+        assert until(lambda: live.tr is not None and live.state()["phase"] == "ready", 10)
+        assert loads.count(spec) == 1 and inflight[1] == 1
+    finally:
+        live.shutdown()
+
+
 def test_captions_behind_comes_from_the_pace(tmp_path):
     live = _live(tmp_path)
     live.engine = types.SimpleNamespace(poll=lambda: None)
@@ -521,6 +640,25 @@ def test_rehearsal_leaves_the_sound_input_warm(sandbox):
         live.start()
         assert until(lambda: live.state()["phase"] in ("listening", "captioning"), 1.0)
         assert time.time() - t0 < 1.0
+    finally:
+        live.shutdown()
+
+
+def test_a_warm_engine_crashing_after_a_rehearsal_still_hits_the_restart_limit(sandbox):
+    import preflight
+    live = _live(sandbox)
+    try:
+        live.preload(wait=True)
+        preflight.rehearse(live, _wav(sandbox / "s.wav", 16000, 1.0), timeout_s=30).join(40)
+        assert until(lambda: live.readiness()["ready"] and live._engine_src is None, 10)
+        for _ in range(4):                                       # the limit is 2 restarts
+            eng = live.engine
+            os.kill(eng.pid, signal.SIGKILL)
+            assert until(lambda: live.engine is not eng or live._engine_dead, 10)
+            if live._engine_dead:
+                break
+            assert until(lambda: live.readiness()["ready"] or live._engine_dead, 10)
+        assert live._engine_dead and live.state()["phase"] == "error"
     finally:
         live.shutdown()
 

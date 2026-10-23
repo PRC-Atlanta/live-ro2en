@@ -221,6 +221,17 @@ def test_hot_switch_translates_while_the_new_translator_loads(tmp_path, monkeypa
     assert [r for r in _log(live) if r.get("event") == "profile"][0]["blocked_s"] < 0.2
 
 
+def test_a_settings_save_during_a_slow_switch_is_kept(tmp_path, monkeypatch):
+    live, loads = _running(tmp_path, monkeypatch, keep=True, load_s=0.6)
+    live.settings_path = tmp_path / "settings.yaml"
+    t = threading.Thread(target=live.set_profile, args=("quality",))
+    t.start(); time.sleep(0.15)
+    code, _ = live.put_settings({"values": {"live.hold_s": 3.5}})     # saved while the switch loads
+    assert code == 200
+    t.join()
+    assert live.profile == "quality" and live.lc["hold_s"] == 3.5 and live.lc["translator"] == "fake:quality"
+
+
 def test_low_memory_switch_reloads_with_the_engine_running(tmp_path, monkeypatch):
     live, loads = _running(tmp_path, monkeypatch, keep=False, load_s=0.3)
     live.set_profile("quality")
@@ -316,3 +327,23 @@ def test_failed_warm_reload_goes_back_to_the_old_profile(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError):
         live.set_profile("quality")
     assert live.profile == "fast" and live.tr.spec == "fake:fast" and live.engine.cmds() == []
+
+
+def test_failed_reload_of_both_translators_ends_the_service_visibly(tmp_path, monkeypatch):
+    live, loads = _running(tmp_path, monkeypatch, keep=False)
+    stopped = threading.Event()
+
+    def make(spec):
+        raise RuntimeError("out of memory")
+    monkeypatch.setattr(P2.translate, "make_translator", make)
+
+    def stop():
+        live.running = False
+        stopped.set()
+    live.stop = stop
+    with pytest.raises(RuntimeError):
+        live.set_profile("quality")
+    assert stopped.wait(2) and live.tr is None
+    st = live.state()
+    assert st["phase"] == "error" and st["problem"]["code"] == "engine_stopped"
+    assert "translator failed to load" in st["status"]

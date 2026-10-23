@@ -5,10 +5,7 @@
 	<!-- the microphone is opened by the engine child; TCC attributes it to this app -->
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
-	<!-- torch / mlx / CTranslate2 in the bundled Python (APP_PLAN §1.1 Distribution) -->
-	<key>com.apple.security.cs.allow-jit</key>
-	<true/>
-	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-	<true/>
+	<!-- No JIT here: the shell runs none (WebKit's JIT is in Apple's own process). The bundled
+	     Python that needs it is signed with packaging/runtime.entitlements. -->
 </dict>
 </plist>

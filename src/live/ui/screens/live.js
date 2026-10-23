@@ -117,8 +117,9 @@ export function render(el, store) {
     const [action, body] = call;
     const res = await send(action, body);
     if (res.ok && res.data && typeof res.data === "object" && "running" in res.data) store.set({ ...store.get(), ...res.data });
-    const msg = messageFor(res) || DONE[action]?.(body);
-    toast(msg, res.ok ? "ok" : res.notBuilt ? "info" : "warn");
+    const msg = messageFor(res, action) || DONE[action]?.(body);
+    const calm = res.notBuilt || res.data?.error === "nothing_to_change";
+    toast(msg, res.ok ? "ok" : calm ? "info" : "warn");
     if (res.ok && msg) say(msg);
     return res;
   }
@@ -176,7 +177,7 @@ export function render(el, store) {
     if (e.detail === 0) return pressStart();             // Enter on the focused dial acts like Space
     if (isLive(s)) { toast(S.holdToStop, "info", 1800); return; }
     if (s.phase === "needs_setup") { location.hash = "#setup"; return; }
-    if (["ready", "stopped", "error"].includes(s.phase ?? "ready")) run("start");
+    if (!s.offline && ["ready", "stopped", "error"].includes(s.phase ?? "ready")) run("start");
   });
 
   const onKey = e => {

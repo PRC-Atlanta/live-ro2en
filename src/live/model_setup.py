@@ -71,9 +71,14 @@ def present(item: dict, cache: pathlib.Path, root: pathlib.Path = paths.REPO) ->
     if item["rev"] == model_lock.PLACEHOLDER:
         return False
     snap = repo_dir(item, cache) / "snapshots" / item["rev"]
-    if not item["files"]:
-        return snap.is_dir() and any(snap.iterdir())
-    return all((snap / f).is_file() for f in item["files"])
+    ok = snap.is_dir() and any(snap.iterdir()) if not item["files"] else all((snap / f).is_file() for f in item["files"])
+    ref = repo_dir(item, cache) / "refs" / "main"
+    if ok and not ref.is_file():           # quit after the last file, before the pin: offline loading needs it
+        try:
+            model_lock.pin_ref(item["repo"], item["rev"], cache, kind="dataset" if item["kind"] == "dataset" else "model")
+        except OSError:
+            return False
+    return ok
 
 
 def missing(profile: str = "fast", root: pathlib.Path = paths.REPO, lock=None) -> list[str]:
@@ -206,6 +211,11 @@ def _open(url: str, headers: dict | None = None, timeout: float = 60):
     return urllib.request.urlopen(req, timeout=timeout)   # follows the CDN redirect, keeps Range
 
 
+def _final(e: urllib.error.HTTPError) -> bool:
+    """4xx other than timeout / rate limit: private, moved or gone. Retrying won't help."""
+    return 400 <= e.code < 500 and e.code not in (408, 429)
+
+
 class Downloader:
     def __init__(self, plan: list[dict], root: pathlib.Path, cache: pathlib.Path, endpoint: str, out=None):
         self.plan, self.root, self.cache = plan, root, pathlib.Path(cache)
@@ -240,6 +250,10 @@ class Downloader:
                 with _open(self._url(it), timeout=30) as r:
                     d = json.load(r)
                 break
+            except urllib.error.HTTPError as e:
+                if _final(e):
+                    raise SetupError("unavailable", f"{it['repo']}: the model server answered HTTP {e.code}") from e
+                err = e
             except (OSError, ValueError) as e:
                 err = e
         else:
@@ -251,6 +265,9 @@ class Downloader:
             lfs = s.get("lfs") or {}
             out[s["rfilename"]] = {"size": int(lfs.get("size", s.get("size") or 0)),
                                    "id": lfs.get("sha256") or s.get("blobId")}
+        bad = [f for f in (it["files"] or out) if f in out and not out[f]["id"]]
+        if bad:                                  # nothing to check the file against: never use it
+            raise SetupError("unavailable", f"{it['repo']}: the server gave no checksum for {', '.join(bad)}")
         return out
 
     def _stream(self, url: str, part: pathlib.Path, size: int):
@@ -289,6 +306,8 @@ class Downloader:
                     if not part.exists() or part.stat().st_size < m["size"]:
                         self._stream(self._url(it, f), part, m["size"])
                 except (OSError, urllib.error.URLError) as e:
+                    if isinstance(e, urllib.error.HTTPError) and _final(e):         # retrying won't help
+                        raise SetupError("unavailable", f"{it['repo']}/{f}: the model server answered HTTP {e.code}") from e
                     if getattr(e, "errno", None) in (errno.ENOSPC, errno.EDQUOT):   # not the network
                         raise SetupError("disk_full", f"the disk filled up during {it['repo']}/{f}: {e}") from e
                     err = e

@@ -15,6 +15,10 @@ export function createLevel(band = BAND) {
   const M = { val: -90, peak: -90, peakT: 0, clipT: -1e9, sigT: -1e9, speechT: -1e9, t0: null,
               last: [], hist: [], bucket: null, key: null, lastT: null };
   M.push = (a, now) => {
+    if (a && a.engine === false) {                       // nothing listens: no level is not "no sound"
+      M.decay(now); M.t0 = null; M.last = []; M.key = "idle";
+      return M.key;
+    }
     if (M.t0 == null) M.t0 = now;
     const rms = dbOr(a?.rms_db), peak = dbOr(a?.peak_db, rms), speech = !!a?.speech;
     M.decay(now);

@@ -55,7 +55,8 @@
     "terms":         {"object": {"lines": {"list": "str"}, "n": "int"}},
     "rated":         {"object": {"ok": "bool", "log": "str", "summary": "@summary"}},
     "exported":      {"object": {"ok": "bool", "format": "str", "path": "str", "log": "str"}},
-    "no_session":    {"object": {"error": {"enum": ["no_session"]}, "detail": "str"}}
+    "no_session":    {"object": {"error": {"enum": ["no_session"]}, "detail": "str"}},
+    "nothing_to_change": {"object": {"error": {"enum": ["nothing_to_change"]}, "detail": "str"}}
   },
 
   "state": {
@@ -80,7 +81,7 @@
     "phase":          {"type": "@phase", "built": true, "owner": "S1"},
     "progress":       {"type": {"object": {"label": "str", "pct": "num"}}, "nullable": true, "built": true, "owner": "S1"},
     "audio":          {"type": {"object": {"device": "str|null", "rms_db": "num|null", "peak_db": "num|null", "speech": "bool",
-                                           "last_voice_s": "num|null", "ok": "bool"}}, "built": true, "owner": "S1"},
+                                           "last_voice_s": "num|null", "ok": "bool", "engine": "bool"}}, "built": true, "owner": "S1"},
     "pp":             {"type": {"object": {"connected": "bool", "since": "num|null", "last_ms": "num|null",
                                            "error_code": {"enum": ["unreachable", "auth", "message_missing", null]}}},
                        "built": true, "owner": "S2"},
@@ -123,8 +124,10 @@
     {"method": "POST", "path": "/api/pause",        "owner": "S2", "built": true, "request": {"on": "bool"}, "response": "@state"},
     {"method": "POST", "path": "/api/blank",        "owner": "S2", "built": true, "response": "@state"},
     {"method": "POST", "path": "/api/hold",         "owner": "S2", "built": true, "request": {"on": "bool"}, "response": "@state"},
-    {"method": "POST", "path": "/api/retract",      "owner": "S2", "built": true, "response": "@state"},
-    {"method": "POST", "path": "/api/correct",      "owner": "S2", "built": true, "request": {"text": "str"}, "response": "@state"},
+    {"method": "POST", "path": "/api/retract",      "owner": "S2", "built": true, "response": "@state",
+     "errors": {"409": ["@nothing_to_change"]}},
+    {"method": "POST", "path": "/api/correct",      "owner": "S2", "built": true, "request": {"text": "str"}, "response": "@state",
+     "errors": {"400": ["@bad_request"], "409": ["@nothing_to_change"]}},
     {"method": "POST", "path": "/api/layout",       "owner": "S2", "built": true, "request": {"lines": "int?", "chars": "int?"}, "response": "@state"},
     {"method": "POST", "path": "/api/pp/test",      "owner": "S2", "built": true, "response": "@pp_test"},
     {"method": "POST", "path": "/api/pp/test_caption", "owner": "S2", "built": true, "response": "@pp_test_caption"},

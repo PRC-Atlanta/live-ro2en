@@ -141,6 +141,9 @@ def test_every_problem_code_and_flag_is_documented():
     app_src = (ROOT / "src" / "live" / "app.py").read_text()
     for flag, f in C["flags"].items():
         assert (f'"{flag}"' in app_src) == f["built"], flag
+    # and the other way: every flag app.py defines is in the contract
+    defined = set(re.findall(r'add_argument\("(--[\w-]+)"', app_src))
+    assert defined <= set(C["flags"]), f"flags missing from contract.json: {defined - set(C['flags'])}"
     for var in C["env"]:
         assert f"`{var}`" in doc, var
 

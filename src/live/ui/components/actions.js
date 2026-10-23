@@ -35,7 +35,7 @@ export async function send(action, body = {}) {
     let data = null;
     try { data = await r.json(); } catch { /* not JSON (e.g. a static file server) */ }
     if (r.status === 501 || data?.error === "not_implemented") return { ok: false, notBuilt: true, data };
-    if (!r.ok) return { ok: false, data };
+    if (!r.ok) return { ok: false, status: r.status, data };
     return { ok: true, data };
   } catch (err) {
     rec.status = "network";
@@ -43,9 +43,13 @@ export async function send(action, body = {}) {
   }
 }
 
-export function messageFor(res) {
+export function messageFor(res, action) {
   if (res.ok) return null;
   if (res.notBuilt) return S.toast.notBuilt;
+  if (res.data?.error === "nothing_to_change") return action === "retract" ? S.toast.nothingToRemove : S.toast.nothingToFix;
+  // a refusal the backend words for the operator (a full sentence), e.g. "Stop captioning before …"
+  const d = res.data?.detail;
+  if ((res.status === 404 || res.status === 409) && typeof d === "string" && /^[A-Z].*\.$/.test(d)) return d;
   if (res.offline) return S.toast.offline;
   return S.toast.failed;
 }

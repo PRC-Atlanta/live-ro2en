@@ -22,7 +22,7 @@ export function baseState() {
     pp_error: null, warnings: [], counts: {}, alerts: [],
     translator: "nllb:nllb-200-distilled-1.3B", stt: "jackrabbit-ctc-lm-b8",
     phase: "ready", progress: null,
-    audio: { device: "Behringer UMC204HD", rms_db: -60, peak_db: -60, speech: false, last_voice_s: null, ok: true },
+    audio: { device: "Behringer UMC204HD", rms_db: -60, peak_db: -60, speech: false, last_voice_s: null, ok: true, engine: true },
     pp: { connected: true, since: Date.now() / 1000 - 600, last_ms: 3, error_code: null },
     pace: { state: "ok", behind_s: null }, backlog: { n: 0, oldest_s: null },
     paused: false, held: false, problem: null, auto_actions: [],
@@ -32,7 +32,8 @@ export function baseState() {
 
 // scenario -> function(tick) returning the state for that tick (4 ticks a second)
 const SCENARIOS = {
-  needs_setup: () => ({ phase: "needs_setup", status: "models missing" }),
+  needs_setup: () => ({ phase: "needs_setup", status: "models missing",
+                        audio: { ...baseState().audio, rms_db: null, peak_db: null, engine: false } }),
   loading: t => ({ phase: "loading", status: "loading translator",
                    progress: { label: "Loading translator", pct: Math.min(100, t * 2) } }),
   ready: () => ({ phase: "ready" }),
@@ -246,7 +247,7 @@ export const mockBackend = {
     else if (dev === MOCK_DEVICES[0].name) { rms = -44 + 4 * Math.sin(t * 3); speech = Math.sin(t / 2) > -0.3; }
     else if (this.now() - this.selT > 3000) { speech = Math.sin(t / 1.6) > -0.4; rms = speech ? -22 + 5 * Math.sin(t * 4) : -54; }
     return { device: dev, rms_db: rms, peak_db: rms == null ? null : rms + 8, speech,
-             last_voice_s: speech ? 0 : 1, ok: rms != null };
+             last_voice_s: speech ? 0 : 1, ok: rms != null, engine: true };
   },
 };
 

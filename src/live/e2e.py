@@ -54,7 +54,7 @@ sf.write(out, np.concatenate(chunks), 16000, subtype="PCM_16")
 """
 
 
-def make_mixed(out: pathlib.Path) -> pathlib.Path:
+def make_mixed(out: pathlib.Path, stt_venv: str = ".venv-nemo") -> pathlib.Path:
     """RO (Ephesians, 60 s) + English TTS (macOS `say`, offline) + RO (Revelation, 60 s)."""
     tmp = out.parent
     tmp.mkdir(parents=True, exist_ok=True)
@@ -64,8 +64,9 @@ def make_mixed(out: pathlib.Path) -> pathlib.Path:
     # decode, cut, downmix and resample in the engine's interpreter (soundfile + soxr), so
     # the rehearsal needs no ffmpeg, like the app
     srcs = [(str(ROOT / p if not pathlib.Path(p).is_absolute() else p), ss, t) for p, ss, t in parts]
-    subprocess.run([str(paths.engine_python(".venv-nemo", ROOT)), "-c", MIX_SCRIPT, str(out), json.dumps(srcs)],
-                   check=True)
+    # the engine's interpreter has soundfile and soxr (in the app: the embedded runtime and its site dirs)
+    subprocess.run([str(paths.engine_python(stt_venv, ROOT)), "-c", MIX_SCRIPT, str(out), json.dumps(srcs)],
+                   check=True, env=paths.engine_env())
     return out
 
 
@@ -88,7 +89,7 @@ def main() -> None:
     a = ap.parse_args()
     cfg = yaml.safe_load(open(ROOT / "config.yaml"))
     if a.mixed:
-        a.audio = str(make_mixed(ROOT / "work" / "e2e" / "mixed.wav"))
+        a.audio = str(make_mixed(ROOT / "work" / "e2e" / "mixed.wav", cfg["live"].get("stt_venv", ".venv-nemo")))
         a.mode = a.mode or "auto"
     if a.profile:
         cfg["live"]["profile"] = a.profile

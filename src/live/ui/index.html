@@ -17,8 +17,8 @@
   import { connect } from "./core/api.js";
   import { startRouter } from "./core/router.js";
 
-  const store = createStore();
   const mock = new URLSearchParams(location.search).get("mock");
+  const store = createStore(mock === null ? { offline: true } : {});   // nothing is known before /ws answers
   const conn = document.getElementById("conn");
   if (mock !== null) {
     const { startMock } = await import("./mock_state.js");
@@ -30,6 +30,7 @@
     let seen = false;                      // say nothing while the first connection opens
     connect(store, ok => {
       seen ||= ok;
+      if (!ok) store.set({ ...store.get(), offline: true });   // the last state is stale now
       conn.textContent = ok ? "" : "Lost contact with the app. Trying again…";
       conn.hidden = ok || !seen;
     });

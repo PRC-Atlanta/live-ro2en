@@ -238,6 +238,8 @@ class PipelineMixin:
                         self.tr = self._load_warm(self.lc)   # back to the old profile, still live
                         raise
                 self.tr = tr
+            if hasattr(self, "_profile_cfg"):    # a Settings save during the load went into cfg
+                new = {**self._profile_cfg(name), "translator": spec}
             if self.tr is not None and hasattr(self.tr, "context_clauses"):
                 self.tr.context_clauses = int(new.get("context_clauses", 2))
             if self.tr is not None and hasattr(self.tr, "reset_context"):

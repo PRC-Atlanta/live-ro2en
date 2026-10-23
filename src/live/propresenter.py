@@ -130,7 +130,7 @@ class ProPresenter:
     def _also_stage(self, method: str, text=None) -> None:
         """Mirror to the stage message. Its result must not hide a failed main caption: the
         main error stays, and a stage failure is reported on its own."""
-        if not self.stage:
+        if not self.stage or self.error_code == "unreachable":   # no second timeout on the caption path
             return
         main_err, main_code = self.last_error, self.error_code
         self._req(method, "/v1/stage/message", text)
@@ -178,12 +178,13 @@ class ProPresenter:
         """Ping, check the message exists, and put the wanted text back if it is not on
         screen: after an outage (it was never confirmed) or after a manual clear in
         ProPresenter (the messages layer is off while we expect a caption)."""
+        self._last_health = time.time()
+        # the checks run outside _lock: a caption being sent never waits for a health timeout
+        if self._req("GET", "/version") != 200:
+            return self.status()
+        if self._req("GET", f"/v1/message/{self._mid()}") != 200 or not resend:
+            return self.status()
         with self._lock:
-            self._last_health = time.time()
-            if self._req("GET", "/version") != 200:
-                return self.status()
-            if self._req("GET", f"/v1/message/{self._mid()}") != 200 or not resend:
-                return self.status()
             if self._want is not None and self._want != self._last:
                 if self._send(self._want):
                     self.resends += 1

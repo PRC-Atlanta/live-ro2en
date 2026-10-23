@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- For runtime/bin/python3.12 when S10 signs it with the hardened runtime (Developer ID).
+     MLX, torch, numba/llvmlite and CTranslate2 generate code at run time; the wheels' dylibs
+     are not signed by our team, so library validation must be off for this binary only. -->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+	<!-- the engine child opens the microphone -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+</dict>
+</plist>

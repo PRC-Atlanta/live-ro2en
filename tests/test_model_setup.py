@@ -41,7 +41,7 @@ class FakeHub(http.server.ThreadingHTTPServer):
 
     def __init__(self):
         super().__init__(("127.0.0.1", 0), Handler)
-        self.log, self.slow, self.corrupt = [], 0.0, False
+        self.log, self.slow, self.corrupt, self.no_ids = [], 0.0, False, False
         self.blobs = {hashlib.sha256(d).hexdigest(): d for files in REPOS.values() for d, lfs in files.values() if lfs}
 
     @property
@@ -77,7 +77,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             sib = []
             for name, (d, lfs) in REPOS[(m[1], m[2])].items():
                 s = {"rfilename": name, "blobId": git_oid(d), "size": len(d)}
-                if lfs:
+                if srv.no_ids:
+                    s.pop("blobId")
+                elif lfs:
                     s["lfs"] = {"sha256": hashlib.sha256(d).hexdigest(), "size": len(d), "pointerSize": 134}
                 sib.append(s)
             return self._send(json.dumps({"id": m[1], "sha": m[2], "siblings": sib}).encode(),
@@ -297,6 +299,30 @@ def test_a_full_disk_is_reported_as_disk_full_not_network(home, monkeypatch, hub
     assert out[-1]["code"] == "disk_full" and time.time() - t0 < 2
 
 
+def test_server_refusals_are_final_and_files_need_a_checksum(home, monkeypatch, hub):
+    monkeypatch.setenv("LIVE_ALLOW_NETWORK", "1")
+    monkeypatch.setattr(model_setup, "RETRIES", (5, 5))          # would take 10 s if it retried
+    home.lock.write_text(f"hf org/gone-model {'4' * 40} size=10 profile=fast files=x.bin\n")
+    out, t0 = [], time.time()
+    assert model_setup.download("fast", home.root, home.lock, out.append) == 1
+    assert out[-1]["code"] == "unavailable" and "404" in out[-1]["msg"] and time.time() - t0 < 2
+    home.lock.write_text(f"hf org/fast-model {REV_FAST} size={len(BIG) + len(SMALL)} profile=fast "
+                         f"files=weights.bin,config.json\n")
+    hub.no_ids = True
+    out = []
+    assert model_setup.download("fast", home.root, home.lock, out.append) == 1
+    assert out[-1]["code"] == "unavailable" and "checksum" in out[-1]["msg"]
+
+
+def test_a_missing_pin_after_a_finished_download_is_repaired(home, monkeypatch, hub):
+    monkeypatch.setenv("LIVE_ALLOW_NETWORK", "1")
+    assert model_setup.download("fast", home.root, home.lock, [].append) == 0
+    ref = home.cache / "models--org--fast-model" / "refs" / "main"
+    ref.unlink()                                                  # quit between the last file and the pin
+    assert model_setup.missing("fast", home.root, home.lock) == []
+    assert ref.read_text() == REV_FAST
+
+
 def test_only_one_download_at_a_time(home, monkeypatch, hub):
     import fcntl
     monkeypatch.setenv("LIVE_ALLOW_NETWORK", "1")
@@ -320,7 +346,7 @@ def test_quit_and_start_end_the_download_and_a_finished_one_warms_up(home, monke
     me = {"origin": "http://127.0.0.1:8765"}
     warmed = []
     live._keep_warm, live.preload = True, lambda *a, **k: warmed.append(1)
-    live._start_engine = live._go_live = lambda *a, **k: None
+    live._start_engine = live._go_live = lambda *a, **k: live._new_run()   # a real Start resets the warnings
     live.load_translator = lambda: None
 
     hub.slow = 0.03

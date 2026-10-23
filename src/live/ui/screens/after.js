@@ -1,6 +1,6 @@
 // After the sermon (APP_PLAN §1.4 Post-sermon): a summary card, a 1–5 rating with tags and a
 // note (POST /api/rate -> {ok, log, summary}), Export transcript (POST /api/export -> {ok, format,
-// path, log}) and Free memory (POST /api/unload, planned: 501). Rate and export answer 404
+// path, log}) and Free memory (POST /api/unload). Rate and export answer 404
 // {error: no_session, detail} before the first service; the detail is shown as it is.
 import { call, h, useStyles, screenFrame, button, note, clock, NOT_BUILT } from "./setup/kit.js";
 

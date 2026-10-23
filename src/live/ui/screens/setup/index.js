@@ -202,6 +202,8 @@ export function render(el, store) {
         fix.hidden = ctx.mic !== "denied";
         fix.textContent = "The microphone is turned off for Live Translate. Open System Settings → Privacy & Security → " +
                           "Microphone, turn on Live Translate, then press Check again.";
+        if (ctx.mic === "restricted") ctx.mic = "denied";   // blocked by a Mac profile: the same fix applies
+        fix.hidden = ctx.mic !== "denied";
         status.say({ granted: "Microphone allowed.", denied: "Microphone not allowed.",
                      undetermined: "Not asked yet. Press Allow microphone, then choose Allow.",
                      unknown: "This version can't check the permission here; the next step checks for sound." }[ctx.mic],
@@ -260,7 +262,8 @@ export function render(el, store) {
         ctx.heard = !ctx.noMeter && sound.feed(a);
         heard.classList.toggle("on", ctx.heard);
         heard.querySelector("span").textContent = ctx.heard ? "Sound heard"
-          : ctx.noMeter ? "This version can't show the sound level here yet. Check it on the Live screen." : "Listening for sound…";
+          : ctx.noMeter ? "This version can't show the sound level here yet. Check it on the Live screen."
+          : a?.engine === false ? "Getting the sound input ready…" : "Listening for sound…";
         if (ctx.heard !== was[0] || ctx.noMeter !== was[1]) refreshNav();
       };
     },

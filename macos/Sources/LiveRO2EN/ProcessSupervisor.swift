@@ -45,6 +45,8 @@ final class ProcessSupervisor {
     }()
 
     static let launchTimeout: TimeInterval = 120
+    /// Running but not answering /api/state for this long: hung, restart it.
+    static let hangTimeout: TimeInterval = 20
     static let maxRestarts = 3
     static let restartWindow: TimeInterval = 120
 
@@ -63,14 +65,32 @@ final class ProcessSupervisor {
             status = .failed(error.localizedDescription, logTail: "")
             return
         }
-        Self.cleanupStale(pidfile: pidfileURL)
-        launch()
+        status = .launching("Starting…")
+        let pidfile = pidfileURL
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in   // up to 4 s: off the main thread
+            ProcessSupervisor.cleanupStale(pidfile: pidfile)
+            DispatchQueue.main.async { self?.launch() }
+        }
     }
 
     /// Operator pressed "Try again" after a failure.
     func retry() {
         restarts.removeAll()
-        if pid == 0 { start() }
+        if pid == 0 { start(); return }
+        // still there (it ignored SIGTERM): end it; the exit handler reports, then Try again starts
+        gaveUp = gaveUp ?? "The translator stopped answering."
+        killpg(pid, SIGKILL)
+    }
+
+    /// SIGTERM the group, then SIGKILL it if this child is still there after 5 s (a blocked
+    /// event loop never runs uvicorn's SIGTERM handler).
+    private func terminateGroup(_ p: pid_t) {
+        killpg(p, SIGTERM)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self, self.pid == p else { return }
+            ShellLog.write("orchestrator \(p) ignored SIGTERM: SIGKILL")
+            killpg(p, SIGKILL)
+        }
     }
 
     private func launch() {
@@ -185,7 +205,7 @@ final class ProcessSupervisor {
         if Date().timeIntervalSince(launchStarted) > Self.launchTimeout {
             gaveUp = "The translator did not start within \(Int(Self.launchTimeout)) s."
             status = .failed(gaveUp!, logTail: logTail())
-            killpg(pid, SIGTERM)
+            terminateGroup(pid)
             return
         }
         getJSON("/api/state") { [weak self] obj, code in
@@ -207,10 +227,18 @@ final class ProcessSupervisor {
 
     private func startStatePolling(_ gen: Int) {
         pollTimer?.invalidate()
+        var lastGood = Date(), ending = false
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            guard let self, gen == self.generation, self.pid != 0 else { return }
+            guard let self, gen == self.generation, self.pid != 0, !self.stopping, !ending else { return }
             self.getJSON("/api/state") { obj, _ in
-                if let obj, gen == self.generation { self.onState?(obj) }
+                guard gen == self.generation else { return }
+                if let obj { lastGood = Date(); self.onState?(obj); return }
+                guard !ending, Date().timeIntervalSince(lastGood) > Self.hangTimeout, self.pid != 0 else { return }
+                // alive but not answering (a deadlock, a stuck event loop): restart it like a crash
+                ending = true
+                ShellLog.write("orchestrator \(self.pid) not answering for \(Int(Self.hangTimeout)) s: restarting it")
+                self.status = .launching("Restarting after a problem…")
+                self.terminateGroup(self.pid)
             }
         }
     }

@@ -146,9 +146,14 @@ def test_sound_meter_verdict_for_each_simulated_input():
         none: run(() => ({ rms_db: null, peak_db: null, speech: false, ok: true })),
         music: run(i => ({ rms_db: -20 + 3 * Math.sin(i / 2), peak_db: -12, speech: false, ok: true })),
         lost: run(() => ({ rms_db: -20, peak_db: -12, speech: true, ok: false })),
+        no_engine: run(() => ({ rms_db: null, peak_db: null, speech: false, ok: true, engine: false })),
       }));""")
     assert res == {"good": "good", "quiet": "quiet", "loud": "loud", "clip": "clip", "none": "none",
-                   "music": "music", "lost": "none"}
+                   "music": "music", "lost": "none", "no_engine": "idle"}
+    res = _node("""
+      import { pillsFor } from "./components/status.js";
+      console.log(JSON.stringify(pillsFor({ phase: "needs_setup", audio: { rms_db: null, ok: true, engine: false } }, "none").sound));""")
+    assert res == ["", "Sound"]                                   # not a red "No sound" with no engine
 
 
 def test_every_shortcut_posts_the_right_action():
@@ -199,3 +204,51 @@ def test_ui_modules_only_import_files_that_exist():
             assert (p.parent / imp).resolve().exists(), (p.name, imp)
     css = (UI / "components" / "frame.js").read_text()
     assert '"../styles/live.css"' in css and (UI / "styles" / "live.css").exists()
+
+
+def test_no_contact_with_the_app_shows_connecting_not_a_stale_state():
+    res = _node("""
+      import { dialFor, pillsFor, bannerFor } from "./components/status.js";
+      import { spaceGate } from "./components/keys.js";
+      const stale = { phase: "captioning", running: true, pp: { connected: true, error_code: null },
+                      problem: { code: "no_sound", severity: "warn" }, offline: true };
+      const g = spaceGate(500);
+      console.log(JSON.stringify({ first: dialFor({ offline: true }), lost: dialFor(stale), pills: pillsFor(stale, "good"),
+                                   banner: bannerFor(stale), space: [g({ offline: true }), g(stale)] }));""")
+    for d in (res["first"], res["lost"]):
+        assert d["phase"] == "offline" and d["ring"] == "busy" and not d["live"] and d["small"] == "Connecting to the app"
+    assert all(cls == "" for cls, _ in res["pills"].values()) and res["pills"]["pp"][1] == "ProPresenter"
+    assert res["banner"] is None and res["space"] == [None, None]
+
+
+def test_operator_worded_refusals_are_shown_as_they_are():
+    res = _node("""
+      import { messageFor } from "./components/actions.js";
+      console.log(JSON.stringify([
+        messageFor({ ok: false, status: 409, data: { error: "busy", detail: "Stop captioning before starting a rehearsal." } }),
+        messageFor({ ok: false, status: 409, data: { error: "nothing_to_change", detail: "x" } }, "retract"),
+        messageFor({ ok: false, status: 400, data: { error: "invalid", detail: "text is required" } }),
+      ]));""")
+    assert res == ["Stop captioning before starting a rehearsal.", "There is no caption to remove.",
+                   "That didn't work. Try again, or open Help."]
+
+
+def test_quick_hash_changes_render_one_screen_and_clean_up_each():
+    res = _node("""
+      const log = [];
+      const mods = { live: "../screens/live.js", help: "../screens/help.js" };
+      globalThis.location = { hash: "#live" };
+      const listeners = {};
+      globalThis.addEventListener = (t, fn) => { listeners[t] = fn; };
+      const src = (await import("node:fs")).readFileSync(new URL("./core/router.js", import.meta.url), "utf8")
+        .replace(/\\(\\) => import\\("\\.\\.\\/screens\\/([\\w/]+)\\.js"\\)/g,
+                 (_, n) => `() => new Promise(r => setTimeout(() => r({ render: () => { globalThis.__log.push("render ${n}"); return () => globalThis.__log.push("clean ${n}"); } }), ${"${n}" === "live" ? 30 : 5}))`);
+      globalThis.__log = log;
+      const { startRouter } = await import("data:text/javascript," + encodeURIComponent(src));
+      startRouter({ replaceChildren() {} }, {});
+      location.hash = "#help"; listeners.hashchange();      // before live has loaded
+      await new Promise(r => setTimeout(r, 80));
+      location.hash = "#live"; listeners.hashchange();
+      await new Promise(r => setTimeout(r, 80));
+      console.log(JSON.stringify(log));""")
+    assert res == ["render help", "clean help", "render live"]

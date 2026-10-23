@@ -21,8 +21,6 @@ struct LaunchConfig {
     let preArgs: [String]          // interpreter flags before the script
     let environment: [String: String]
 
-    static let defaultRepoFallback = "/Users/bentarcau/Code/Live RO2EN"
-
     /// The marker every orchestrator command line contains; stale-process cleanup checks it.
     static let scriptMarker = "src/live/app.py"
 
@@ -107,8 +105,7 @@ struct LaunchConfig {
             if up.path == dir.path { break }
             dir = up
         }
-        let fallback = URL(fileURLWithPath: defaultRepoFallback)
-        return isRepo(fallback) ? fallback : nil
+        return nil          // a bundle without its runtime must not silently run someone's checkout
     }
 }
 

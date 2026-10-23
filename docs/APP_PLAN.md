@@ -509,6 +509,8 @@ Reported by the reviews, not checked or fixed yet:
     `.github/workflows/release.yml` (macos-14 arm64), appcast generation,
     `docs/clean_install_test.md`.
   - Builds an ad-hoc DMG until the Apple account exists, then a signed and notarized one.
+  - Signs `runtime/bin/python3.12` with `packaging/runtime.entitlements` (JIT, unsigned memory,
+    no library validation, audio input) and the shell with `macos/LiveRO2EN.entitlements`.
   - Depends on S7 and S8.
   - **Test:** `spctl -a -vvv` accepts the app; the DMG installs and launches on a clean user
     account.

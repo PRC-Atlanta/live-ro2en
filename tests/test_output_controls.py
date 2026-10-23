@@ -257,6 +257,61 @@ def test_unreachable_host_and_stage_failure_keep_main_error():
     assert pp.list_messages() is None
 
 
+def test_a_slow_health_ping_does_not_hold_up_a_caption():
+    """ProPresenter answers captions but its /version hangs: the health check times out on its
+    own thread while a caption goes straight through."""
+    import http.server
+    import threading
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def _ok(self):
+            if self.path == "/version":
+                time.sleep(1.0)
+            self.send_response(204)
+            self.end_headers()
+        do_GET = do_POST = do_PUT = do_DELETE = _ok
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        pp = ProPresenter(port=srv.server_address[1], timeout_s=3)
+        th = threading.Thread(target=pp.health)
+        th.start(); time.sleep(0.1)
+        t0 = time.time()
+        assert pp.show("Grace and peace") is True
+        assert time.time() - t0 < 0.5
+        th.join()
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_unreachable_main_caption_skips_the_stage_mirror():
+    pp = ProPresenter(port=_port(), timeout_s=0.3, backoff_s=(0,), stage_message=True)
+    calls = []
+    real = pp._req
+    pp._req = lambda *a, **k: calls.append(a[1]) or real(*a, **k)
+    assert pp.show("x") is False and pp.error_code == "unreachable"
+    assert calls == ["/v1/message/Live%20Translation/trigger"]
+
+
+def test_test_caption_during_hold_puts_the_held_caption_back(tmp_path, mock):
+    live = _live(tmp_path, mock.port)
+    live._show("Peace be with you")
+    live.hold(True)
+    live._show("Collected while held")                                  # not on screen
+    live.pp_test_caption(restore_after_s=60)
+    assert "Test caption" in mock.visible["Live Translation"]
+    live._test_timer.cancel()
+    live._restore_after_test()
+    assert mock.visible["Live Translation"] == "Peace be with you"     # Hold still in force
+    live.hold(False)
+    assert "Collected while held" in mock.visible["Live Translation"]
+
+
 def test_monitor_tick_resends_and_broadcasts(tmp_path, mock):
     live = _live(tmp_path, mock.port)
     live._show("Hallelujah")
@@ -296,11 +351,18 @@ def test_output_api_end_to_end(tmp_path, mock):
     live._restore_after_test()
     assert mock.visible["Live Translation"] == "Peace be with you"
     for path, b in (("/api/pause", {"on": True}), ("/api/pause", {"on": False}), ("/api/hold", {"on": True}),
-                    ("/api/hold", {"on": False}), ("/api/retract", None), ("/api/blank", None),
+                    ("/api/hold", {"on": False}), ("/api/blank", None),
                     ("/api/layout", {"lines": 3}), ("/api/reconnect", None)):
         r = post(path, b)
         assert r.status_code == 200, (path, r.text)
         check_state(r.json())
+    for path, b in (("/api/retract", None), ("/api/correct", {"text": "Nothing to fix"})):   # the box is empty
+        r = post(path, b)
+        assert r.status_code == 409, (path, r.text)
+        check(r.json(), C["types"]["nothing_to_change"], path)
+    live._show("Remove me")
+    r = post("/api/retract")
+    assert r.status_code == 200 and "Remove me" not in r.json()["screen"]
     live._show("Typo here")
     r = post("/api/correct", {"text": "Typo fixed"})
     assert r.status_code == 200 and r.json()["screen"] == "Typo fixed"

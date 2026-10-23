@@ -9,12 +9,14 @@ const ROUTES = {
 };
 
 export function startRouter(el, store) {
-  let cleanup = null;
+  let cleanup = null, seq = 0;
   const show = async () => {
     const name = location.hash.slice(1) in ROUTES ? location.hash.slice(1) : "live";
+    const mine = ++seq;
+    const mod = await ROUTES[name]();
+    if (mine !== seq) return;               // another hash change came in while this one loaded
     if (cleanup) cleanup();                 // the screen's toolbar (components/frame.js) marks where we are
     el.replaceChildren();
-    const mod = await ROUTES[name]();
     cleanup = mod.render(el, store) || null;
   };
   addEventListener("hashchange", show);

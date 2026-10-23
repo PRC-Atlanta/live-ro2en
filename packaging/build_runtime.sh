@@ -141,7 +141,9 @@ nscrub=0
 while IFS= read -r f; do
   lc=$(otool -l "$f" | awk '/cmd LC_(RPATH|ID_DYLIB)$/ {want=$2; next}
                             want && ($1 == "name" || $1 == "path") {print want "\t" $2; want=""}')
-  hits=$(printf '%s\n' "$lc" | awk -F'\t' -v re="$BAD" '$2 ~ re')
+  # build-machine paths, and any absolute search path outside the system (a dylib-hijack spot)
+  hits=$(printf '%s\n' "$lc" | awk -F'\t' -v re="$BAD" '$2 ~ re ||
+           ($1 == "LC_RPATH" && $2 ~ /^\// && $2 !~ /^\/(usr\/lib|System)\//)')
   [ -n "$hits" ] || continue
   while IFS=$'\t' read -r kind p; do
     case "$kind" in

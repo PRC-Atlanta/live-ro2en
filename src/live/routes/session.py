@@ -22,6 +22,19 @@ def router(live) -> APIRouter:
     def the_log(b: dict):
         return report.find_log(services(), b.get("log"), live.log_path)
 
+    async def save(write):
+        """write(folder) -> path. The Desktop first; macOS may refuse it (Files & Folders) or the
+        disk may be full, and then the app's own log folder. None when neither can be written."""
+        for folder in (paths.desktop(), paths.log_dir(live.root) / "exports"):
+            try:
+                return await run(write, folder)
+            except OSError:
+                continue
+        return None
+
+    def unsaved():
+        return _err(507, "write_failed", "The file could not be saved. Free some disk space, then try again.")
+
     @r.post("/api/preflight")
     async def do_preflight():
         res = await run(preflight.run, live)
@@ -50,21 +63,24 @@ def router(live) -> APIRouter:
         log = the_log(b)
         if log is None:
             return _err(404, "no_session", "There is no transcript to export yet.")
-        path = await run(report.export, log, fmt, paths.desktop())
+        path = await save(lambda d: report.export(log, fmt, d))
+        if path is None:
+            return unsaved()
         return {"ok": True, "format": fmt, "path": str(path), "log": log.name}
 
     @r.post("/api/diagnostics")
     async def diagnostics():
-        home = paths.home(live.root)
-        settings = [live.root / "config.yaml", home / "settings.yaml", paths.resource("defaults.yaml", live.root)]
+        settings = [live.root / "config.yaml", paths.settings_file(live.root), paths.resource("defaults.yaml", live.root)]
         try:
             st = live.state()
         except Exception as e:                # noqa: BLE001 - the zip is most needed when things break
             st = {"error": f"state failed: {type(e).__name__}: {e}"}
-        path = await run(lambda: report.diagnostics(paths.desktop(), paths.log_dir(live.root), services(),
-                                                    list(dict.fromkeys(settings)), st,
-                                                    {"profile": live.profile, "translator": live.lc.get("translator"),
-                                                     "stt": live.lc.get("stt_model")}))
+        path = await save(lambda d: report.diagnostics(d, paths.log_dir(live.root), services(),
+                                                       list(dict.fromkeys(settings)), st,
+                                                       {"profile": live.profile, "translator": live.lc.get("translator"),
+                                                        "stt": live.lc.get("stt_model")}))
+        if path is None:
+            return unsaved()
         return {"ok": True, "path": str(path)}
 
     @r.post("/api/rehearsal")

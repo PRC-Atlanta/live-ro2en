@@ -47,6 +47,7 @@ def propresenter_checks(pp_cfg: dict) -> list[dict]:
     """Reach ProPresenter, then find the configured message in it."""
     host, port = pp_cfg.get("host", "127.0.0.1"), int(pp_cfg.get("port", 50001))
     mid, timeout = str(pp_cfg.get("message_id", "Live Translation")), float(pp_cfg.get("timeout_s", 1.5))
+    token = str(pp_cfg.get("token_name", "Text"))
     base = f"http://{host}:{port}"
     code, ver, err = _get(base, "/version", timeout)
     if code != 200:
@@ -60,12 +61,22 @@ def propresenter_checks(pp_cfg: dict) -> list[dict]:
         out.append(_check("pp_message", False, f"Could not list ProPresenter messages ({err or f'HTTP {code}'})",
                           "pp_message_missing"))
         return out
-    names, ids = [], set()
+    names, ids, ours = [], set(), None
     for m in msgs:
         i = (m or {}).get("id") or {}
         names.append(str(i.get("name", "")))
-        ids |= {str(i.get("name")), str(i.get("uuid")), str(i.get("index"))}
-    if mid in ids:
+        keys = {str(i.get("name")), str(i.get("uuid")), str(i.get("index"))}
+        ids |= keys
+        if mid in keys and ours is None:
+            ours = m
+    tokens = (ours or {}).get("tokens")
+    have_tokens = [str((t or {}).get("name", "")) for t in tokens] if isinstance(tokens, list) else None
+    if mid in ids and have_tokens is not None and token not in have_tokens:
+        # the trigger would succeed with nothing to fill in: a green check and a blank screen
+        out.append(_check("pp_message", False, f"The message \"{mid}\" has no text token named \"{token}\" "
+                                               f"(it has: {', '.join(have_tokens) or 'none'}). Edit the message in "
+                                               f"ProPresenter and add a {token} token.", "pp_message_missing"))
+    elif mid in ids:
         out.append(_check("pp_message", True, f"Message \"{mid}\" found"))
     else:
         have = ", ".join(f'"{n}"' for n in names if n) or "none"
@@ -83,6 +94,13 @@ def _existing(p: pathlib.Path) -> pathlib.Path:
 def local_checks(live) -> list[dict]:
     lc, root = live.lc, live.root
     out = []
+    try:                                       # the chosen quality's models (phase only knows Fast's)
+        miss = live._models_missing_for(live.profile)
+    except Exception:                          # noqa: BLE001  unknown: the state check still runs
+        miss = []
+    if miss:
+        out.append(_check("profile_models", False, "The models for this quality setting are not downloaded "
+                          "yet. Open Setup, or switch to Quickest.", "models_missing"))
     services = paths.services_dir(lc["transcript_log_dir"], root)
     free_gb = shutil.disk_usage(_existing(services)).free / 1e9
     need = float(lc.get("preflight_min_free_gb", 2.0))
