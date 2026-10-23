@@ -44,6 +44,7 @@ PROBLEMS = {
     "models_missing": ("error", "setup", "Open Setup"),
     "engine_stopped": ("error", "start", "Start again"),
     "mic_denied": ("error", "help", "Show me how"),
+    "mic_ask": ("error", "help", "Show me how"),
     "device_lost": ("error", "settings", "Choose another input"),
     "no_sound": ("warn", "help", "What to check"),
     "pp_unreachable": ("error", "reconnect", "Try again"),
@@ -885,6 +886,18 @@ class LifecycleMixin:
                 "ok": not alive or (self._audio_kind is None and self.audio_fault is None),   # no known fault
                 "engine": alive}                        # false: nothing listens, so no level is no news
 
+    def _mic_status(self) -> str:
+        """The microphone permission (permissions.microphone), re-asked at most every 2 s."""
+        t, val = getattr(self, "_mic_cache", (-1e9, "unknown"))
+        if time.monotonic() - t > 2:
+            try:
+                import permissions
+                val = permissions.microphone()
+            except Exception:                              # noqa: BLE001  unknown: no claim
+                val = "unknown"
+            self._mic_cache = (time.monotonic(), val)
+        return val
+
     def _problem_code(self, phase: str) -> str | None:
         """The one problem the banner shows, most urgent first (docs/app_contract.md)."""
         if phase == "needs_setup":
@@ -893,6 +906,8 @@ class LifecycleMixin:
             return "engine_stopped"
         if self._engine_alive():
             kind = self._audio_kind
+            if kind in ("mic_denied", "no_frames", "device_lost") and self._mic_status() == "undetermined":
+                return "mic_ask"                 # macOS's question is still open: no audio until it is answered
             if kind == "mic_denied":
                 return "mic_denied"
             if kind in ("no_frames", "device_lost"):

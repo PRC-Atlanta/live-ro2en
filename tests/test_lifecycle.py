@@ -746,10 +746,15 @@ def test_problem_codes_follow_their_signals(tmp_path):
     assert live.state()["phase"] == "needs_setup" and p() == "models_missing"
     live._models_missing = lambda: []
     live.engine = alive
+    live._mic_status = lambda: "granted"
     for kind, code in (("mic_denied", "mic_denied"), ("no_frames", "device_lost"),
                        ("device_lost", "device_lost"), ("digital_silence", "no_sound")):
         live._audio_kind = kind
         assert p() == code, kind
+    live._mic_status = lambda: "undetermined"          # macOS has not asked yet / the question is open
+    for kind in ("no_frames", "device_lost", "mic_denied"):
+        live._audio_kind = kind
+        assert p() == "mic_ask", kind
     live._audio_kind = None
     for err, code in (("unreachable", "pp_unreachable"), ("auth", "pp_unreachable"),
                       ("message_missing", "pp_message_missing")):

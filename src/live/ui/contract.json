@@ -5,7 +5,7 @@
   "types": {
     "phase": {"enum": ["needs_setup", "loading", "ready", "starting", "listening", "captioning", "stopping", "stopped", "unloading", "error"]},
     "line": {"object": {"src": "str", "dst": "str", "lat": "num", "lang": {"enum": ["ro", "en"]}}},
-    "problem_code": {"enum": ["no_sound", "device_lost", "mic_denied", "recognition_behind", "captions_behind",
+    "problem_code": {"enum": ["no_sound", "device_lost", "mic_denied", "mic_ask", "recognition_behind", "captions_behind",
                               "engine_stopped", "english_unavailable", "pp_unreachable", "pp_message_missing",
                               "disk_full", "models_missing"]},
     "not_built": {"object": {"error": {"enum": ["not_implemented"]}, "endpoint": "str", "owner": "str"}},

@@ -10,7 +10,7 @@ const LINES = [
 ];
 
 const PROBLEMS = {
-  no_sound: "warn", device_lost: "error", mic_denied: "error", recognition_behind: "warn",
+  no_sound: "warn", device_lost: "error", mic_denied: "error", mic_ask: "error", recognition_behind: "warn",
   captions_behind: "warn", engine_stopped: "error", english_unavailable: "info",
   pp_unreachable: "error", pp_message_missing: "error", disk_full: "error", models_missing: "error",
 };

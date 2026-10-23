@@ -97,6 +97,8 @@ export const S = {
                    action: { id: "settings", label: "Choose another input" } },
     mic_denied: { msg: "This Mac isn't letting the app hear the sound input. Open System Settings → Privacy & Security → Microphone and turn on Live RO2EN.",
                   action: { id: "help", label: "Show me how" } },
+    mic_ask: { msg: "macOS is asking whether Live RO2EN may use the microphone. Choose Allow in that question (it may be behind this window).",
+               action: { id: "help", label: "Show me how" } },
     recognition_behind: { msg: "The translator is falling behind the speaker. It is catching up, and nothing is lost.",
                           action: { id: "quickest", label: "Switch to Quickest" } },
     captions_behind: { msg: "Captions are running behind the speaker. They are catching up, and nothing is lost.",

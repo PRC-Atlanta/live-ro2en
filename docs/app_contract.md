@@ -80,6 +80,7 @@ listed here.
 | `no_sound` | engine `audio` event, `fault: digital_silence` |
 | `device_lost` | engine `audio` `fault: no_frames`, or `error where: audio input` |
 | `mic_denied` | engine `audio` `fault: mic_denied` (S1) |
+| `mic_ask` | an audio fault while the microphone permission is still `undetermined`: macOS's question is open (S1) |
 | `recognition_behind` | engine `backlog ok: false` |
 | `captions_behind` | `behind_s` over `lag_warn_s` |
 | `engine_stopped` | the engine exited without `eof` |

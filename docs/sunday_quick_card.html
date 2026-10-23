@@ -8,7 +8,7 @@
   :root { --ink: #10202a; --soft: #4a5d66; --rule: #c9d6db; --accent: #0b7a8c; --warn: #a35a00; }
   * { box-sizing: border-box; }
   body { margin: 0; color: var(--ink); background: #fff;
-         font: 10.5pt/1.38 -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif; }
+         font: 10pt/1.33 -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif; }
   .page { max-width: 7.7in; margin: 0 auto; padding: 0 16px; }
   @media print { .page { padding: 0; } }
   header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
@@ -22,7 +22,7 @@
   ol, ul { margin: 0; padding-left: 15pt; }
   li { margin: 0 0 2pt; }
   table { width: 100%; border-collapse: collapse; }
-  td { padding: 2.5pt 0; border-bottom: .5pt solid var(--rule); vertical-align: top; }
+  td { padding: 2pt 0; border-bottom: .5pt solid var(--rule); vertical-align: top; }
   td:first-child { width: 1.3in; white-space: nowrap; padding-right: 6pt; }
   kbd { display: inline-block; min-width: 1.6em; padding: 0 4pt; border: .8pt solid var(--ink);
         border-bottom-width: 1.6pt; border-radius: 3pt; font: 600 9pt/1.5 -apple-system, Helvetica, sans-serif;
@@ -95,6 +95,7 @@
         <tr><td>Can't reach ProPresenter</td><td>Captions still show in the app. In ProPresenter: Settings → Network → Enable Network. Then press <b>Try again</b>.</td></tr>
         <tr><td>Captions running behind</td><td>They catch up by themselves. Press <b>Switch to Quickest</b> if it keeps happening.</td></tr>
         <tr><td>The translator stopped</td><td>Press <b>Start again</b>.</td></tr>
+        <tr><td>macOS is asking about the microphone</td><td>Choose <b>Allow</b> in that question; it may be behind the app's window.</td></tr>
         <tr><td>Microphone not allowed</td><td>System Settings → Privacy &amp; Security → Microphone → turn on <b>Live RO2EN</b>.</td></tr>
         <tr><td>Anything else</td><td>Open <b>Help</b> in the app. <b>Copy diagnostics</b> there saves a file to send to whoever looks after the app.</td></tr>
       </table>
