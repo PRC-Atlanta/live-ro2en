@@ -1,0 +1,95 @@
+# Build the Mac app DMG on a version tag (docs/release.md).
+#
+# Without secrets: an ad-hoc signed DMG, uploaded as a workflow artifact (internal pilot only).
+# With the signing secrets below: Developer ID signed, notarized and stapled.
+#
+# Repository secrets (Settings -> Secrets and variables -> Actions). None are created by this
+# file; add them when the Apple Developer account exists:
+#   MACOS_CERT_P12_BASE64   the "Developer ID Application" certificate + private key, exported
+#                           from Keychain Access as .p12, then `base64 -i cert.p12 | pbcopy`
+#   MACOS_CERT_PASSWORD     the password chosen for that .p12 export
+#   NOTARY_APPLE_ID         the Apple ID used for notarization
+#   NOTARY_TEAM_ID          the 10-character Team ID
+#   NOTARY_APP_PASSWORD     an app-specific password for that Apple ID (appleid.apple.com)
+# Signing runs only when MACOS_CERT_P12_BASE64 is set; notarization only when all five are.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  dmg:
+    runs-on: macos-14            # Apple Silicon (arm64), the oldest macOS the app supports
+    timeout-minutes: 120
+    env:
+      HAS_CERT: ${{ secrets.MACOS_CERT_P12_BASE64 != '' }}
+      HAS_NOTARY: ${{ secrets.MACOS_CERT_P12_BASE64 != '' && secrets.NOTARY_APPLE_ID != '' && secrets.NOTARY_TEAM_ID != '' && secrets.NOTARY_APP_PASSWORD != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Cache downloads (python-build-standalone, bundled models)
+        uses: actions/cache@v4
+        with:
+          path: build/cache
+          key: release-cache-${{ hashFiles('packaging/build_runtime.sh', 'requirements/models.lock.txt') }}
+
+      - name: Import the Developer ID certificate into a temporary keychain
+        if: env.HAS_CERT == 'true'
+        env:
+          P12: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          KC="$RUNNER_TEMP/release.keychain-db"
+          KC_PASSWORD="$(uuidgen)"            # throwaway, this job only
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KC_PASSWORD" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KC_PASSWORD" "$KC"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KC_PASSWORD" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security find-identity -v -p codesigning "$KC" | grep -q "Developer ID Application" ||
+            { echo "the .p12 holds no Developer ID Application identity"; exit 1; }
+
+      - name: Store the notarytool profile
+        if: env.HAS_NOTARY == 'true'
+        env:
+          APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          APP_PASSWORD: ${{ secrets.NOTARY_APP_PASSWORD }}
+        run: |
+          xcrun notarytool store-credentials live-ro2en --apple-id "$APPLE_ID" --team-id "$TEAM_ID" \
+            --password "$APP_PASSWORD" --keychain "$RUNNER_TEMP/release.keychain-db"
+
+      - name: Build, sign and verify (make dist)
+        env:
+          # The rehearsal recording (data/samples/*.wav) is git-ignored, so a CI build ships
+          # none: Settings -> Rehearsal then has no file. Build release DMGs locally with the
+          # sample, or commit/fetch one and remove this line (docs/release.md).
+          BUNDLE_SAMPLES: ""
+        run: make dist
+
+      - name: Notarize and staple (make notarize)
+        if: env.HAS_NOTARY == 'true'
+        env:
+          NOTARY_PROFILE: live-ro2en
+        run: make notarize
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LiveRO2EN-${{ github.ref_name }}${{ env.HAS_NOTARY != 'true' && '-adhoc' || '' }}
+          path: build/dist/*.dmg
+          if-no-files-found: error
+          compression-level: 0     # the DMG is already compressed
+
+      - name: Remove the temporary keychain
+        if: always() && env.HAS_CERT == 'true'
+        run: security delete-keychain "$RUNNER_TEMP/release.keychain-db" || true

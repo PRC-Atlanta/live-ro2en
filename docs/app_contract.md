@@ -148,9 +148,12 @@ Live RO2EN.app/Contents/
   MacOS/Live RO2EN                     Swift shell
   Resources/runtime/bin/python3.12     python-build-standalone
   Resources/site/{common,nemo,mt}/     packages (uv pip install --target)
-  Resources/app/src/…                  this repo's src/, defaults.yaml, glossary.csv
-  Resources/models/                    libneedle.dylib, whistle.cact, silero_vad.onnx (signed)
-  Frameworks/Sparkle.framework
+  Resources/app/src/…                  src/live + the src/*.py it imports, defaults.yaml, glossary.csv,
+                                       keywords_en.txt, terms.txt, requirements/models.lock.txt
+  Resources/app/models/                vad/silero_vad.onnx, whistle/{libneedle.dylib,whistle.cact}
+                                       (signed; under app/ because paths.resource() resolves there)
+  Resources/app/data/samples/          the rehearsal recording
+  Frameworks/Sparkle.framework         not yet (docs/release.md)
 ~/Library/Application Support/Live RO2EN/   LIVE_HOME: settings.yaml, hf/ (HF_HOME)
 ~/Library/Logs/Live RO2EN/                  LIVE_LOG_DIR
 ~/Library/Caches/Live RO2EN/                LIVE_CACHE_DIR
