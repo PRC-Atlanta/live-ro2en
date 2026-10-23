@@ -282,6 +282,7 @@ def _live(tmp_path, file=None):
     live.tr = types.SimpleNamespace(translate=lambda t, *a, **k: "Brothers and sisters, today we read from Romans.")
     live.pp = types.SimpleNamespace(show=lambda text: True, clear=lambda: True, last_error=None)
     live._models_missing = lambda: []
+    live.preload_translators = lambda: None       # no real spare translator in tests
     return live
 
 
@@ -379,6 +380,7 @@ lifecycle.ENGINE_SCRIPT = pathlib.Path({str(FAKE)!r})
 from live.app import Live
 live = Live(yaml.safe_load(open({str(ROOT / 'config.yaml')!r})), types.SimpleNamespace(file=None, settings={str(tmp_path / 's.yaml')!r}))
 live._models_missing = lambda: []
+live.preload_translators = lambda: None
 live.tr = object()
 live.preload(wait=True)
 print(live.engine.pid, flush=True)
@@ -421,6 +423,40 @@ def test_stale_engine_from_a_crashed_launch_is_ended(sandbox, tmp_path):
         assert not (run / f"engine-{os.getpid()}.pid").exists() and not (run / "app.pid").exists()
     finally:
         stale.kill(); other.kill()
+
+
+def test_profile_switch_in_hold_keeps_or_replaces_the_warm_engine(sandbox):
+    live = _live(sandbox)
+    other = next(p for p in live.cfg["profiles"] if p != live.profile)
+    live.cfg["profiles"][other]["translator"] = live.lc["translator"]      # no translator reload here
+    try:
+        live.preload(wait=True)
+        first = live.engine
+        live.set_profile(other)                     # same speech model: cfg sent, same engine
+        time.sleep(0.3)
+        assert live.engine is first and live._engine_alive()
+        back = live.profile
+        live.cfg["profiles"][back := next(p for p in live.cfg["profiles"] if p != live.profile)]["stt_model"] = "other-model"
+        live.set_profile(back)                      # another speech model: a new warm engine
+        assert until(lambda: live.engine is not first and live.state()["phase"] == "ready", 10)
+        assert live._engine_hold and live._engine_spec == live._spec()
+        t0 = time.time()
+        live.start()
+        assert until(lambda: live.state()["phase"] in ("listening", "captioning"), 1.0) and time.time() - t0 < 1.0
+    finally:
+        live.shutdown()
+
+
+def test_captions_behind_comes_from_the_pace(tmp_path):
+    live = _live(tmp_path)
+    live.engine = types.SimpleNamespace(poll=lambda: None)
+    live.running, live._listening = True, True
+    now = time.time()
+    live._work.put({"t_end": now - 20, "ro": "x"})          # a clause waiting 20 s for the translator
+    assert live.state()["pace"]["state"] == "behind"
+    assert live.state()["problem"]["code"] == "captions_behind"
+    live._work.get_nowait()
+    live.engine, live.running = None, False
 
 
 def test_unload_frees_and_preload_brings_it_back(sandbox):

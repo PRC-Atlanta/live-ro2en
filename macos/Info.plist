@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Live RO2EN</string>
+	<key>CFBundleName</key>
+	<string>Live RO2EN</string>
+	<key>CFBundleExecutable</key>
+	<string>Live RO2EN</string>
+	<key>CFBundleIdentifier</key>
+	<string>org.livero2en.LiveRO2EN</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSSupportsAutomaticTermination</key>
+	<false/>
+	<key>NSSupportsSuddenTermination</key>
+	<false/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Live RO2EN listens to the preacher through the microphone or sound desk so it can translate the sermon into captions. Nothing is recorded or sent anywhere.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Live RO2EN sends the captions to ProPresenter on this network.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- the control page is served by the app itself on http://127.0.0.1 -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSHumanReadableCopyright</key>
+	<string>Offline Romanian ⇄ English sermon captions.</string>
+</dict>
+</plist>

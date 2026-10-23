@@ -12,11 +12,7 @@ export function startRouter(el, store) {
   let cleanup = null;
   const show = async () => {
     const name = location.hash.slice(1) in ROUTES ? location.hash.slice(1) : "live";
-    document.querySelectorAll("nav a").forEach(a => {
-      a.toggleAttribute("aria-current", a.getAttribute("href") === `#${name}`);
-      if (a.hasAttribute("aria-current")) a.setAttribute("aria-current", "page");
-    });
-    if (cleanup) cleanup();
+    if (cleanup) cleanup();                 // the screen's toolbar (components/frame.js) marks where we are
     el.replaceChildren();
     const mod = await ROUTES[name]();
     cleanup = mod.render(el, store) || null;

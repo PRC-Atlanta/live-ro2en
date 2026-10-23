@@ -128,18 +128,32 @@ class LifecycleMixin:
         return {**self.cfg["live"], **(self.cfg.get("profiles", {}).get(name) or {})}
 
     def set_profile(self, name: str):
-        """Switch fast <-> quality: restarts the engine and reloads the translator if needed."""
+        """Switch fast <-> quality with no gap (S4): the engine keeps running and gets the
+        profile's pause settings with {"cmd":"cfg"}; the translator is swapped between two
+        clauses (PipelineMixin._swap_profile: kept loaded side by side when RAM allows, else a
+        warm reload). Only a different speech model needs an engine restart."""
         with self._control:
             if name not in self.cfg.get("profiles", {}) or name == self.profile:
                 return
-            was_running = self.running
-            self.stop()
-            new = self._profile_cfg(name)
-            if new["translator"] != self.lc["translator"]:
-                with self._proc_lock:                  # never pulled from under a translation
-                    self.tr = None
-            self.profile, self.lc = name, new
-            if was_running:
+            new, old = self._profile_cfg(name), self.profile
+            engine_up = self.engine is not None and self.engine.poll() is None   # also in hold mode
+            keys = self.RESTART_KEYS + tuple(k for k in {*new, *self.lc} if k.startswith("whistle_"))
+            restart = self.running and engine_up and any(new.get(k) != self.lc.get(k) for k in keys)
+            if restart:
+                self.stop()
+            info = self._swap_profile(name, new)
+            sent = False
+            if engine_up and not restart:
+                cfg = {k: new[k] for k in ENGINE_CFG_KEYS if k in new and k not in self.RESTART_KEYS}
+                try:
+                    self.engine.stdin.write(json.dumps({"cmd": "cfg", "cfg": cfg}) + "\n")
+                    self.engine.stdin.flush()
+                    sent = True
+                except Exception as e:                 # noqa: BLE001 - the engine reader reports a death
+                    self._warn(f"could not send the new pause settings to the engine: {e}")
+            self._log_event({"event": "profile", "from": old, "to": name,
+                             "hot": self.running and not restart, "engine_cfg": sent, **info})
+            if restart:
                 self.start()
             self._broadcast()
 
@@ -192,10 +206,19 @@ class LifecycleMixin:
             while not self._ready_evt.wait(0.2):       # the engine is loading its models
                 if eng is None or eng.poll() is not None or eng is not self.engine or self._shutting_down:
                     break
+            if self._ready_evt.is_set() and self.tr is not None and hasattr(self, "preload_translators"):
+                threading.Thread(target=self._spares, daemon=True, name="spare-translators").start()
         finally:
             if self.phase_hint == "loading":
                 self.phase_hint = None
             self._broadcast()
+
+    def _spares(self):
+        """The other profile's translator too (S4, only when RAM allows): the first switch is instant."""
+        try:
+            self.preload_translators()
+        except Exception as e:                         # noqa: BLE001  a spare is a nicety
+            self._warn(f"could not preload the other translator: {type(e).__name__}: {e}")
 
     def _await_preload(self, timeout: float = 600):
         th = self._preload_thread
@@ -290,7 +313,7 @@ class LifecycleMixin:
         self._audio_kind = self._level = None
         self._engine_hold, self._engine_ready, self._listening = hold, False, False
         self._engine_src, self._engine_device = src, device
-        self._engine_spec = (self.lc["stt_model"], self.lc.get("en_recognizer", "parakeet"))
+        self._engine_spec = self._spec()
         self._engine_cfg_sent = cfg
         self._eng_load = ("Starting speech recognition", 0.0)
         self._ready_evt.clear()
@@ -325,10 +348,31 @@ class LifecycleMixin:
     def _warm_alive(self) -> bool:
         return self._engine_alive() and self._engine_hold and not self._listening
 
+    def _spec(self) -> tuple:
+        """What a running engine cannot change live (S4's RESTART_KEYS and whistle_* options)."""
+        keys = tuple(getattr(self, "RESTART_KEYS", ("stt_model", "stt_venv", "en_recognizer")))
+        return tuple(self.lc.get(k) for k in keys) + tuple(sorted(
+            (k, json.dumps(v, sort_keys=True, default=str)) for k, v in self.lc.items() if k.startswith("whistle_")))
+
+    def _swap_profile(self, name: str, new: dict) -> dict:
+        """S4 swaps the profile (pipeline.py); a warm engine that cannot run the new profile
+        (another speech model) is replaced in the background, so the next Start is instant."""
+        info = super()._swap_profile(name, new)
+        if not self.running and self._warm_alive() and self._engine_spec != self._spec():
+            threading.Thread(target=self._rewarm, daemon=True, name="rewarm").start()
+        return info
+
+    def _rewarm(self):
+        with self._control:
+            if self.running or not self._warm_alive() or self._engine_spec == self._spec():
+                return
+            self._retire_engine()
+        self.preload()
+
     def _warm_usable(self, src) -> bool:
         """The warm engine can take this service: same source and the same models."""
         return (self._warm_alive() and self._engine_ready and self._engine_src == src
-                and self._engine_spec == (self.lc["stt_model"], self.lc.get("en_recognizer", "parakeet")))
+                and self._engine_spec == self._spec())
 
     def stop(self):
         with self._control:
@@ -735,8 +779,10 @@ class LifecycleMixin:
             return "disk_full"
         if self.running and self.stt_behind:
             return "recognition_behind"
-        if self.running and self.behind_s:
-            return "captions_behind"
+        if self.running:
+            pace = self._pipeline_state().get("pace") if hasattr(self, "_pipeline_state") else None
+            if (pace and pace.get("state") != "ok" and pace.get("behind_s")) or self.behind_s:
+                return "captions_behind"            # S4's pace: captions lag the speech (not recognition)
         if self._english_unavailable and self._engine_alive() and self.lang.mode != "ro-en":
             return "english_unavailable"
         return None

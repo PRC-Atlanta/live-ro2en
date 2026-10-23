@@ -1,9 +1,9 @@
 // Setup wizard (APP_PLAN §1.3): this Mac → download → microphone → sound input →
 // ProPresenter → usual language → Live. Shown on first run or when models are missing.
-import { call, h, useStyles, choice, field, button, note, MODES, NOT_BUILT } from "./kit.js";
+import { call, h, useStyles, screenFrame, choice, field, button, note, MODES, NOT_BUILT } from "./kit.js";
 import {
-  STEPS, profileLimits, defaultProfile, downloadText, modelsReady, SoundCheck, sortDevices,
-  ppFixText, ppResult, canNext, settingsOf, SIZES_GB,
+  STEPS, profileLimits, defaultProfile, downloadText, downloadState, modelsReady, SoundCheck, hasMeter,
+  sortDevices, ppFixText, ppResult, canNext, settingsOf, settingsBody, saveNote, ramGb, freeGb, sizeGb,
 } from "./flow.js";
 
 const KEEP = "lt.setup";            // where the wizard is, so a reload comes back to the same step
@@ -38,13 +38,12 @@ export function render(el, store) {
   const back = button("Back", () => go(ctx.step - 1));
   const next = button("Next", () => onNext(), ".primary");
   const announce = h("div.fx-sr", { "aria-live": "polite" });
-  el.append(h("div.fx-screen",
+  const unframe = screenFrame(el, store,
     h("section.fx-panel",
       h("div.fx-head", h("span.fx-label", "Setup"), h("span.fx-sub", "One time, about 15 minutes")),
       steps, title, body,
-      h("div.fx-nav", back, why, next),
-      h("div.fx-foot", h("div.fx-mark", "LIVE", h("span"), "TRANSLATE"), h("span.fx-sub", "RO ⇄ EN · Offline"))),
-    announce));
+      h("div.fx-nav", back, why, next)),
+    announce);
 
   const refreshNav = () => {
     const id = STEPS[ctx.step].id, ok = canNext(id, ctx);
@@ -55,8 +54,7 @@ export function render(el, store) {
   };
   const WHY = {
     check: () => "Pick what to download first.",
-    download: c => (c.info?.download?.state === "running" || c.info?.download?.state === "verifying")
-      ? "Wait for the download to finish." : "Download first.",
+    download: c => (downloadState(c.info?.download) === "running" ? "Wait for the download to finish." : "Download first."),
     mic: () => "Allow the microphone first.",
     sound: () => "Next turns on once sound is heard.",
     pp: () => "Test the connection, or choose Set up later.",
@@ -86,13 +84,13 @@ export function render(el, store) {
     const id = STEPS[ctx.step].id;
     if (!canNext(id, ctx)) return;
     next.disabled = true;
-    if (id === "check") await call("PUT", "settings", { live: { profile: ctx.profile === "quality" ? "quality" : "fast" } });
+    if (id === "check") await call("PUT", "settings", settingsBody({ "live.profile": ctx.profile === "quality" ? "quality" : "fast" }));
     if (id === "lang") return finish();
     go(ctx.step + 1);
   }
 
   async function finish() {
-    await call("PUT", "settings", { live: { language_mode: ctx.mode } });
+    await call("PUT", "settings", settingsBody({ "live.language_mode": ctx.mode }));
     await call("POST", "mode", { mode: ctx.mode });
     await call("POST", "preload", {});
     try { sessionStorage.removeItem(KEEP); } catch { /* private mode */ }
@@ -120,17 +118,18 @@ export function render(el, store) {
         const info = ctx.info, lim = profileLimits(info);
         const fact = (label, val, tone = "") => h(`div.fx-fact${tone ? "." + tone : ""}`, h("dt", label), h("dd", val));
         if (info) {
+          const ram = ramGb(info), free = freeGb(info), have = p => !!info.profiles?.[p]?.ready;
           facts.append(
-            fact("Memory", `${info.ram_gb} GB`, info.ram_gb < 16 ? "warn" : "good"),
-            fact("Free space", `${Math.floor(info.disk_free_gb)} GB`, info.disk_free_gb < SIZES_GB.fast + 2 ? "bad" : "good"),
-            fact("Downloaded", info.models?.fast?.present ? (info.models?.quality?.present ? "Both" : "Quickest") : "Nothing yet",
-                 info.models?.fast?.present ? "good" : ""));
+            fact("Memory", ram == null ? "–" : `${ram} GB`, ram != null && ram < 16 ? "warn" : "good"),
+            fact("Free space", free == null ? "–" : `${Math.floor(free)} GB`,
+                 free != null && !have("fast") && free < sizeGb(info, "fast") + 2 ? "bad" : "good"),
+            fact("Downloaded", have("fast") ? (have("quality") ? "Both" : "Quickest") : "Nothing yet", have("fast") ? "good" : ""));
         } else {
           msg.say(r.notBuilt ? `Checking this Mac is ${NOT_BUILT.toLowerCase()} Pick one to carry on.`
                              : "Couldn't check this Mac. Pick one to carry on.", "warn");
         }
         ctx.profile ??= defaultProfile(info);
-        const sz = p => info?.models?.[p]?.gb ?? SIZES_GB[p];
+        const sz = p => sizeGb(info, p);
         picker.append(choice("What to download", [
           ["fast", "Quickest", `About ${sz("fast")} GB · shortest delay`],
           ["quality", "Quickest + Best quality", `About ${sz("quality")} GB · smoother sentences, switch any time`],
@@ -148,30 +147,39 @@ export function render(el, store) {
       const start = button("Download now", () => act("setup/download", { profile: ctx.profile || "fast" }), ".primary");
       const cancel = button("Pause", () => act("setup/cancel"));
       const resume = button("Resume", () => act("setup/download", { profile: ctx.profile || "fast" }), ".primary");
-      const size = ctx.profile === "quality" ? SIZES_GB.quality : SIZES_GB.fast;
-      body.append(h("p.fx-text", `About ${size} GB. On a church connection this can take 20 minutes or more. ` +
-                                 "If it stops, press Resume: it carries on where it left off and checks every file."),
-                  bar, text, h("div.fx-row", start, resume, cancel));
+      const intro = h("p.fx-text");
+      body.append(intro, bar, text, h("div.fx-row", start, resume, cancel));
+      let refused = null;                              // why the last Download/Pause press was turned down
       const show = () => {
-        const d = ctx.info?.download;
-        const st = ctx.modelsReady ? "done" : d?.state || "idle";
-        const pct = st === "done" ? 100 : d?.pct ?? 0;
+        const d = ctx.info?.download, ds = downloadState(d);
+        // a finished download of the other profile leaves this one still to fetch
+        const st = ctx.modelsReady ? "done" : ds === "done" ? "idle" : ds;
+        const pct = st === "done" ? 100 : st === "idle" ? 0 : d?.pct ?? 0;
+        intro.textContent = `About ${sizeGb(ctx.info, ctx.profile || "fast")} GB. On a church connection this can take 20 minutes or more. ` +
+                            "If it stops, press Resume: it carries on where it left off and checks every file.";
         bar.querySelector("i").style.width = `${pct}%`;
         bar.setAttribute("aria-valuenow", Math.floor(pct));
         bar.classList.toggle("done", st === "done");
         start.hidden = st !== "idle"; resume.hidden = !(st === "paused" || st === "error");
         cancel.hidden = st !== "running";
+        const blocked = profileLimits(ctx.info)[ctx.profile || "fast"];
+        start.disabled = resume.disabled = !!blocked && st !== "done";
         if (ctx.infoNotBuilt && !ctx.modelsReady) text.say(`Downloading is ${NOT_BUILT.toLowerCase()}`, "warn");
         else if (ctx.infoNotBuilt) text.say("The translator is already on this Mac.", "good");
-        else text.say(st === "done" ? (d?.state === "done" ? downloadText(d) : "Already downloaded and checked.") : downloadText(d),
+        else if (refused) text.say(refused, "bad");
+        else if (blocked && st !== "done" && st !== "running") text.say(blocked, "bad");
+        else text.say(st === "done" ? (ds === "done" ? downloadText(d) : "Already downloaded and checked.") : downloadText(d),
                       st === "done" ? "good" : st === "error" ? "bad" : st === "paused" ? "warn" : "");
         if (ctx.infoNotBuilt) { start.hidden = resume.hidden = cancel.hidden = true; }
         refreshNav();
       };
       const act = async (path, b) => {
         const r = await call("POST", path, b);
+        refused = null;
         if (r.ok && r.data?.download) { ctx.info = r.data; ctx.modelsReady = modelsReady(ctx.info, ctx.profile); }
-        else if (r.notBuilt) text.say(`Downloading is ${NOT_BUILT.toLowerCase()}`, "warn");
+        else if (r.notBuilt) ctx.infoNotBuilt = true;
+        else if (r.status === 409) refused = "Stop captions on the Live screen before downloading.";
+        else if (!r.ok) refused = r.offline ? "The translator is not responding. Close and reopen the app." : "That can't be downloaded. Go Back and pick again.";
         show();
       };
       loadInfo().then(show);
@@ -216,9 +224,9 @@ export function render(el, store) {
         sound.reset(name); ctx.heard = false;
         rows.forEach((r, n) => r.setAttribute("aria-checked", String(n === name)));
         if (save) {
-          const r = await call("PUT", "settings", { live: { input_device: name } });
+          const r = await call("PUT", "settings", settingsBody({ "live.input_device": name }));
           if (r.notBuilt) msg.say(`Choosing the input is ${NOT_BUILT.toLowerCase()} The default input is used.`, "warn");
-          else if (!r.ok) msg.say("Couldn't switch to that input. Try again.", "bad");
+          else if (!r.ok) msg.say(`Couldn't switch to that input. ${saveNote(r).text}`, "bad");
           else msg.say("");
         }
         refreshNav();
@@ -245,11 +253,14 @@ export function render(el, store) {
           const on = a && a.device === name;
           paintLevel(row.lvl, on ? a.rms_db : null);
         });
-        const was = ctx.heard;
-        ctx.heard = sound.feed(a);
+        const was = [ctx.heard, ctx.noMeter];
+        // until the backend reports sound levels, the wizard can't listen: say so and let Next through
+        ctx.noMeter = !hasMeter(s);
+        ctx.heard = !ctx.noMeter && sound.feed(a);
         heard.classList.toggle("on", ctx.heard);
-        heard.querySelector("span").textContent = ctx.heard ? "Sound heard" : "Listening for sound…";
-        if (ctx.heard !== was) refreshNav();
+        heard.querySelector("span").textContent = ctx.heard ? "Sound heard"
+          : ctx.noMeter ? "This version can't show the sound level here yet. Check it on the Live screen." : "Listening for sound…";
+        if (ctx.heard !== was[0] || ctx.noMeter !== was[1]) refreshNav();
       };
     },
 
@@ -287,7 +298,12 @@ export function render(el, store) {
         const c = cfg();
         if (!c.host) { status.say("Type the ProPresenter computer's address first.", "warn"); host.focus(); return; }
         test.disabled = true; status.say("Testing…");
-        const saveRes = await call("PUT", "settings", { propresenter: c });
+        const saveRes = await call("PUT", "settings", settingsBody({ "propresenter.host": c.host, "propresenter.port": c.port }));
+        if (!saveRes.ok && !saveRes.notBuilt && !saveRes.offline) {    // e.g. not an address
+          test.disabled = false; ctx.ppOk = false;
+          status.say(`Check the address and port. ${saveNote(saveRes).text}`, "bad");
+          return refreshNav();
+        }
         const res = ppResult(await call("POST", "pp/test", {}));
         test.disabled = false;
         ctx.ppOk = res.ok;
@@ -329,5 +345,5 @@ export function render(el, store) {
 
   const unsub = store.subscribe(s => onState(s));
   go(ctx.step);
-  return () => { unsub(); stopTimers(); };
+  return () => { unsub(); unframe(); stopTimers(); };
 }

@@ -275,7 +275,7 @@ export function render(el, store) {
       bn.lastChild.textContent = b.action.label;
     } else { delete bn.dataset.code; }
 
-    f.setSetupName(S.toolbar.setupName(s.audio?.device, !(s.pp ? !s.pp.connected : s.pp_error)));
+    f.update(s);
   }
 
   unbind.push(store.subscribe(next => {

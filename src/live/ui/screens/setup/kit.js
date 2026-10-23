@@ -2,6 +2,8 @@
 // throw, a tiny element builder, and the plugin-look form controls. No top-level DOM access,
 // so the logic can be imported by the node tests.
 
+import { frame } from "../../components/frame.js";
+
 const MOCK = typeof location !== "undefined" && new URLSearchParams(location.search).has("mock");
 
 // call("GET", "setup") -> {ok, status, data, notBuilt}. With ?mock=..., mock_state.js answers.
@@ -58,7 +60,15 @@ export function useStyles() {
   document.head.append(h("link#s5b-css", { rel: "stylesheet", href }));
 }
 
-// The plugin-look frame: a panel with a title row.
+// Put a screen's sections inside the shared frame (components/frame.js: toolbar, teal panel,
+// footer), like the Live and Help screens. Returns the cleanup for the toolbar's state updates.
+export function screenFrame(el, store, ...kids) {
+  const f = frame(el);
+  f.panel.append(h("div.fx-screen", ...kids));
+  return store.subscribe(s => f.update(s));
+}
+
+// A section with a title row.
 export function panel(title, sub) {
   return h("section.fx-panel", h("div.fx-head", h("h2.fx-label", title), sub ? h("span.fx-sub", sub) : null));
 }

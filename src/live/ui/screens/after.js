@@ -1,6 +1,10 @@
 // After the sermon (APP_PLAN §1.4 Post-sermon): a summary card, a 1–5 rating with tags and a
-// note (POST /api/rate), Export transcript (POST /api/export) and Free memory (POST /api/unload).
-import { call, h, useStyles, button, note, clock, NOT_BUILT } from "./setup/kit.js";
+// note (POST /api/rate -> {ok, log, summary}), Export transcript (POST /api/export -> {ok, format,
+// path, log}) and Free memory (POST /api/unload, planned: 501). Rate and export answer 404
+// {error: no_session, detail} before the first service; the detail is shown as it is.
+import { call, h, useStyles, screenFrame, button, note, clock, NOT_BUILT } from "./setup/kit.js";
+
+const said = (r, fallback) => (r.status === 404 && typeof r.data?.detail === "string" ? r.data.detail : fallback);
 
 export const TAGS = ["Names wrong", "Too slow", "Wrong language", "Missed phrases", "Odd translations"];
 const SKIPPED = ["empty_stt", "empty_mt", "mt_echo", "error", "stt_error", "late"];
@@ -48,7 +52,8 @@ export function render(el, store) {
     });
     send.disabled = false;
     if (r.ok) { rateMsg.say("Thank you. Saved with this service's log.", "good"); send.disabled = true; }
-    else rateMsg.say(r.notBuilt ? `Saving a rating is ${NOT_BUILT.toLowerCase()}` : "Couldn't save. Try again.", r.notBuilt ? "warn" : "bad");
+    else rateMsg.say(r.notBuilt ? `Saving a rating is ${NOT_BUILT.toLowerCase()}` : said(r, "Couldn't save. Try again."),
+                     r.notBuilt || r.status === 404 ? "warn" : "bad");
   }, ".primary");
 
   // export
@@ -57,7 +62,8 @@ export function render(el, store) {
     exMsg.say("Saving…");
     const r = await call("POST", "export", { format: fmt });
     if (r.ok) exMsg.say(r.data?.path ? `Saved: ${r.data.path}` : "Saved to the Desktop.", "good");
-    else exMsg.say(r.notBuilt ? `Export is ${NOT_BUILT.toLowerCase()}` : "Couldn't save the transcript.", r.notBuilt ? "warn" : "bad");
+    else exMsg.say(r.notBuilt ? `Export is ${NOT_BUILT.toLowerCase()}` : said(r, "Couldn't save the transcript."),
+                   r.notBuilt || r.status === 404 ? "warn" : "bad");
   });
 
   // free memory
@@ -69,7 +75,7 @@ export function render(el, store) {
     else { free.disabled = false; memMsg.say(r.notBuilt ? `Freeing memory is ${NOT_BUILT.toLowerCase()} Quitting the app does the same.` : "Couldn't free memory. Quitting the app does the same.", r.notBuilt ? "warn" : "bad"); }
   });
 
-  el.append(h("div.fx-screen",
+  const unframe = screenFrame(el, store,
     h("section.fx-panel",
       h("div.fx-head", h("span.fx-label", "After the sermon"), h("span.fx-sub", "Summary of this service")),
       facts),
@@ -88,8 +94,7 @@ export function render(el, store) {
       h("div.fx-head", h("span.fx-label", "Finish"), h("span.fx-sub", "When the service is over")),
       h("p.fx-text", "Free memory unloads the translator so this Mac runs other programs smoothly. " +
                      "Quitting the app does the same."),
-      h("div.fx-row", free, button("Back to Live", () => { location.hash = "#live"; })), memMsg,
-      h("div.fx-foot", h("div.fx-mark", "LIVE", h("span"), "TRANSLATE"), h("span.fx-sub", "RO ⇄ EN · Offline")))));
+      h("div.fx-row", free, button("Back to Live", () => { location.hash = "#live"; })), memMsg));
 
   let last = "";
   const unsub = store.subscribe(s => {
@@ -107,5 +112,5 @@ export function render(el, store) {
     if (live && !free.disabled) memMsg.say("Captions are still running. Stop them on the Live screen first.", "warn");
     free.disabled = live || s.phase === "stopped" && memMsg.textContent.startsWith("Memory freed");
   });
-  return () => unsub();
+  return () => { unsub(); unframe(); };
 }
