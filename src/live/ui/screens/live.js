@@ -10,6 +10,7 @@ import { dialFor, stateLine, delayOf, pillsFor, bannerFor, heardLines } from "..
 import { send, messageFor, routeFor } from "../components/actions.js";
 import { toast } from "../components/toast.js";
 import { ask } from "../components/dialog.js";
+import { get } from "../core/api.js";
 
 const VIEWS = ["heard", "screen", "both"];
 const HOLD_MS = 600;
@@ -131,10 +132,14 @@ export function render(el, store) {
       return;
     }
     if (intent === "terms") {
-      const r = await ask({ title: S.terms.title, hint: S.terms.hint, multiline: true, check: S.terms.save,
-                            ok: S.terms.ok, cancel: S.terms.cancel });
-      const lines = r ? r.text.split("\n").map(x => x.trim()).filter(Boolean) : [];
-      if (lines.length) post(callFor("terms", s, { lines, save: r.checked }));
+      // the list replaces today's list, so start from what is already there
+      let now = [];
+      try { now = (await get("terms")).lines || []; } catch { /* no answer: start empty */ }
+      const r = await ask({ title: S.terms.title, hint: S.terms.hint, value: now.join("\n"), multiline: true,
+                            check: S.terms.save, ok: S.terms.ok, cancel: S.terms.cancel });
+      if (!r) return;                                    // cancelled: today's list stays as it was
+      const lines = r.text.split("\n").map(x => x.trim()).filter(Boolean);
+      if (lines.length || now.length) post(callFor("terms", s, { lines, save: r.checked }));
       return;
     }
     const call = callFor(intent, s);

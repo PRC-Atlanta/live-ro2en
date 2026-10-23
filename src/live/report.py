@@ -60,9 +60,9 @@ def _epoch(r: dict) -> float | None:
 
 
 def log_start(path) -> float | None:
-    """The run's start, from the log's name (`%Y-%m-%d_%H%M%S.jsonl`, set by the app at start)."""
+    """The run's start, from the log's name (`%Y-%m-%d_%H%M%S[_n].jsonl`, set by the app at start)."""
     try:
-        return dt.datetime.strptime(pathlib.Path(path).stem, "%Y-%m-%d_%H%M%S").timestamp()
+        return dt.datetime.strptime(pathlib.Path(path).stem[:17], "%Y-%m-%d_%H%M%S").timestamp()
     except ValueError:
         return None
 

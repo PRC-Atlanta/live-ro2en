@@ -94,6 +94,7 @@ class LifecycleMixin:
         self._shutting_down = False
         self._keep_warm = False                  # preload() asked for a warm engine between services
         self._preload_thread: threading.Thread | None = None
+        self._tr_thread: threading.Thread | None = None   # reloads the translator after an idle switch
         self._engine_hold = False                # the current engine was started with --hold
         self._engine_ready = False               # ... and has sent `ready`
         self._engine_src: str | None = None      # the file it plays (None: the sound input)
@@ -225,7 +226,17 @@ class LifecycleMixin:
         if th is not None and th.is_alive() and th is not threading.current_thread():
             th.join(timeout)
 
+    def _pause_download(self) -> bool:
+        """End a model download (its partial files stay; Setup resumes it)."""
+        ms = getattr(self, "model_setup", None)
+        if ms is None or not ms.progress().get("running"):
+            return False
+        ms.cancel()
+        return True
+
     def start(self, device=None):
+        if self._pause_download():                     # the service gets the network and the CPU
+            self._warn("the model download was paused for the service; resume it in Setup")
         self._await_preload()                          # Start pressed while still loading: wait
         with self._control:
             if self.running:
@@ -275,7 +286,12 @@ class LifecycleMixin:
         """A new service: its own log file, fresh counters and warnings."""
         logdir = paths.services_dir(self.lc["transcript_log_dir"], self.root)
         logdir.mkdir(parents=True, exist_ok=True)
-        self.log_path = logdir / f"{dt.datetime.now():%Y-%m-%d_%H%M%S}.jsonl"
+        stem = f"{dt.datetime.now():%Y-%m-%d_%H%M%S}"
+        path, n = logdir / f"{stem}.jsonl", 1
+        while path.exists() or path == self.log_path:   # a second service in the same second
+            n += 1
+            path = logdir / f"{stem}_{n}.jsonl"           # sorts after the first one
+        self.log_path = path
         self.warnings, self.counts = list(self._engine_warnings), collections.Counter()
         self.behind_s = self.stt_behind = None
         self.eof.clear()
@@ -360,7 +376,22 @@ class LifecycleMixin:
         info = super()._swap_profile(name, new)
         if not self.running and self._warm_alive() and self._engine_spec != self._spec():
             threading.Thread(target=self._rewarm, daemon=True, name="rewarm").start()
+        elif not self.running and self.tr is None and self._keep_warm and not self._shutting_down:
+            # switched while idle with no spare: load the new translator now, not at Start
+            self._tr_thread = threading.Thread(target=self._reload_translator, daemon=True, name="translator")
+            self._tr_thread.start()
         return info
+
+    def _reload_translator(self):
+        self._broadcast()                              # phase loading
+        try:
+            self.load_translator()
+            self.status = "ready"
+        except Exception as e:                         # noqa: BLE001  Start retries and shows it
+            self._start_error = f"translator failed to load: {type(e).__name__}: {e}"
+            self.status = self._start_error
+        finally:
+            self._broadcast()
 
     def _rewarm(self):
         with self._control:
@@ -456,6 +487,7 @@ class LifecycleMixin:
         self._shutting_down = True
         self._keep_warm = False
         try:
+            self._pause_download()
             if self.running:
                 self.stop()
             self._retire_engine()
@@ -628,6 +660,7 @@ class LifecycleMixin:
             return
         self._engine_ready = self._listening = False
         self._listen_ack.set()               # nobody waits for an answer from a dead engine
+        ended = self.eof.is_set() and not self._stopping and not self._shutting_down
         if not self.eof.is_set() and not self._stopping and not self._shutting_down:
             self._elog({"event": "engine_exit", "rc": rc})
             if self._restart_after_crash(rc):
@@ -637,6 +670,9 @@ class LifecycleMixin:
         self.running = False
         self.phase_hint = None
         self._broadcast()
+        if ended and self._keep_warm and not getattr(self.args, "file", None):
+            # a rehearsal file played out: warm the sound input again for the next Start
+            threading.Thread(target=self.preload, daemon=True, name="re-preload").start()
 
     def _restart_after_crash(self, rc) -> bool:
         """The engine died on its own: start it again with the same input, file and mode (the
@@ -723,7 +759,8 @@ class LifecycleMixin:
             if not self._listening or self.phase_hint == "starting":
                 return "starting"
             return "captioning" if self.counts.get("ok") and not getattr(self, "paused", False) else "listening"
-        if self.phase_hint == "loading" or (self._preload_thread is not None and self._preload_thread.is_alive()):
+        if (self.phase_hint == "loading" or any(t is not None and t.is_alive()
+                                                 for t in (self._preload_thread, self._tr_thread))):
             return "loading"
         if self._engine_dead or self._start_error:
             return "error"

@@ -212,6 +212,7 @@ export function render(el, store) {
     },
 
     sound() {
+      call("POST", "preload", {});              // the level comes from a warm engine: make sure one runs
       const list = h("div.fx-devs", { role: "radiogroup", "aria-label": "Sound input" });
       const heard = h("span.fx-heard", h("i"), h("span.fx-label", "Listening for sound…"));
       const msg = note();

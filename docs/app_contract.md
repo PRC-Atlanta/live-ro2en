@@ -128,6 +128,8 @@ Audio faults always go on `audio`. There is no separate `audio_error` event.
 | `LIVE_ENGINE_PYTHONPATH` | `PYTHONPATH` for the engine (embedded runtime site dirs) | inherited |
 | `LIVE_ALLOW_NETWORK` | `1` only for setup and download children | unset = offline |
 | `HF_HOME` | model cache | the user's HF cache; the app sets `<LIVE_HOME>/hf` |
+| `PYTHONDONTWRITEBYTECODE`, `PYTHONNOUSERSITE` | the app sets both to `1`: nothing is written into the signed bundle | unset |
+| `NUMBA_CACHE_DIR` | numba's cache (librosa); the app sets `~/Library/Caches/<app>/numba` | numba's default |
 
 Resolve every path through `live/paths.py`, never `ROOT / ...`. In dev, with `LIVE_HOME` unset,
 paths resolve to exactly where they were before.

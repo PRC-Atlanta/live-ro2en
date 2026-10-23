@@ -4,7 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "LiveRO2EN",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
             name: "LiveRO2EN",

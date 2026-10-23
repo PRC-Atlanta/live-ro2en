@@ -122,7 +122,7 @@ export const S = {
     hidden: "Captions hidden", shown: "Captions showing again",
     blanked: "Big screen blanked until the next phrase",
     removed: "Last caption removed", fixed: "Last caption replaced",
-    termsSaved: n => `${n} name${n === 1 ? "" : "s"} added for today`,
+    termsSaved: n => (n ? `${n} name${n === 1 ? "" : "s"} for today` : "Today's names cleared"),
     reconnecting: "Reconnecting to ProPresenter…",
     pressAgain: "Press Space again to stop",
     started: "Captioning", stopped: "Stopped",

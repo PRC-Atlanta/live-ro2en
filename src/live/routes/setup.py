@@ -11,7 +11,12 @@ from routes import body, run
 
 def router(live) -> APIRouter:
     r = APIRouter()
-    setup = model_setup.Setup(root=lambda: live.root)
+    def ready():                          # the models are in: warm up now, so the wizard's sound
+        live._models_cache = (-1e9, [])   # step gets a level and Start is instant
+        if getattr(live, "_keep_warm", False):
+            live.preload()
+
+    setup = model_setup.Setup(root=lambda: live.root, on_done=ready)
     live.model_setup = setup              # for the needs_setup phase / models_missing problem (S1, S11)
 
     @r.get("/api/devices")

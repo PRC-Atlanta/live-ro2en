@@ -463,14 +463,45 @@ Left for S11, found during the merges:
   (`listen`, `input`, `device`) as planned.
 - Switch `/` to `/ui/`, with `Cache-Control: no-cache` on the UI files.
 - The Live screen's `?mock` actions use contract stubs, not `mockApi`.
-- One full-suite run under `LIVE_HOME` had a single failure that didn't recur in 3 reruns:
-  look for a timing-sensitive test.
+- ~~One full-suite run under `LIVE_HOME` had a single failure~~: two services started in the same
+  second shared one log. Fixed with the review fixes below.
 - Not verified yet:
   - the microphone in real use (only file runs);
   - the Swift app's window and dialogs by eye;
   - `/code-review high` on each stream.
 - Waiting on you: the church Hugging Face repo for the NLLB build. Until it exists, neither
   profile can be downloaded in the app.
+
+Independent reviews of Phase 0 and 1 (2026-10-23). Phase 0's split preserved behaviour. Fixed,
+with tests (265 pass):
+- The runtime build targets macOS 14 (`MACOSX_DEPLOYMENT_TARGET`, uv `--python-platform`), and
+  the Mach-O audit fails any file whose `minos` is newer. **Not yet run:** the build needs the
+  network; if MLX has no macOS 14 wheel at the pinned version, either change the pin or raise
+  the minimum in Info.plist, Package.swift and here.
+- A rehearsal re-warms the sound input; an idle Fast/Quality switch with no spare loads the new
+  translator at once (phase `loading`).
+- Wizard: the sound step asks for a warm engine, and a finished download warms one. "Today's
+  names & words" opens with today's list and can clear it.
+- The model download ends on quit and on Start (it resumes in Setup), holds a lock so two never
+  write one partial file, stops when the app's pipe closes, and reports a full disk as `disk_full`.
+- The Swift shell sets `PYTHONDONTWRITEBYTECODE`, `PYTHONNOUSERSITE` and `NUMBA_CACHE_DIR`.
+- POST bodies must be JSON objects (415/400); a failing state provider is logged once and skipped.
+
+Reported by the reviews, not checked or fixed yet:
+- Live: an engine crash during a profile reload or Start ends the service (non-blocking lock);
+  slow crash loops restart forever; a Settings save during a hot switch is lost; ProPresenter
+  timeouts run on the caption worker; changing `live.en_recognizer` while idle does not rewarm.
+- UI: "No sound" while no engine runs; stale Live state while the websocket is down; Settings →
+  usual language is not sent to a warm engine; success toasts when nothing changed; a
+  `restricted` microphone leaves the wizard's mic step blank.
+- Shell: a hung (not crashed) orchestrator is never restarted; a startup timeout sends SIGTERM
+  only, and Try Again then does nothing; the JIT entitlements belong on `python3.12` (S10);
+  the audit does not fail x86_64-only files.
+- Support: export and diagnostics answer 500 on a write error; preflight does not check the
+  ProPresenter text token or the Best models; diagnostics reads whole logs into memory and
+  `engine.log` is never rotated; the dev diagnostics zip takes the wrong `settings.yaml`; `.docx`
+  export keeps XML-invalid characters; `index.csv` notes can start formulas; the rehearsal mix
+  script hard-codes `.venv-nemo`.
 
 ### Phase 2: assembly
 - **S10: Release pipeline.**

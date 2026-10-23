@@ -36,6 +36,11 @@ PBS_URL="https://github.com/astral-sh/python-build-standalone/releases/download/
 # pure Python (checked below). Everything else is wheels only.
 SDIST_OK="antlr4-python3-runtime"
 
+# Oldest macOS the app supports (Info.plist LSMinimumSystemVersion, Package.swift). uv picks
+# wheels for this target, not for the build Mac's own version, and the audit fails any Mach-O
+# that needs newer.
+export MACOS_MIN="${MACOS_MIN:-14.0}" MACOSX_DEPLOYMENT_TARGET="${MACOS_MIN:-14.0}"
+
 command -v uv >/dev/null || { echo "uv is required (brew install uv)"; exit 1; }
 [ "$(uname -m)" = arm64 ] || { echo "build on Apple Silicon"; exit 1; }
 say() { printf '\n== %s\n' "$*"; }
@@ -88,6 +93,7 @@ for name in common nemo mt; do
     case " $(echo $SDIST_OK) " in *" $p "*) ;; *) args+=(--only-binary "$p");; esac
   done
   uv pip install -q --python "$PY" --target "$OUT/site/$name" --no-deps --link-mode copy \
+     --python-platform aarch64-apple-darwin \
      "${args[@]}" -r "$OUT/reqs/$name.txt"
 done
 say "check the sdist-built packages are pure Python"
@@ -186,6 +192,7 @@ export PYTHONPATH="$R/site/common:$R/site/mt"             # orchestrator (app.py
 export LIVE_ENGINE_PYTHON="$R/runtime/bin/python3.12"
 export LIVE_ENGINE_PYTHONPATH="$R/site/common:$R/site/nemo"
 export PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1       # the engine is spawned without -s -B
+export NUMBA_CACHE_DIR="${TMPDIR:-/tmp}/live-numba"       # the shell: ~/Library/Caches/.../numba
 unset PYTHONHOME PYTHONSTARTUP
 SH
 

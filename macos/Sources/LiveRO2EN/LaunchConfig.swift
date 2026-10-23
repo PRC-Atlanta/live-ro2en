@@ -56,6 +56,11 @@ struct LaunchConfig {
                 env["LIVE_LOG_DIR"] = AppPaths.logs.path
                 env["LIVE_CACHE_DIR"] = AppPaths.caches.path
                 env["HF_HOME"] = AppPaths.support.appendingPathComponent("hf").path
+                // Nothing may be written into the signed bundle: the engine and the model download
+                // run without -s -B, and library caches (numba via librosa) go to Caches.
+                env["PYTHONDONTWRITEBYTECODE"] = "1"
+                env["PYTHONNOUSERSITE"] = "1"
+                env["NUMBA_CACHE_DIR"] = AppPaths.caches.appendingPathComponent("numba").path
                 env.removeValue(forKey: "LIVE_ALLOW_NETWORK")
                 return LaunchConfig(mode: .bundle, python: py, script: script,
                                     workingDirectory: res.appendingPathComponent("app"),

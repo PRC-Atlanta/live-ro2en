@@ -194,6 +194,8 @@ class PipelineMixin:
             with self._proc_lock:
                 if spec != self.lc["translator"]:
                     self._spare_tr.setdefault(spec, tr)
+                elif self.tr is None:            # switched to this profile while it loaded
+                    self.tr = tr
 
     def _free_memory(self):
         gc.collect()

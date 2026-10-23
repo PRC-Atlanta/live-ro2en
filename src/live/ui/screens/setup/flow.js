@@ -74,6 +74,7 @@ const DL_ERRORS = {
   checksum: "a file arrived damaged; it is fetched again.",
   not_published: "part of the translator is not available to download yet.",
   network_not_allowed: "this version is not allowed to use the internet.",
+  busy: "the last download is still finishing. Wait a minute, then",
 };
 
 // Download progress in words.

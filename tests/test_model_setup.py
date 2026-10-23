@@ -238,7 +238,7 @@ def test_download_interrupt_resume_then_offline(home, monkeypatch, hub):
     TestClient = pytest.importorskip("fastapi.testclient").TestClient
     from live.app import Live, build_app
     real = model_setup.Setup
-    monkeypatch.setattr(model_setup, "Setup", lambda root: real(root=root, lock=home.lock))
+    monkeypatch.setattr(model_setup, "Setup", lambda root, **kw: real(root=root, lock=home.lock, **kw))
     live = Live(yaml.safe_load(open(ROOT / "config.yaml")), types.SimpleNamespace(file=None))
     c = TestClient(build_app(live), base_url="http://127.0.0.1:8765")
     me = {"origin": "http://127.0.0.1:8765"}
@@ -282,6 +282,69 @@ def test_download_interrupt_resume_then_offline(home, monkeypatch, hub):
     got = try_to_load_from_cache("org/fast-model", "weights.bin", cache_dir=home.cache)
     assert got == str(snap / "weights.bin") and pathlib.Path(got).read_bytes() == BIG
     assert (home.root / "logs" / "setup.log").exists() and not (ROOT / "hf").exists()
+
+
+def test_a_full_disk_is_reported_as_disk_full_not_network(home, monkeypatch, hub):
+    import errno
+    monkeypatch.setenv("LIVE_ALLOW_NETWORK", "1")
+    monkeypatch.setattr(model_setup, "RETRIES", (5, 5))          # would take 10 s if it retried
+
+    def full(self, url, part, size):
+        raise OSError(errno.ENOSPC, "No space left on device")
+    monkeypatch.setattr(model_setup.Downloader, "_stream", full)
+    out, t0 = [], time.time()
+    assert model_setup.download("fast", home.root, home.lock, out.append) == 1
+    assert out[-1]["code"] == "disk_full" and time.time() - t0 < 2
+
+
+def test_only_one_download_at_a_time(home, monkeypatch, hub):
+    import fcntl
+    monkeypatch.setenv("LIVE_ALLOW_NETWORK", "1")
+    home.cache.mkdir(parents=True)
+    with open(home.cache / ".live-download.lock", "w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)                          # e.g. a child left by the last launch
+        out = []
+        assert model_setup.download("fast", home.root, home.lock, out.append) == 1
+        assert out[-1]["code"] == "busy" and hub.log == []
+    out = []
+    assert model_setup.download("fast", home.root, home.lock, out.append) == 0
+
+
+def test_quit_and_start_end_the_download_and_a_finished_one_warms_up(home, monkeypatch, hub):
+    TestClient = pytest.importorskip("fastapi.testclient").TestClient
+    from live.app import Live, build_app
+    real = model_setup.Setup
+    monkeypatch.setattr(model_setup, "Setup", lambda root, **kw: real(root=root, lock=home.lock, **kw))
+    live = Live(yaml.safe_load(open(ROOT / "config.yaml")), types.SimpleNamespace(file=None))
+    c = TestClient(build_app(live), base_url="http://127.0.0.1:8765")
+    me = {"origin": "http://127.0.0.1:8765"}
+    warmed = []
+    live._keep_warm, live.preload = True, lambda *a, **k: warmed.append(1)
+    live._start_engine = live._go_live = lambda *a, **k: None
+    live.load_translator = lambda: None
+
+    hub.slow = 0.03
+    c.post("/api/setup/download", json={"profile": "fast"}, headers=me)
+    _wait(lambda: c.get("/api/setup").json()["download"]["done_bytes"] > 0)
+    proc = live.model_setup.proc
+    live.start()                                                  # the service wins: download paused
+    assert proc.poll() is not None and live.model_setup.progress()["state"] == "cancelled"
+    assert any("download was paused" in w for w in live.warnings)
+    live.running = False
+
+    c.post("/api/setup/download", json={"profile": "fast"}, headers=me)
+    _wait(lambda: c.get("/api/setup").json()["download"]["done_bytes"] > 0)
+    proc = live.model_setup.proc
+    live.shutdown()                                               # quitting ends the child too
+    assert proc.poll() is not None and not live.model_setup.progress()["running"]
+    assert warmed == []
+
+    live._shutting_down, live._keep_warm, hub.slow = False, True, 0.0
+    live._models_cache = (time.monotonic(), ["org/fast-model"])
+    c.post("/api/setup/download", json={"profile": "fast"}, headers=me)
+    _wait(lambda: c.get("/api/setup").json()["download"]["state"] == "done")
+    _wait(lambda: warmed)                                         # models in: warm up for the wizard
+    assert live._models_cache[1] != ["org/fast-model"]                  # re-checked, not the stale list
 
 
 def test_download_is_refused_while_live(home, monkeypatch):

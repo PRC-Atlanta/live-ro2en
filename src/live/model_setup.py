@@ -24,6 +24,8 @@ Standard library only, so it runs in any of the app's interpreters."""
 from __future__ import annotations
 
 import argparse
+import errno
+import fcntl
 import functools
 import hashlib
 import json
@@ -287,6 +289,8 @@ class Downloader:
                     if not part.exists() or part.stat().st_size < m["size"]:
                         self._stream(self._url(it, f), part, m["size"])
                 except (OSError, urllib.error.URLError) as e:
+                    if getattr(e, "errno", None) in (errno.ENOSPC, errno.EDQUOT):   # not the network
+                        raise SetupError("disk_full", f"the disk filled up during {it['repo']}/{f}: {e}") from e
                     err = e
                     continue
                 if blob_hash(part, m["id"]) == m["id"]:
@@ -345,18 +349,33 @@ class Downloader:
         return True
 
 
+def _emit(ev: dict):
+    try:
+        print(json.dumps(ev), flush=True)
+    except BrokenPipeError:              # the app is gone (quit, crashed): stop; partial files stay
+        os._exit(3)
+
+
 def download(profile: str, root: pathlib.Path = paths.REPO, lock=None, out=None) -> int:
     """The child's main: 0 when every file of the profile is present and verified."""
-    emit = out or (lambda ev: print(json.dumps(ev), flush=True))
+    emit = out or _emit
     if os.environ.get("LIVE_ALLOW_NETWORK") != "1":
         emit({"type": "error", "code": "network_not_allowed", "msg": "set LIVE_ALLOW_NETWORK=1 to download"})
         return 2
     endpoint = os.environ.get("HF_ENDPOINT") or "https://huggingface.co"
-    try:
-        Downloader(model_lock.subset(profile, lock), root, paths.hf_cache(root), endpoint, emit).run()
-    except SetupError as e:
-        emit({"type": "error", "code": e.code, "msg": str(e)})
-        return 1
+    cache = paths.hf_cache(root)
+    cache.mkdir(parents=True, exist_ok=True)
+    with open(cache / ".live-download.lock", "w") as held:
+        try:                             # one download at a time: two would append to one partial file
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            emit({"type": "error", "code": "busy", "msg": "another download is still running"})
+            return 1
+        try:
+            Downloader(model_lock.subset(profile, lock), root, cache, endpoint, emit).run()
+        except SetupError as e:
+            emit({"type": "error", "code": e.code, "msg": str(e)})
+            return 1
     emit({"type": "done", "ok": True})
     return 0
 
@@ -372,9 +391,11 @@ def child_env(root: pathlib.Path = paths.REPO) -> dict:
 class Setup:
     """One download child at a time, its progress, and cancel (routes/setup.py)."""
 
-    def __init__(self, root=lambda: paths.REPO, lock: pathlib.Path | None = None, python: str | None = None):
+    def __init__(self, root=lambda: paths.REPO, lock: pathlib.Path | None = None, python: str | None = None,
+                 on_done=None):
         self._root = root if callable(root) else (lambda: root)
         self.lock, self.python = lock, python or sys.executable
+        self.on_done = on_done                                # called once a download has finished
         self.proc: subprocess.Popen | None = None
         self._mu = threading.Lock()
         self._cancelled = False
@@ -446,6 +467,9 @@ class Setup:
                 p["state"] = "error"
                 if not p["error"]:
                     p.update(error=f"the download stopped (exit {rc})", error_code="network")
+            done = p["state"] == "done"
+        if done and self.on_done:
+            self.on_done()
 
     def cancel(self) -> dict:
         """Stop the child; the partial file stays and the next download resumes it."""

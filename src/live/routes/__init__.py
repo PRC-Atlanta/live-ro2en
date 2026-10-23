@@ -2,16 +2,28 @@
 Endpoints that are planned but not built answer 501 with NOT_BUILT's shape (contract.json)."""
 import asyncio
 
-from fastapi import APIRouter, Request
+import json
+
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 
 async def body(request: Request) -> dict:
-    """The JSON object posted, or {} when there is none."""
-    if not await request.body():
+    """The JSON object posted, or {} when there is none. Anything else is refused before the
+    handler runs: a text/plain or form POST is one a foreign web page can send without asking."""
+    raw = await request.body()
+    if not raw:
         return {}
-    b = await request.json()
-    return b if isinstance(b, dict) else {}
+    ctype = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    if ctype != "application/json":
+        raise HTTPException(415, "send JSON (Content-Type: application/json)")
+    try:
+        b = json.loads(raw)
+    except ValueError:
+        raise HTTPException(400, "the body is not valid JSON") from None
+    if not isinstance(b, dict):
+        raise HTTPException(400, "the body must be a JSON object")
+    return b
 
 
 async def run(fn, *args):

@@ -3,7 +3,11 @@ Modules add fields with `register_state(fn)` (fn returns a dict merged into the 
 instead of editing this file. Mixed into live.app.Live."""
 from __future__ import annotations
 
+import datetime as dt
 import statistics
+import traceback
+
+import paths
 
 
 class StateMixin:
@@ -26,8 +30,26 @@ class StateMixin:
                   "alerts": self.alerts(),
                   "translator": self.lc["translator"], "stt": self.lc["stt_model"]}
         for fn in self._state_fns:           # outside the lock: a provider may take its own
-            st.update(fn())
+            try:
+                st.update(fn())
+            except Exception:                # noqa: BLE001  one module's bug must not stop /ws and every reply
+                self._state_failed(fn)
         return st
+
+    def _state_failed(self, fn):
+        """Log a failing provider to app_errors.log, once per provider (state() runs many times a second)."""
+        name = getattr(fn, "__qualname__", repr(fn))
+        seen = self.__dict__.setdefault("_state_errors", set())
+        if name in seen:
+            return
+        seen.add(name)
+        try:
+            logs = paths.log_dir(self.root)
+            logs.mkdir(parents=True, exist_ok=True)
+            with open(logs / "app_errors.log", "a") as f:
+                f.write(f"{dt.datetime.now().isoformat()} state provider {name} failed\n{traceback.format_exc()}\n")
+        except OSError:
+            pass
 
     def alerts(self) -> list[str]:
         """Live faults the operator must see now (cleared when they recover)."""

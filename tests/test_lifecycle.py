@@ -447,6 +447,53 @@ def test_profile_switch_in_hold_keeps_or_replaces_the_warm_engine(sandbox):
         live.shutdown()
 
 
+def test_idle_switch_without_a_spare_loads_the_new_translator_before_start(sandbox, monkeypatch):
+    """No RAM for both translators and the engine is warm: an idle switch frees the old one; the
+    new one must load now (phase loading meanwhile), not when the volunteer presses Start."""
+    import translate
+    live = _live(sandbox)
+    loads, gate = [], threading.Event()
+
+    def fake_make(spec):
+        gate.wait(5)
+        loads.append(spec)
+        return types.SimpleNamespace(translate=lambda t, *a, **k: "Brothers and sisters.")
+    monkeypatch.setattr(translate, "make_translator", fake_make)
+    monkeypatch.setattr(lifecycle, "make_translator", fake_make)
+    other = next(p for p in live.cfg["profiles"] if p != live.profile)
+    live.cfg["live"]["keep_both_translators"] = False
+    for p in live.cfg["profiles"].values():
+        p.pop("keep_both_translators", None)
+    live.lc["keep_both_translators"] = False
+    try:
+        live.preload(wait=True)
+        assert until(lambda: live.state()["phase"] == "ready", 10)
+        live.set_profile(other)
+        assert live.state()["phase"] == "loading" and not live.readiness()["ready"]
+        gate.set()
+        assert until(lambda: live.state()["phase"] == "ready" and live.tr is not None, 5)
+        assert loads == [live.lc["translator"]]
+        live.start()
+        assert loads == [live.lc["translator"]]          # nothing loaded at Start
+    finally:
+        gate.set()
+        live.shutdown()
+
+
+def test_two_services_in_the_same_second_get_their_own_logs(sandbox):
+    import report
+    live = _live(sandbox)
+    live._new_run()
+    first = live.log_path
+    first.write_text("")
+    live._new_run()
+    second = live.log_path
+    live._new_run()
+    assert len({first, second, live.log_path}) == 3
+    assert sorted([live.log_path, second, first]) == [first, second, live.log_path]
+    assert report.log_start(second) is not None and abs(report.log_start(second) - time.time()) < 5
+
+
 def test_captions_behind_comes_from_the_pace(tmp_path):
     live = _live(tmp_path)
     live.engine = types.SimpleNamespace(poll=lambda: None)
@@ -457,6 +504,25 @@ def test_captions_behind_comes_from_the_pace(tmp_path):
     assert live.state()["problem"]["code"] == "captions_behind"
     live._work.get_nowait()
     live.engine, live.running = None, False
+
+
+def test_rehearsal_leaves_the_sound_input_warm(sandbox):
+    """A rehearsal plays a file through its own engine; once it has played out, the next Start
+    must find a warm engine on the sound input, not load from cold."""
+    import preflight
+    live = _live(sandbox)
+    try:
+        live.preload()
+        assert until(lambda: live.state()["phase"] == "ready", 10)
+        th = preflight.rehearse(live, _wav(sandbox / "s.wav", 16000, 2.0), timeout_s=30)
+        th.join(40)
+        assert until(lambda: live.readiness()["ready"] and live._engine_src is None, 10)
+        t0 = time.time()
+        live.start()
+        assert until(lambda: live.state()["phase"] in ("listening", "captioning"), 1.0)
+        assert time.time() - t0 < 1.0
+    finally:
+        live.shutdown()
 
 
 def test_unload_frees_and_preload_brings_it_back(sandbox):
