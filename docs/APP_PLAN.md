@@ -446,6 +446,32 @@ Where files are shared, and who owns each part:
 
 Everything else is disjoint.
 
+### Phase 1 status (2026-10-23)
+S1–S9 are built and merged into `main`, plus a UI pass that adapted Setup, Settings and After to
+the real replies and gave every screen one toolbar. Results: 254 tests pass (also with
+`LIVE_HOME` set). `e2e.py --mixed --strict` passes with no ffmpeg on PATH (59/59 clauses).
+The hot-switch rehearsal passes: one engine, the switch adds 0.45 s and 0.79 s, raw gaps 2.82 s
+and 3.16 s including the speaker's ~2.4 s pause. The relocated embedded runtime runs end to end
+and passes the Mach-O audit. The Swift shell quits clean and cleans up after a Force Quit.
+
+Left for S11, found during the merges:
+- `report.py` and `e2e.py` count `paused`, `held`, `mt_loop` and `mt_overlong` as failures.
+- `defaults.yaml` and the settings whitelist lack S4's keys (`keep_both_translators`,
+  `mt_max_ratio`, `mt_ratio_min_words`, `mt_loop_repeats`, `safety.blocklist`), S2's
+  `propresenter.health_every_s`, and S1's `live.preload` and `live.engine_restarts`.
+- `docs/app_contract.md` still lists S1/S4 fields and the new engine events and commands
+  (`listen`, `input`, `device`) as planned.
+- Switch `/` to `/ui/`, with `Cache-Control: no-cache` on the UI files.
+- The Live screen's `?mock` actions use contract stubs, not `mockApi`.
+- One full-suite run under `LIVE_HOME` had a single failure that didn't recur in 3 reruns:
+  look for a timing-sensitive test.
+- Not verified yet:
+  - the microphone in real use (only file runs);
+  - the Swift app's window and dialogs by eye;
+  - `/code-review high` on each stream.
+- Waiting on you: the church Hugging Face repo for the NLLB build. Until it exists, neither
+  profile can be downloaded in the app.
+
 ### Phase 2: assembly
 - **S10: Release pipeline.**
   - Files: `Makefile` (`make dist`), `packaging/{sign,make_dmg,notarize,verify}.sh`,
