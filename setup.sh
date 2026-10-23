@@ -6,7 +6,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 command -v brew >/dev/null || { echo "Install Homebrew first: https://brew.sh"; exit 1; }
-command -v ffmpeg >/dev/null || brew install ffmpeg
+# no ffmpeg: the live engine decodes with libsndfile and resamples with soxr (requirements/nemo.txt)
 command -v uv >/dev/null || brew install uv
 mkdir -p logs models/vad models/ct2
 LOCK=requirements/models.lock.txt          # exact model versions + checksums

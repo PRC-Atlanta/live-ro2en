@@ -410,9 +410,11 @@ export async function mockApi(method, path, body = {}) {
       return status(200, { ok: true, format: fmt, path: `/Users/church/Desktop/Live Translate 2026-10-25.${fmt}`, log: LOG });
     }
 
-    // --- S1, planned: 501 until built (routes/system.py not_built) ---
-    case "GET permissions": case "POST preload": case "POST unload":
-      return notBuilt(method, path, "S1");
+    // --- S1 lifecycle (routes/system.py) ---
+    case "GET permissions":
+      return status(200, { microphone: B.name === "setup_mic_denied" ? "denied" : "granted" });
+    case "POST preload": D.unloaded = false; B.save(); return status(200, stateNow());
+    case "POST unload": D.unloaded = true; B.save(); return status(200, stateNow());
     default: return status(404, { detail: "Not Found" });
   }
 }

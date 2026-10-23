@@ -63,10 +63,11 @@ test("a fresh install reaches Live, and Next waits for sound", async () => {
   assert.ok(ctx.modelsReady && info.profiles.fast.ready && !info.needs_setup);
   assert.ok(flow.canNext("download", ctx));
 
-  // 3. microphone: GET /api/permissions is planned (501), so the wizard can't ask and says so
+  // 3. microphone: GET /api/permissions (S1) says the microphone is allowed
   const perm = await api("GET", "permissions");
-  assert.ok(perm.notBuilt);
+  assert.ok(perm.ok && !perm.notBuilt);
   ctx.mic = perm.ok ? perm.data.microphone : "unknown";
+  assert.equal(ctx.mic, "granted");
   assert.ok(flow.canNext("mic", ctx));
 
   // 4. sound input: the mixer comes first and is silent for 3 s
@@ -88,12 +89,13 @@ test("a fresh install reaches Live, and Next waits for sound", async () => {
   assert.ok(flow.canNext("pp", ctx));
   assert.ok(flow.ppResult(await api("POST", "pp/test_caption", {})).ok);
 
-  // 6. language, finish -> Live is ready to start (preload is planned: 501 is fine)
+  // 6. language, finish -> preload (S1) -> Live is ready to start
   ctx.mode = "ro-en";
   assert.ok(flow.canNext("lang", ctx));
   assert.ok((await put({ "live.language_mode": ctx.mode })).ok);
   assert.equal((await api("POST", "mode", { mode: ctx.mode })).data.mode, "ro-en");
-  assert.ok((await api("POST", "preload", {})).notBuilt);
+  const pre = await api("POST", "preload", {});
+  assert.ok(pre.ok && !pre.notBuilt);
   const st = stateOf("fresh_install");
   assert.equal(st.phase, "ready");
   assert.equal(st.mode, "ro-en");

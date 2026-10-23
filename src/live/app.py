@@ -16,6 +16,7 @@ import json
 import os
 import pathlib
 import queue
+import signal
 import subprocess
 import sys
 import threading
@@ -135,6 +136,8 @@ def main():
     ap.add_argument("--port", type=int, help="control page port (overrides live.web_port; the app passes a free one)")
     ap.add_argument("--mode")
     ap.add_argument("--profile", help="fast | quality (overrides live.profile)")
+    ap.add_argument("--hold", action="store_true",
+                    help="preload and wait for Start (the default with the web page; with --file the file plays from Start)")
     a = ap.parse_args()
     cfg, a.settings_base, a.settings_notes = settings.load_config(a.config, a.settings, ROOT)
     if a.pp_port:
@@ -146,18 +149,25 @@ def main():
     if a.profile:
         cfg["live"]["profile"] = a.profile
     live = Live(cfg, a)
-    if a.autostart:
+    live.claim_pidfiles()      # end an engine a crashed earlier launch left behind
+    live.start_pp_monitor()
+    if a.headless:             # SIGTERM: stop the service and the engine, then exit
+        signal.signal(signal.SIGTERM, lambda *_: threading.Thread(
+            target=lambda: (live.shutdown(), os._exit(0)), daemon=True).start())
+    if a.hold or (not a.headless and not a.file and cfg["live"].get("preload", True)):
+        live.preload()         # models load now; Start is then instant
+    if a.autostart or cfg["live"].get("autostart"):
         live.start()
     if a.headless:
         while not (a.exit_on_eof and live.eof.is_set()):
             time.sleep(0.2)
         time.sleep(3)          # let the last clause finish translating
-        live.stop()
+        live.shutdown()
         print(json.dumps({"log": str(live.log_path)}))
         return
     import uvicorn
     if a.exit_on_eof:
-        threading.Thread(target=lambda: (live.eof.wait(), time.sleep(3), live.stop(),
+        threading.Thread(target=lambda: (live.eof.wait(), time.sleep(3), live.shutdown(),
                                          __import__("os")._exit(0)), daemon=True).start()
     uvicorn.run(build_app(live), host=cfg["live"]["web_host"], port=cfg["live"]["web_port"], log_level="warning")
 

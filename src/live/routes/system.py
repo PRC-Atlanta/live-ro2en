@@ -1,12 +1,15 @@
-"""Pages, state, the /ws feed and start/stop. Owned by S1."""
+"""Pages, state, the /ws feed, start/stop, and the app lifecycle (preload, unload, shutdown,
+health, readiness, permissions). Owned by S1."""
 import asyncio
 import pathlib
+import threading
 
 from fastapi import APIRouter, Request, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.routing import WebSocketRoute
 
-from routes import body, not_built, run
+import permissions
+from routes import body, run
 from security import request_allowed
 
 HERE = pathlib.Path(__file__).resolve().parents[1]
@@ -38,9 +41,40 @@ def router(live, hosts: set[str], port: int) -> APIRouter:
         await run(live.stop)
         return live.state()
 
-    for method, path in (("POST", "/api/preload"), ("POST", "/api/shutdown"), ("POST", "/api/unload"),
-                         ("GET", "/api/health"), ("GET", "/api/readiness"), ("GET", "/api/permissions")):
-        not_built(r, method, path, "S1")
+    @r.post("/api/preload")
+    async def preload(request: Request):
+        """Load the models and keep a warm engine (non-blocking: watch `phase`/`progress`)."""
+        await run(live.preload, (await body(request)).get("device"))
+        return live.state()
+
+    @r.post("/api/unload")
+    async def unload():
+        await run(live.unload)
+        return live.state()
+
+    @r.post("/api/shutdown")
+    async def shutdown():
+        """The Mac shell's Quit: stop cleanly, then the process exits (SIGTERM to ourselves,
+        so uvicorn closes the server and the shutdown hook runs)."""
+        await run(live.shutdown)
+        t = threading.Timer(0.2, live.exit_process)      # after this answer has been sent
+        t.daemon = True
+        t.start()
+        return {"ok": True}
+
+    @r.get("/api/health")
+    def health():
+        return live.health()
+
+    @r.get("/api/readiness")
+    def readiness():
+        return live.readiness()
+
+    @r.get("/api/permissions")
+    def perms():
+        return permissions.status()
+
+    r.on_shutdown.append(live.shutdown)          # uvicorn stopping (SIGTERM, Ctrl-C): no orphan engine
 
     # a plain route: with `from __future__ import annotations` FastAPI cannot resolve a
     # `sock: WebSocket` parameter and closed every connection with 1008
