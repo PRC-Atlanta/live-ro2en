@@ -53,3 +53,19 @@ def engine_env() -> dict | None:
     """Environment for the engine child; None (inherit) unless the runtime sets a PYTHONPATH."""
     pp = os.environ.get("LIVE_ENGINE_PYTHONPATH")
     return {**os.environ, "PYTHONPATH": pp} if pp else None
+
+
+# --- S9: session report, exports, diagnostics, rehearsal samples -----------------------------
+def services_index(rel: str, root: pathlib.Path = REPO) -> pathlib.Path:
+    """One row per service (summary and rating) for tuning: <services dir>/index.csv."""
+    return services_dir(rel, root) / "index.csv"
+
+
+def desktop() -> pathlib.Path:
+    """Where exports and the diagnostics zip go: the user's Desktop (tests repoint this)."""
+    return pathlib.Path.home() / "Desktop"
+
+
+def samples_dir(root: pathlib.Path = REPO) -> pathlib.Path:
+    """Rehearsal recordings shipped with the app."""
+    return resource("data/samples", root)

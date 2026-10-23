@@ -13,7 +13,14 @@
                              "error_code": {"enum": ["unreachable", "auth", "message_missing", null]}}},
     "pp_test": {"object": {"ok": "bool", "detail": "str", "messages": {"list": "str"}, "message_found": "bool", "pp": "@pp_status"}},
     "pp_test_caption": {"object": {"ok": "bool", "detail": "str", "pp": "@pp_status"}},
-    "bad_request": {"object": {"error": {"enum": ["bad_request"]}, "detail": "str"}}
+    "bad_request": {"object": {"error": {"enum": ["bad_request"]}, "detail": "str"}},
+    "preflight": {"object": {"checks": {"list": {"object": {"id": "str", "ok": "bool", "detail": "str", "code": "str?"}}},
+                             "ok": "bool?", "t": "num?"}},
+    "summary": {"object": {"elapsed_s": "num|null", "phrases": "int", "outcomes": {"map": "int"}, "failed": "int",
+                           "latency_median": "num|null", "first_word_median": "num|null", "first_word_ok_pct": "num|null",
+                           "pp_errors": "int", "corrections": "int", "warnings": "int", "engine_exits": "int",
+                           "kind": {"enum": ["service", "rehearsal"]},
+                           "rating": {"object": {"score": "int|null", "tags": {"list": "str"}, "note": "str"}}}}
   },
 
   "state": {
@@ -54,8 +61,8 @@
     "first_word_ok_pct": {"type": "num|null", "built": false, "owner": "S9"},
     "session_terms_n": {"type": "int", "built": false, "owner": "S3"},
     "corrections_n":  {"type": "int", "built": true, "owner": "S2"},
-    "preflight":      {"type": {"object": {"checks": {"list": {"object": {"id": "str", "ok": "bool", "detail": "str"}}}}},
-                       "nullable": true, "built": false, "owner": "S9"}
+    "preflight":      {"type": "@preflight", "nullable": true, "built": false, "owner": "S9",
+                       "note": "served once routes/session.py is mounted; S11 flips built (with elapsed_s, first_word_ok_pct) when Live includes report.SessionMixin"}
   },
 
   "endpoints": [
@@ -100,11 +107,13 @@
     {"method": "POST", "path": "/api/setup/download", "owner": "S6", "built": false},
     {"method": "POST", "path": "/api/setup/cancel", "owner": "S6", "built": false},
 
-    {"method": "POST", "path": "/api/preflight",    "owner": "S9", "built": false},
-    {"method": "POST", "path": "/api/rate",         "owner": "S9", "built": false, "request": {"score": "int", "tags": {"list": "str"}, "note": "str"}},
-    {"method": "POST", "path": "/api/export",       "owner": "S9", "built": false, "request": {"format": {"enum": ["txt", "srt", "docx"]}}},
-    {"method": "POST", "path": "/api/diagnostics",  "owner": "S9", "built": false},
-    {"method": "POST", "path": "/api/rehearsal",    "owner": "S9", "built": false, "request": {"sample": "str"}}
+    {"method": "POST", "path": "/api/preflight",    "owner": "S9", "built": true, "response": "@preflight"},
+    {"method": "POST", "path": "/api/rate",         "owner": "S9", "built": true, "request": {"score": "int", "tags": {"list": "str"}, "note": "str", "log": "str?"},
+     "response": {"object": {"ok": "bool", "log": "str", "summary": "@summary"}}},
+    {"method": "POST", "path": "/api/export",       "owner": "S9", "built": true, "request": {"format": {"enum": ["txt", "srt", "docx"]}, "log": "str?"},
+     "response": {"object": {"ok": "bool", "format": "str", "path": "str", "log": "str"}}},
+    {"method": "POST", "path": "/api/diagnostics",  "owner": "S9", "built": true, "response": {"object": {"ok": "bool", "path": "str"}}},
+    {"method": "POST", "path": "/api/rehearsal",    "owner": "S9", "built": true, "request": {"sample": "str?"}, "response": "@state"}
   ],
 
   "engine": {
