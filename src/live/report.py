@@ -28,7 +28,7 @@ from xml.sax.saxutils import escape
 import paths
 
 FIRST_WORD_OK_S = 6.0                 # the rehearsal gate's threshold (e2e.py `gate`)
-INDEX_FIELDS = ["log", "date", "kind", "elapsed_s", "phrases", "failed", "first_word_ok_pct",
+INDEX_FIELDS = ["log", "date", "kind", "elapsed_s", "phrases", "failed", "filtered", "first_word_ok_pct",
                 "latency_median", "pp_errors", "corrections", "score", "tags", "note"]
 LOG_NAME = re.compile(r"^[\w.-]+\.jsonl$")
 
@@ -276,7 +276,7 @@ def update_index(index, log) -> dict:
     st = log_start(log)
     row = {"log": log.name,
            "date": dt.datetime.fromtimestamp(st).isoformat(timespec="minutes") if st else "",
-           "kind": s["kind"], "elapsed_s": s["elapsed_s"], "phrases": s["phrases"], "failed": s["failed"],
+           "kind": s["kind"], "elapsed_s": s["elapsed_s"], "phrases": s["phrases"], "failed": s["failed"], "filtered": s["filtered"],
            "first_word_ok_pct": s["first_word_ok_pct"], "latency_median": s["latency_median"],
            "pp_errors": s["pp_errors"], "corrections": s["corrections"], "score": r.get("score"),
            "tags": _cell(";".join(r.get("tags") or [])), "note": _cell(r.get("note") or "")}

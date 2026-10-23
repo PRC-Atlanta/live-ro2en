@@ -52,8 +52,8 @@ synthetic reading). **Never add a church recording**: the DMG is distributed.
    always goes up, Sparkle compares it) in `macos/Info.plist`.
 2. Run the tests: `.venv/bin/python -m pytest -q tests`.
 3. `make dist`. Read the end of the output: `VERIFY PASS`.
-4. With the Developer ID set up (below): `make notarize`. It ends with `accepted` /
-   `source=Notarized Developer ID`.
+4. With the Developer ID set up (below): `make notarize`. Each submission prints
+   `Accepted`, and it ends with `VERIFY PASS` (spctl: `source=Notarized Developer ID`).
 5. Run `docs/clean_install_test.md` on the DMG. Record the result in `PROGRESS.md`.
 6. Tag: `git tag v0.2.0 && git push origin v0.2.0`. The `release` workflow builds the DMG
    on GitHub too (ad hoc without the secrets; signed and notarized with them) and attaches it

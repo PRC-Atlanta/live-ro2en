@@ -133,8 +133,9 @@ The printable one-page version is [docs/sunday_quick_card.pdf](docs/sunday_quick
   until the next phrase. **Backspace** removes the last caption; **E** fixes it.
   **T** adds today's names (a guest speaker, a place). **1 / 2 / 3** lock the speaker's
   language (Auto / Romanian / English), **Q** switches Quickest / Best.
-- **If a coloured bar appears** at the top, it says what is wrong; press its button.
-- **After:** press **Space** twice (or hold the dial) to stop. The After screen shows how it
+- **If a coloured bar appears** above the dial, it says what is wrong; press its button.
+- **After:** press **Space** twice (or hold the dial) to stop, then click **After** in the
+  toolbar. It shows how it
   went; rate it and export the transcript (txt, srt or Word) to the Desktop if you want one.
 
 Developers can still run the orchestrator from the source:

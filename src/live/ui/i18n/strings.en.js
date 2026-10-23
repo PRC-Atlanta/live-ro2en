@@ -195,7 +195,7 @@ export const S = {
     ppTitle: "Setting up ProPresenter",
     ppSteps: [
       "In ProPresenter, open Settings → Network and turn on Enable Network. Note the port number.",
-      "Open the Messages panel and make a message called Live Captions with one text token.",
+      "Open the Messages panel and make a message called Live Translation whose text is one text token named Text.",
       "Show the message on the main screen (and on the stage display if you want it there).",
       "In this app, open Settings → ProPresenter, enter the port and the message name, then press Test connection.",
       "Press Send test caption and check it appears on the big screen.",

@@ -81,6 +81,7 @@ jobs:
         if: env.HAS_NOTARY == 'true'
         env:
           NOTARY_PROFILE: live-ro2en
+          NOTARY_KEYCHAIN: ${{ runner.temp }}/release.keychain-db   # where the profile was stored
         run: make notarize
 
       - uses: actions/upload-artifact@v4

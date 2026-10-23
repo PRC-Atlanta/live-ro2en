@@ -371,3 +371,12 @@ def test_hide_hold_and_safety_drops_are_not_failures():
             _rec(4, T0 + 7, 0, "mt_loop"), _rec(5, T0 + 9, 0, "mt_overlong"), _rec(6, T0 + 11, 0, "empty_mt")]
     s = report.summary(recs, T0)
     assert s["failed"] == 1 and s["filtered"] == 2 and s["outcomes"]["paused"] == 1
+
+
+def test_e2e_gate_fails_a_run_the_safety_filter_mostly_dropped():
+    import e2e
+    a = types.SimpleNamespace(max_failed_frac=0.15, max_filtered_frac=0.05, min_first_word_6s=0.8, ref_text=None)
+    base = {"eof_reached": True, "engine_exit": 0, "clauses": 60, "failed_chunks": 0, "frac_first_word_le_6s": 1.0}
+    assert e2e.gate({**base, "filtered": 1}, [], a)["pass"]
+    g = e2e.gate({**base, "filtered": 40}, [], a)
+    assert not g["pass"] and "safety filter" in g["fail_reasons"][0]

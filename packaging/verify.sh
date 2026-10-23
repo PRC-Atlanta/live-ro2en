@@ -94,15 +94,44 @@ if "$HERE/audit_macho.sh" "$CHECK" > "$T/audit.log" 2>&1; then ok "$(grep -E '^(
 else bad "audit_macho"; grep -vE '^(Mach-O audit|files:)' "$T/audit.log" | head -30 | sed 's/^/        /'; fi
 rm -f "$CHECK/macho_audit.txt"
 
+# --- 4a. the engine side imports from the bundle alone ------------------------------------------
+# The smoke launch below only starts the orchestrator (needs_setup: no engine, no models). Import
+# what the engine and the download child load, with the shell's environment and a fresh HOME,
+# so a module or library missing from the bundle fails here, not on a volunteer's Mac.
+say "engine and download child import from the bundle"
+IH="$T/import-home"; mkdir -p "$IH"
+imp() {   # $1 = HOME, $2 = site dirs, $3.. = modules
+  local home="$1" sites="$2"; shift 2
+  (cd "$RES/app/src/live" && env -i HOME="$home" PATH=/usr/bin:/bin TMPDIR="${TMPDIR:-/tmp}" LANG=en_US.UTF-8      PYTHONPATH="$RES/app/src/live:$RES/app/src:$sites" PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1      HF_HUB_OFFLINE=1 NUMBA_CACHE_DIR="$IH/numba"      "$PY" -s -B -c 'import importlib, sys
+bad = []
+for m in sys.argv[1:]:
+    try:
+        importlib.import_module(m)
+    except Exception as e:
+        bad.append(f"{m}: {type(e).__name__}: {e}")
+print("\n".join(bad)); sys.exit(1 if bad else 0)' "$@") > "$T/imports.log" 2>&1
+}
+# the engine runs with HOME = <caches>/engine-home (paths.engine_env), as the app does
+mkdir -p "$IH/caches/engine-home"
+if imp "$IH/caches/engine-home" "$RES/site/common:$RES/site/nemo" engine vad context_stt whistle_en stt_run torch parakeet_mlx mlx.core needle \
+       onnxruntime soxr soundfile sounddevice nemo.collections.asr; then ok "engine side (site/nemo)"
+else bad "engine side (site/nemo):"; tail -15 "$T/imports.log" | sed 's/^/        /'; fi
+if imp "$IH" "$RES/site/common:$RES/site/mt" app model_setup preflight report translate ctranslate2 mlx_lm transformers; then
+  ok "orchestrator side (site/mt)"
+else bad "orchestrator side (site/mt):"; tail -15 "$T/imports.log" | sed 's/^/        /'; fi
+left=$(ls -A "$IH" | grep -vE '^(numba|caches)$' || true)
+[ -z "$left" ] && ok "nothing written to the user's HOME (engine writes stay in its own)" ||
+  bad "written to the user's HOME: $(printf '%s' "$left" | tr '\n' ' ')"
+
 # --- 4. smoke launch ---------------------------------------------------------------------------
 say "smoke launch of the bundled orchestrator"
-U="$T/user"; mkdir -p "$U/support" "$U/logs" "$U/caches/numba"
+U="$T/user"; mkdir -p "$U/support" "$U/logs" "$U/caches/numba" "$U/home"   # a fresh HOME: nothing of ours
 PORT=$("$PY" -I -B -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
 S="$RES/site"
 # the variables LaunchConfig.resolve() sets for the bundle, nothing inherited from this shell
 (
   cd "$RES/app"
-  exec env -i HOME="$HOME" USER="${USER:-}" PATH=/usr/bin:/bin:/usr/sbin:/sbin TMPDIR="${TMPDIR:-/tmp}" \
+  exec env -i HOME="$U/home" USER="${USER:-}" PATH=/usr/bin:/bin:/usr/sbin:/sbin TMPDIR="${TMPDIR:-/tmp}" \
     LANG="${LANG:-en_US.UTF-8}" PYTHONUNBUFFERED=1 \
     PYTHONPATH="$S/common:$S/mt" LIVE_ENGINE_PYTHON="$PY" LIVE_ENGINE_PYTHONPATH="$S/common:$S/nemo" \
     LIVE_HOME="$U/support" LIVE_LOG_DIR="$U/logs" LIVE_CACHE_DIR="$U/caches" HF_HOME="$U/support/hf" \
@@ -125,7 +154,7 @@ import json, sys; s = json.load(sys.stdin); print({k: s.get(k) for k in ("phase"
   # nothing under the repo may be open (code, data, venvs)
   pids=$(pgrep -g "$PID" 2>/dev/null | tr '\n' ',' | sed 's/,$//')
   leaks=$(lsof -n -p "${pids:-$PID}" 2>/dev/null | awk '{print $NF}' | grep -F "$SRCROOT" | sort -u | head -5 || true)
-  [ -z "$leaks" ] && ok "no open file under $SRCROOT" || { bad "open files under the repo:"; echo "$leaks" | sed 's/^/        /'; }
+  [ -z "$leaks" ] && ok "no file under $SRCROOT held open (cwd, mapped libraries)" || { bad "open files under the repo:"; echo "$leaks" | sed 's/^/        /'; }
   code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' \
          "http://127.0.0.1:$PORT/api/shutdown" || true)
   [ "$code" = 200 ] && ok "POST /api/shutdown -> 200" || bad "POST /api/shutdown -> $code"

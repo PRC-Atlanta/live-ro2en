@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ast
 import pathlib
+import subprocess
 import sys
 
 # Data the orchestrator and the engine read at run time (paths relative to the repo root):
@@ -37,10 +38,18 @@ def imports(f: pathlib.Path) -> set[str]:
     return out
 
 
+def tracked(repo: pathlib.Path, live: pathlib.Path) -> list[pathlib.Path]:
+    """Only the files git tracks: an untracked note, recording, key or tool cache (.ruff_cache)
+    left in src/live must never be sealed into a distributed app."""
+    out = subprocess.run(["git", "-C", str(repo), "ls-files", "-z", "--", str(live.relative_to(repo))],
+                         capture_output=True, check=True).stdout
+    return [repo / f for f in out.decode().split("\0") if f]
+
+
 def main(repo: pathlib.Path) -> list[str]:
     src = repo / "src"
     live = src / "live"
-    files = [p for p in live.rglob("*") if p.is_file()
+    files = [p for p in tracked(repo, live) if p.is_file()
              and not SKIP_PARTS & set(p.relative_to(live).parts) and p.suffix not in SKIP_SUFFIX
              and p.name != ".DS_Store"]
     top = {p.stem: p for p in src.glob("*.py")}

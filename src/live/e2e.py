@@ -82,6 +82,8 @@ def main() -> None:
     ap.add_argument("--profile", default=None, help="fast | quality")
     ap.add_argument("--strict", action="store_true", help="exit 1 when the run fails the gate")
     ap.add_argument("--max-failed-frac", type=float, default=0.15)
+    ap.add_argument("--max-filtered-frac", type=float, default=0.05,
+                    help="most phrases the safety filter may drop (a looping translator fails the run)")
     ap.add_argument("--min-first-word-6s", type=float, default=0.8)
     ap.add_argument("--ref-text", help="reference transcript of the audio, to score the source text")
     ap.add_argument("--max-wer", type=float, default=0.15)
@@ -181,6 +183,8 @@ def gate(summary: dict, recs: list[dict], a) -> dict:
         reasons.append("no captions at all")
     elif summary["failed_chunks"] / total > a.max_failed_frac:
         reasons.append(f"{summary['failed_chunks']}/{total} chunks without a caption")
+    if total and summary.get("filtered", 0) / total > getattr(a, "max_filtered_frac", 0.05):
+        reasons.append(f"{summary['filtered']}/{total} translations dropped by the safety filter")
     if summary["frac_first_word_le_6s"] < a.min_first_word_6s:
         reasons.append(f"first word within 6 s only {summary['frac_first_word_le_6s']:.0%}")
     out = {}

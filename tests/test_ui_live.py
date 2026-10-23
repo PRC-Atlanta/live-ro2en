@@ -252,3 +252,16 @@ def test_quick_hash_changes_render_one_screen_and_clean_up_each():
       await new Promise(r => setTimeout(r, 80));
       console.log(JSON.stringify(log));""")
     assert res == ["render help", "clean help", "render live"]
+
+
+def test_practice_mode_keeps_the_speaker_and_stops_the_captions():
+    res = _node("""
+      const { mockBackend: B, mockApi } = await import("./mock_state.js");
+      const mem = new Map();
+      B.use("live", { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v), removeItem: k => mem.delete(k) }, true);
+      B.delayMs = 0;
+      const mode = (await mockApi("POST", "mode", { mode: "en-ro" })).data.mode;
+      await mockApi("POST", "start", {});
+      const stopped = (await mockApi("POST", "stop", {})).data;
+      console.log(JSON.stringify({ mode, running: stopped.running, screen: stopped.screen, busy: B.running() }));""")
+    assert res == {"mode": "en-ro", "running": False, "screen": "", "busy": False}

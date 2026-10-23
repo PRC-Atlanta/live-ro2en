@@ -31,11 +31,14 @@ Anyway**. Note that in the result.
 5. **Both permission prompts.** The app asks for the **Microphone** (when the sound check
    starts) and for the **Local Network** (when it first talks to ProPresenter). Allow both.
    Both prompts must name **Live RO2EN**, not "python3.12" or Terminal.
-6. **First-run download.** In Setup choose **Fast**. Interrupt the download once (turn
+6. **First-run download.** (Blocked until the church Hugging Face repo for the NLLB build
+   exists: until then `models.lock.txt` holds a placeholder pin and Setup reports
+   "not available to download yet".) In Setup choose **Fast**. Interrupt the download once (turn
    Wi-Fi off for 10 s, or quit the app mid-download), then resume it in Setup. It must
    continue from where it stopped, not from zero, and finish with every check OK.
 7. **Wi-Fi off.** Turn Wi-Fi off (and unplug Ethernet) for the rest of the test.
-8. **Rehearsal.** Settings → Rehearsal (or the wizard's test step): play the bundled sample
+8. **Rehearsal.** Press **Rehearsal** in the toolbar (or in Help) to play the bundled sample.
+   A DMG built by the GitHub workflow has no sample (`BUNDLE_SAMPLES=""`): use a local build. Play the sample
    through the whole chain. Captions appear on the Live screen (and in ProPresenter, if one
    is on the network; otherwise the ProPresenter warning is expected).
 9. **Nothing written outside the app's folders.** The app may only write to

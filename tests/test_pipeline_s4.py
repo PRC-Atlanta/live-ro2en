@@ -347,3 +347,16 @@ def test_failed_reload_of_both_translators_ends_the_service_visibly(tmp_path, mo
     st = live.state()
     assert st["phase"] == "error" and st["problem"]["code"] == "engine_stopped"
     assert "translator failed to load" in st["status"]
+
+
+def test_keep_both_translators_applies_at_once(tmp_path, monkeypatch):
+    live, loads = _running(tmp_path, monkeypatch, keep=True)
+    live.running = False
+    live.settings_path = tmp_path / "settings.yaml"
+    assert live.put_settings({"values": {"live.keep_both_translators": True}})[0] == 200
+    assert live._spares_thread is not None
+    live._spares_thread.join(5)
+    assert "fake:quality" in live._spare_tr                          # Always: the other one is loaded now
+    assert live.put_settings({"values": {"live.keep_both_translators": False}})[0] == 200
+    assert live._spare_tr == {}                                      # Never: freed at once
+

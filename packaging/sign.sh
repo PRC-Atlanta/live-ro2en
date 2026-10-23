@@ -1,7 +1,7 @@
 #!/bin/bash
 # Sign the assembled app from the inside out (APP_PLAN §1.1 "Distribution"), never --deep:
 #   1. every Mach-O under Contents/Resources (runtime/, site/, app/models), found with `file`;
-#      helper executables get packaging/runtime.entitlements, libraries none
+#      (helper executables and libraries with no entitlements: only python3.12 needs them)
 #   2. Contents/Resources/runtime/bin/python3.12 with packaging/runtime.entitlements
 #   3. anything in Contents/Frameworks (Sparkle, once it is added), innermost first
 #   4. the app itself with macos/LiveRO2EN.entitlements
@@ -76,7 +76,7 @@ nlib=$(tr -cd '\0' < "$list/libs" | wc -c | tr -d ' '); nexe=$(tr -cd '\0' < "$l
 echo "== 1. $nlib libraries and $nexe helper executables in Resources"
 [ "$nlib" = 0 ] || quiet xargs -0 -n 64 -P "$JOBS" codesign --force --sign "$ID" --options runtime $TS < "$list/libs"
 [ "$nexe" = 0 ] || { tr '\0' '\n' < "$list/exes" | sed "s|^$RES/|  |"
-  quiet xargs -0 -n 16 -P "$JOBS" codesign --force --sign "$ID" --options runtime $TS --entitlements "$RT_ENT" < "$list/exes"; }
+  quiet xargs -0 -n 16 -P "$JOBS" codesign --force --sign "$ID" --options runtime $TS < "$list/exes"; }   # no JIT etc.: only python3.12 needs it
 
 # --- 2. the interpreter ------------------------------------------------------------------------
 echo "== 2. runtime/bin/python3.12 (packaging/runtime.entitlements)"
@@ -86,6 +86,10 @@ cs --entitlements "$RT_ENT" "$PY"
 # --- 3. frameworks and nested bundles, innermost first --------------------------------------
 if [ -d "$APP/Contents/Frameworks" ]; then
   echo "== 3. Contents/Frameworks"
+  # bare executables and dylibs inside the frameworks (e.g. Sparkle's Autoupdate) first
+  find "$APP/Contents/Frameworks" -type f -print0 | xargs -0 file --no-pad -F $'\t' 2>/dev/null |
+    awk -F'\t' '$2 ~ /Mach-O/ && $1 !~ / \(for architecture / {print $1}' | sort -u |
+    while IFS= read -r f; do cs --preserve-metadata=entitlements "$f"; done
   # deepest bundle paths first (XPC services and helper apps before their framework)
   find "$APP/Contents/Frameworks" -type d \( -name '*.xpc' -o -name '*.app' -o -name '*.framework' \) |
     awk '{print gsub("/", "/") "\t" $0}' | sort -rn | cut -f2- | while IFS= read -r b; do

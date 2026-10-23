@@ -81,7 +81,7 @@ def router(live) -> APIRouter:
     @r.post("/api/profile")
     async def profile(request: Request):
         name = (await body(request)).get("profile")
-        if name not in (live.cfg.get("profiles") or {}):
+        if not isinstance(name, str) or name not in (live.cfg.get("profiles") or {}):
             return _bad("unknown profile")
         await run(live.set_profile, name)
         return live.state()

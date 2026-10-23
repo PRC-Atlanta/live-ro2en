@@ -564,6 +564,14 @@ class LifecycleMixin:
         if not self.running and self._warm_alive() and self._engine_spec != self._spec():
             # e.g. the English recogniser changed: the warm engine can't take it live, replace it now
             threading.Thread(target=self._rewarm, daemon=True, name="rewarm").start()
+        if "live.keep_both_translators" in changed and hasattr(self, "_spare_tr"):
+            if not self._keep_both_translators():          # Never: free the spare now
+                with self._proc_lock:
+                    self._spare_tr.clear()
+                self._free_memory()
+            elif self.tr is not None and not (self._spares_thread and self._spares_thread.is_alive()):
+                self._spares_thread = threading.Thread(target=self._spares, daemon=True, name="spare-translators")
+                self._spares_thread.start()                # Always/auto: load the other one now
 
     # --- pidfiles: the next launch cleans up after a crash -------------------------------
     def claim_pidfiles(self, run_dir: pathlib.Path | None = None):

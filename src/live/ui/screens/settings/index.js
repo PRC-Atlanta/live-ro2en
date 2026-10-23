@@ -173,7 +173,9 @@ export function render(el, store) {
         const rows = Object.entries(s.counts || {});
         counts.replaceChildren(...(rows.length ? rows : [["", ""]]).map(([k, v]) =>
           h("tr", { title: k }, h("td", k ? OUTCOMES[k] || "Other" : "Nothing yet"), h("td", String(v)))));
-        const lines = [...(s.alerts || []), ...(s.warnings || [])];
+        const lines = [...(s.alerts || []), ...(s.warnings || []),
+                       ...(s.pp_error ? [`ProPresenter: ${s.pp_error}`] : []),
+                       ...(s.stt || s.translator ? [`Models: ${s.stt || "?"} · ${s.translator || "?"}`] : [])];
         raw.textContent = lines.length ? lines.join("\n") : "None";
       };
     },

@@ -44,7 +44,8 @@ dmg: app
 	packaging/make_dmg.sh "$(APP)" "$(DIST)"
 
 verify:
-	packaging/verify.sh "$(APP)" $(if $(wildcard $(DMG)),"$(DMG)")
+	@# the DMG only when it is newer than the app (after `make app` alone it holds the old bytes)
+	packaging/verify.sh "$(APP)" $(if $(shell [ "$(DMG)" -nt "$(APP)" ] && echo y),"$(DMG)")
 
 notarize:
 	packaging/notarize.sh "$(APP)" "$(DIST)"

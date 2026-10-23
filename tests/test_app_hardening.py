@@ -64,3 +64,14 @@ def test_root_opens_the_operator_ui_and_the_ui_is_never_cached(app):
         r = app.c.get(path)
         assert r.status_code == 200 and r.headers["cache-control"] == "no-cache", path
     assert app.c.get("/legacy").status_code == 404
+
+
+def test_the_packaged_engine_gets_its_own_home(tmp_path, monkeypatch):
+    import paths
+    monkeypatch.delenv("LIVE_ENGINE_PYTHONPATH", raising=False)
+    assert paths.engine_env() is None                              # dev: inherit everything
+    monkeypatch.setenv("LIVE_ENGINE_PYTHONPATH", "/app/site/common:/app/site/nemo")
+    monkeypatch.setenv("LIVE_CACHE_DIR", str(tmp_path / "Caches"))
+    env = paths.engine_env()
+    assert env["HOME"] == str(tmp_path / "Caches" / "engine-home") and (tmp_path / "Caches" / "engine-home").is_dir()
+    assert env["PYTHONPATH"] == "/app/site/common:/app/site/nemo"

@@ -169,7 +169,7 @@ export const mockBackend = {
     const q = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams();
     this.use(q.get("mock") || "live", undefined, q.has("reset"));
   },
-  running() { return this.name === "settings_live"; },
+  running() { return this.over.running ?? this.name === "settings_live"; },
   hadService() { return this.name === "after" || this.name === "settings_live"; },
   values() { return { ...MOCK_DEFAULTS, ...this.data.user }; },
   value(k) { return this.values()[k]; },
@@ -395,6 +395,7 @@ export async function mockApi(method, path, body = {}) {
     case "POST mode": {
       if (!["auto", "ro-en", "en-ro"].includes(body.mode)) return status(500, null);   // the route reads body["mode"]
       D.mode = body.mode; B.save();
+      mockBackend.over.mode = body.mode;                 // the knob follows, as it does live
       return status(200, stateNow());
     }
 
@@ -419,8 +420,14 @@ export async function mockApi(method, path, body = {}) {
     }
 
     // --- the Live screen (routes/system.py, routes/output.py) ---
-    case "POST start": return live({ running: true, phase: "captioning" });
-    case "POST stop": return live({ running: false, phase: "ready" });
+    case "POST start": {
+      for (const k of ["screen", "partial", "lines"]) delete mockBackend.over[k];
+      return live({ running: true, phase: "captioning", problem: null });
+    }
+    case "POST stop": {                                  // the practice service ends: captions stop too
+      const { lines } = stateNow();
+      return live({ running: false, phase: "ready", screen: "", partial: "", lines });
+    }
     case "POST pause": case "POST hold":
       if (typeof body.on !== "boolean") return status(400, { error: "bad_request", detail: "on must be true or false" });
       return live({ [path === "pause" ? "paused" : "held"]: body.on });

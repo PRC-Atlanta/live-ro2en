@@ -50,9 +50,20 @@ def engine_python(stt_venv: str, root: pathlib.Path = REPO) -> pathlib.Path:
 
 
 def engine_env() -> dict | None:
-    """Environment for the engine child; None (inherit) unless the runtime sets a PYTHONPATH."""
+    """Environment for the engine child; None (inherit) unless the runtime sets a PYTHONPATH.
+    In the app the engine also gets its own HOME under the caches: onnxruntime and lhotse
+    create folders in HOME on import (~/Library/Application Support/Microsoft, ~/.lhotse),
+    which must not appear in the volunteer's home folder. The orchestrator keeps the real
+    HOME (exports go to the real Desktop)."""
     pp = os.environ.get("LIVE_ENGINE_PYTHONPATH")
-    return {**os.environ, "PYTHONPATH": pp} if pp else None
+    if not pp:
+        return None
+    env = {**os.environ, "PYTHONPATH": pp}
+    if _env("LIVE_CACHE_DIR"):
+        home = cache_dir() / "engine-home"
+        home.mkdir(parents=True, exist_ok=True)
+        env["HOME"] = str(home)
+    return env
 
 
 # --- S9: session report, exports, diagnostics, rehearsal samples -----------------------------
