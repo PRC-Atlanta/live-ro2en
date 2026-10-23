@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sound views compared</title>
+<!--
+  Three ways to show "is sound coming in, is the level right, is it speech", all fed by the
+  same fake input. Tap a scenario at the top to see how each view reacts. Offline, no deps.
+  The meter block (between the meter:begin / meter:end markers) is copied into live.html.
+-->
+<style>
+  :root {
+    --bg-0:#060d12; --bg-1:#0a1a22; --bg-2:#10262f; --bg-3:#16323d;
+    --edge:#2b6f7e; --edge-glow:rgba(70,214,236,.28);
+    --cyan:#46d6ec; --cyan-hi:#9df1ff; --cyan-dim:#1f7f92; --cyan-fill:#2aa9bf;
+    --lime:#a3e635; --amber:#f5b83d; --red:#ff5d52;
+    --ink:#d9eef2; --label:#b9cbd0; --mute:#6f8b93;
+    --font: -apple-system, "SF Pro Display", "Helvetica Neue", system-ui, sans-serif;
+    --num: "SF Pro Rounded", ui-rounded, -apple-system, system-ui, sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg-0); color:var(--ink); font:15px/1.4 var(--font); padding:16px; }
+  h1 { font:700 20px var(--font); letter-spacing:.04em; color:var(--cyan); margin:0 0 4px; }
+  .intro { color:var(--label); margin:0 0 12px; max-width:70ch; }
+  .label { font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--label); font-weight:600; }
+  .sub { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); }
+
+  .scen { position:sticky; top:0; z-index:5; display:flex; flex-wrap:wrap; gap:6px; padding:10px 0;
+          background:var(--bg-0); }
+  .chip { font:600 12px var(--font); letter-spacing:.1em; text-transform:uppercase; color:var(--label);
+          background:linear-gradient(#1a2024,#101417); border:1px solid #2c3438; border-radius:3px;
+          padding:10px 14px; min-height:40px; cursor:pointer; }
+  .chip[aria-pressed="true"] { color:var(--cyan-hi); border-color:var(--cyan-dim);
+          background:linear-gradient(#123742,#0b2028); box-shadow:inset 0 0 8px rgba(70,214,236,.25); }
+
+  .grid { display:grid; gap:14px; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); }
+  .card { padding:12px 14px 14px; border:1px solid var(--edge); border-radius:4px;
+          background:radial-gradient(120% 90% at 50% 55%, var(--bg-3) 0%, var(--bg-2) 35%, var(--bg-1) 100%);
+          box-shadow:inset 0 0 30px rgba(0,0,0,.5), 0 0 12px var(--edge-glow); }
+  .card h2 { margin:0 0 2px; font:700 15px var(--font); letter-spacing:.12em; text-transform:uppercase; color:var(--cyan); }
+  .card.pick { border-color:var(--lime); box-shadow:inset 0 0 30px rgba(0,0,0,.5), 0 0 14px rgba(163,230,53,.35); }
+  .card.pick h2::after { content:"  ·  recommended"; color:var(--lime); font-size:11px; letter-spacing:.12em; }
+  .inset { position:relative; margin-top:10px; background:linear-gradient(#0c1d25,#0a171e);
+           border:1px solid #0f2a33; box-shadow:inset 0 0 18px rgba(0,0,0,.7); }
+  .inset canvas { width:100%; display:block; }
+  .scores { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:10px; font-size:13px; }
+  .scores span::before { content:"✓ "; color:var(--lime); font-weight:700; }
+  .scores span.no::before { content:"✗ "; color:var(--red); }
+  .scores span.meh::before { content:"~ "; color:var(--amber); }
+  .note { color:var(--label); font-size:13px; margin:8px 0 0; }
+
+  /* meter:begin */
+  .lvl { padding:10px 12px 10px; background:linear-gradient(#0c1d25,#0a171e); border:1px solid #0f2a33;
+         box-shadow:inset 0 0 18px rgba(0,0,0,.7); }
+  .lvl-top { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:8px; }
+  .lvl-top .dev { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sled { display:inline-flex; align-items:center; gap:7px; }
+  .sled b, .cled b { width:12px; height:12px; border-radius:50%; background:#0d2a33; border:2px solid #2b5d68; }
+  .sled.on b { background:radial-gradient(circle at 40% 35%, #fff 0, var(--lime) 40%, #4d7a0f 100%);
+               border-color:#d4f59a; box-shadow:0 0 10px var(--lime); }
+  .cled.on b { background:radial-gradient(circle at 40% 35%, #fff 0, var(--red) 40%, #7a1610 100%);
+               border-color:#ffb3ad; box-shadow:0 0 10px var(--red); }
+  .cled { display:inline-flex; align-items:center; gap:7px; }
+  .verdict { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-top:8px; min-height:22px; }
+  .verdict strong { font:700 14px var(--font); letter-spacing:.14em; text-transform:uppercase; }
+  .verdict span { color:var(--label); font-size:13px; }
+  .verdict.good strong { color:var(--lime); } .verdict.warn strong { color:var(--amber); }
+  .verdict.bad strong { color:var(--red); }
+  .lvl canvas { width:100%; display:block; }
+  .lvl .meter { height:58px; } .lvl .hist { height:40px; margin-top:6px; }
+  /* meter:end */
+
+  @media (max-width:560px) { body { padding:10px; } .grid { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<h1>SOUND VIEWS</h1>
+<p class="intro">The same fake soundboard feed drives all three. Tap a situation and see which view
+tells a volunteer, in one glance, whether sound is arriving, whether the level is right, and whether
+it is speech.</p>
+
+<div class="scen" role="group" aria-label="Simulated input">
+  <button class="chip" data-scen="good">Good level</button>
+  <button class="chip" data-scen="quiet">Too quiet</button>
+  <button class="chip" data-scen="hot">Clipping</button>
+  <button class="chip" data-scen="none">No sound</button>
+  <button class="chip" data-scen="music">Music, no talking</button>
+</div>
+
+<div class="grid">
+  <section class="card">
+    <h2>Waveform</h2><div class="sub">current mockup</div>
+    <div class="inset"><canvas id="wave" style="height:150px"></canvas></div>
+    <div class="scores"><span>Sound arriving</span><span>Speech</span><span class="no">Level right?</span><span class="no">Clipping</span></div>
+    <p class="note">Looks alive, but there is no scale: "too quiet" and "good" look the same, just smaller.</p>
+  </section>
+
+  <section class="card">
+    <h2>RTA · spectrum</h2><div class="sub">real-time analyzer</div>
+    <div class="inset"><canvas id="rta" style="height:150px"></canvas></div>
+    <div class="scores"><span>Sound arriving</span><span class="meh">Speech (trained eye)</span><span class="no">Level right?</span><span class="no">Clipping</span></div>
+    <p class="note">Shows tone (bass vs. voice band), which is for EQ work. Busy, and doesn't answer "is it loud enough".</p>
+  </section>
+
+  <section class="card pick">
+    <h2>Level meter</h2><div class="sub">with target zone + history</div>
+    <div class="inset" style="border:0;background:none;box-shadow:none">
+      <!-- meter-markup:begin -->
+      <div class="lvl" id="lvl">
+        <div class="lvl-top">
+          <span class="label dev">Sound · Behringer UMC</span>
+          <span class="sled" id="sled"><b></b><span class="label">Speech</span></span>
+          <span class="cled" id="cled"><b></b><span class="label">Clip</span></span>
+        </div>
+        <canvas class="meter" id="meter"></canvas>
+        <canvas class="hist" id="hist"></canvas>
+        <div class="verdict" id="verdict" aria-live="polite"><strong></strong><span></span></div>
+      </div>
+      <!-- meter-markup:end -->
+    </div>
+    <div class="scores"><span>Sound arriving</span><span>Speech</span><span>Level right?</span><span>Clipping</span></div>
+    <p class="note">Green band = where recognition works best. The words under it say what to do. The strip shows the last 30 s, so a dip that just ended is still visible.</p>
+  </section>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const dpr = () => window.devicePixelRatio || 1;
+function fit(cv) { const r = cv.getBoundingClientRect(); const w = Math.round(r.width * dpr()), h = Math.round(r.height * dpr());
+                   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; } return cv.getContext('2d'); }
+
+/* meter:begin */
+// ---- fake soundboard input: one sample every 50 ms ---------------------------------------
+const SCEN = { good:{lvl:-22}, quiet:{lvl:-44}, hot:{lvl:-6}, none:{lvl:null}, music:{lvl:-20, music:true} };
+let scen = 'good', tick = 0;
+const BANDS = 31;                                         // 1/3-octave, 20 Hz .. 20 kHz
+function sample() {
+  tick++;
+  const s = SCEN[scen];
+  if (s.lvl == null) return { rms:-90, peak:-90, speech:false, bands:new Array(BANDS).fill(-90) };
+  const speaking = !s.music && (Math.sin(tick / 40) + Math.sin(tick / 13) * .4) > -0.25;
+  let rms;
+  if (s.music) rms = s.lvl + Math.sin(tick / 6) * 3 + (Math.random() - .5) * 2;
+  else rms = speaking ? s.lvl + (Math.abs(Math.sin(tick / 3.2)) - .6) * 14 + (Math.random() - .5) * 3
+                      : Math.min(s.lvl - 20, -56) + Math.random() * 3;
+  const peak = Math.min(0, rms + 9 + Math.random() * 3);
+  const bands = [];
+  for (let i = 0; i < BANDS; i++) {
+    const oct = i / 3 - Math.log2(500 / 20);              // octaves from 500 Hz
+    const shape = s.music ? -Math.abs(oct + 1.5) * 2.5 - (i > 26 ? 8 : 0)       // bass-heavy, broad
+                          : speaking ? -oct * oct * 2.6 + (i === 13 || i === 17 ? 4 : 0) // voice band
+                                     : -12 - Math.abs(oct) * 2;                    // room noise
+    bands.push(rms + shape + (Math.random() - .5) * 5);
+  }
+  return { rms, peak, speech: speaking, bands };
+}
+
+// ---- level meter: segmented bar with a target zone, peak hold, clip LED, verdict, history ----
+const MIN_DB = -60, GOOD_LO = -30, GOOD_HI = -10, HOT = -3;   // GOOD_* tuned at the church rehearsal
+const M = { val:-90, peak:-90, peakT:0, clipT:-1e9, sigT:0, speechT:0, hist:[], acc:[], verdict:null, last:[] };
+const xOf = (db, w) => Math.max(0, Math.min(1, (db - MIN_DB) / -MIN_DB)) * w;
+
+function meterUpdate(sm, now) {
+  M.val = sm.rms > M.val ? sm.rms : Math.max(sm.rms, M.val - 1.2);             // fast attack, slow release
+  if (sm.peak >= M.peak || now - M.peakT > 1500) { M.peak = sm.peak; M.peakT = now; }
+  if (sm.peak >= -1) M.clipT = now;
+  if (sm.rms > -70) M.sigT = now;
+  if (sm.speech) M.speechT = now;
+  M.last = (M.last.concat([sm])).slice(-100);                                   // 5 s
+  M.acc.push(sm);
+  if (M.acc.length >= 5) {                                                      // a history bar per 250 ms
+    const a = M.acc; M.acc = [];
+    M.hist = M.hist.concat([{ db: Math.max(...a.map(x => x.rms)), speech: a.some(x => x.speech),
+                              clip: a.some(x => x.peak >= -1) }]).slice(-120);  // 30 s
+  }
+  // verdict: what to do, in words
+  const sp = M.last.filter(x => x.speech).map(x => x.rms);
+  const avg = sp.length ? sp.reduce((p, q) => p + q, 0) / sp.length : null;
+  let v;
+  if (now - M.sigT > 3000) v = ['bad', 'No sound', 'Check the cable and that the mixer send is up.'];
+  else if (now - M.clipT < 3000) v = ['bad', 'Clipping', 'Too loud: lower the gain on the mixer send.'];
+  else if (avg != null && avg < GOOD_LO - 5) v = ['warn', 'Too quiet', 'Raise the mixer send for this input.'];
+  else if (avg != null && avg > GOOD_HI) v = ['warn', 'Very loud', 'Lower the mixer send a little.'];
+  else if (avg != null) v = ['good', 'Level good', ''];
+  else if (now - M.speechT > 8000) v = ['warn', 'Sound, no talking', 'Music or noise only. Fine between speakers.'];
+  else v = M.verdict || ['good', 'Level good', ''];
+  M.verdict = v;
+}
+
+function meterDraw() {
+  const cv = $('meter'), c = fit(cv), W = cv.width, H = cv.height, k = dpr();
+  c.clearRect(0, 0, W, H);
+  const barY = 14 * k, barH = H - barY - 12 * k;
+  // target zone bracket + shading
+  const gx0 = xOf(GOOD_LO, W), gx1 = xOf(GOOD_HI, W);
+  c.fillStyle = 'rgba(163,230,53,.10)'; c.fillRect(gx0, barY, gx1 - gx0, barH);
+  c.strokeStyle = 'rgba(163,230,53,.7)'; c.lineWidth = 1.5 * k;
+  c.beginPath(); c.moveTo(gx0, barY - 2 * k); c.lineTo(gx0, 6 * k); c.lineTo(gx1, 6 * k); c.lineTo(gx1, barY - 2 * k); c.stroke();
+  c.font = `600 ${9 * k}px -apple-system, system-ui, sans-serif`; c.textBaseline = 'middle';
+  c.fillStyle = '#0b1c24'; const tw = c.measureText('GOOD').width + 8 * k;
+  c.fillRect((gx0 + gx1) / 2 - tw / 2, 1 * k, tw, 10 * k);
+  c.fillStyle = '#a3e635'; c.textAlign = 'center'; c.fillText('GOOD', (gx0 + gx1) / 2, 6 * k);
+  c.fillStyle = 'rgba(245,184,61,.75)'; c.textAlign = 'left'; c.fillText('TOO QUIET', 2 * k, 6 * k);
+  c.fillStyle = 'rgba(255,93,82,.8)'; c.textAlign = 'right'; c.fillText('TOO LOUD', W - 2 * k, 6 * k);
+  // segments
+  const n = 48, gap = 2 * k, sw = (W - gap * (n - 1)) / n;
+  for (let i = 0; i < n; i++) {
+    const db = MIN_DB + (i + 1) * (-MIN_DB / n), x = i * (sw + gap), lit = db <= M.val + 0.01;
+    const col = db > HOT ? '255,93,82' : db > GOOD_HI ? '245,184,61' : db > GOOD_LO ? '163,230,53' : '70,214,236';
+    c.fillStyle = lit ? `rgba(${col},${db > GOOD_LO ? .95 : .75})` : `rgba(${col},.10)`;
+    c.fillRect(x, barY, sw, barH);
+  }
+  // peak hold tick
+  if (M.peak > MIN_DB) { const px = xOf(M.peak, W); c.fillStyle = '#e8fbff'; c.fillRect(px - 1.5 * k, barY - 2 * k, 3 * k, barH + 4 * k); }
+  // scale
+  c.fillStyle = '#6f8b93'; c.textAlign = 'center'; c.font = `${9 * k}px -apple-system, system-ui, sans-serif`;
+  for (const d of W < 420 * k ? [-60, -40, -30, -20, -10, 0] : [-60, -40, -30, -20, -10, -3, 0]) {
+    const x = Math.min(W - 6 * k, Math.max(6 * k, xOf(d, W)));
+    c.fillText(String(d), x, H - 5 * k);
+  }
+}
+
+function histDraw() {
+  const cv = $('hist'), c = fit(cv), W = cv.width, H = cv.height, k = dpr();
+  c.clearRect(0, 0, W, H);
+  const n = 120, bw = W / n, base = H - 4 * k;
+  c.strokeStyle = 'rgba(163,230,53,.25)'; c.setLineDash([3 * k, 3 * k]); c.lineWidth = 1 * k;   // good band edges
+  for (const d of [GOOD_LO, GOOD_HI]) { const y = base - (d - MIN_DB) / -MIN_DB * (base - 2 * k); c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); }
+  c.setLineDash([]);
+  M.hist.forEach((b, i) => {
+    const x = W - (M.hist.length - i) * bw, h = Math.max(0, (b.db - MIN_DB) / -MIN_DB) * (base - 2 * k);
+    c.fillStyle = b.clip ? '#ff5d52' : b.db > GOOD_HI ? '#f5b83d' : b.db >= GOOD_LO ? 'rgba(70,214,236,.85)'
+                : b.db > -70 ? 'rgba(245,184,61,.55)' : 'transparent';
+    c.fillRect(x + .5 * k, base - h, bw - 1 * k, h);
+    if (b.speech) { c.fillStyle = '#a3e635'; c.fillRect(x, base + 1.5 * k, bw, 2.5 * k); }
+  });
+  c.fillStyle = '#6f8b93'; c.font = `${9 * k}px -apple-system, system-ui, sans-serif`; c.textAlign = 'left'; c.textBaseline = 'top';
+  c.fillText('LAST 30 S', 2 * k, 1 * k);
+}
+
+function meterRender() {
+  $('sled').classList.toggle('on', performance.now() - M.speechT < 300);
+  $('cled').classList.toggle('on', performance.now() - M.clipT < 3000);
+  const [cls, word, hint] = M.verdict || ['good', '', ''];
+  const v = $('verdict'); v.className = 'verdict ' + cls;
+  v.querySelector('strong').textContent = word; v.querySelector('span').textContent = hint;
+  meterDraw(); histDraw();
+}
+/* meter:end */
+
+// ---- waveform (as in the current mockup) --------------------------------------------------
+const WN = 200, wenv = new Array(WN).fill(-90), wgate = new Array(WN).fill(0);
+function waveDraw(sm) {
+  wenv.push(sm.rms); wenv.shift(); wgate.push(sm.speech ? 1 : 0); wgate.shift();
+  const cv = $('wave'), c = fit(cv), W = cv.width, H = cv.height, k = dpr();
+  c.clearRect(0, 0, W, H);
+  const top = 8 * k, mid = top + (H - top) / 2, amp = (H - top) / 2 - 4 * k, dx = W / (WN - 1);
+  const a = db => Math.max(0, Math.pow(10, db / 20)) * 3.2;   // linear amplitude, as a waveform shows it
+  c.beginPath(); c.moveTo(0, mid);
+  wenv.forEach((v, i) => c.lineTo(i * dx, mid - Math.min(1, a(v) * (0.6 + Math.random() * .4)) * amp));
+  for (let i = WN - 1; i >= 0; i--) c.lineTo(i * dx, mid + Math.min(1, a(wenv[i]) * (0.6 + Math.random() * .4)) * amp);
+  c.closePath(); c.fillStyle = 'rgba(42,169,191,.75)'; c.fill();
+  c.strokeStyle = 'rgba(157,241,255,.9)'; c.lineWidth = 1.5 * k; c.beginPath(); c.moveTo(0, mid); c.lineTo(W, mid); c.stroke();
+  c.strokeStyle = '#a3e635'; c.lineWidth = 2 * k; c.beginPath();
+  wgate.forEach((g, i) => { const y = g ? mid - amp : mid; i ? c.lineTo(i * dx, y) : c.moveTo(0, y); }); c.stroke();
+}
+
+// ---- RTA -------------------------------------------------------------------------------
+const rtaVal = new Array(BANDS).fill(-90), rtaPk = new Array(BANDS).fill(-90);
+function rtaDraw(sm) {
+  const cv = $('rta'), c = fit(cv), W = cv.width, H = cv.height, k = dpr();
+  c.clearRect(0, 0, W, H);
+  const base = H - 14 * k, top = 6 * k, bw = W / BANDS;
+  c.strokeStyle = 'rgba(70,214,236,.08)'; c.lineWidth = 1;
+  for (let d = -60; d <= 0; d += 12) { const y = base - (d + 72) / 72 * (base - top); c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); }
+  sm.bands.forEach((b, i) => {
+    rtaVal[i] = b > rtaVal[i] ? b : Math.max(b, rtaVal[i] - 2);
+    rtaPk[i] = Math.max(rtaVal[i], rtaPk[i] - .4);
+    const h = Math.max(0, (rtaVal[i] + 72) / 72) * (base - top);
+    c.fillStyle = 'rgba(42,169,191,.85)'; c.fillRect(i * bw + 1.5 * k, base - h, bw - 3 * k, h);
+    const ph = Math.max(0, (rtaPk[i] + 72) / 72) * (base - top);
+    c.fillStyle = '#9df1ff'; c.fillRect(i * bw + 1.5 * k, base - ph - 2 * k, bw - 3 * k, 2 * k);
+  });
+  c.fillStyle = '#6f8b93'; c.font = `${9 * k}px -apple-system, system-ui, sans-serif`; c.textAlign = 'center';
+  [['63', 5], ['250', 11], ['1k', 17], ['4k', 23], ['16k', 29]].forEach(([t, i]) => c.fillText(t, (i + .5) * bw, H - 3 * k));
+}
+
+// ---- drive -----------------------------------------------------------------------------
+function setScen(s) { scen = s; document.querySelectorAll('.chip').forEach(b => b.setAttribute('aria-pressed', b.dataset.scen === s)); }
+document.querySelectorAll('.chip').forEach(b => b.onclick = () => setScen(b.dataset.scen));
+setScen('good');
+const slow = matchMedia('(prefers-reduced-motion: reduce)').matches;
+setInterval(() => {
+  const sm = sample(), now = performance.now();
+  meterUpdate(sm, now); meterRender(); waveDraw(sm); rtaDraw(sm);
+}, slow ? 200 : 50);
+</script>
+</body>
+</html>

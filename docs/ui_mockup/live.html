@@ -6,7 +6,8 @@
 <title>Live Translate — UI mockup</title>
 <!--
   Visual reference for S5a/S5b (docs/APP_PLAN.md §1.3). Static mock with fake data:
-  click the big dial (or Space) to go live, H hides captions, 1/2/3 speaker, V cycles the
+  click the big dial (or Space) to go live, H hides captions, 1/2/3 speaker, L or a tap on the
+  sound meter cycles the simulated input level, V cycles the
   Heard / On screen / Both tabs, P simulates a
   ProPresenter outage. Fully offline: no external fonts or scripts.
   The :root tokens below seed src/live/ui/styles/tokens.css.
@@ -49,15 +50,26 @@
   .label { font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--label); font-weight:600; }
   .sub { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); }
 
-  /* scope display */
-  .scope { position:relative; height:170px; background:linear-gradient(#0c1d25,#0a171e);
-           border:1px solid #0f2a33; box-shadow:inset 0 0 18px rgba(0,0,0,.7); }
-  .scope canvas { width:100%; height:100%; display:block; }
-  .scope .tag { position:absolute; top:6px; left:10px; }
-  .scope .legend { position:absolute; top:6px; right:10px; display:flex; gap:14px; }
-  .scope .tag, .scope .legend { background:rgba(10,23,30,.85); padding:2px 6px; border-radius:2px; }
-  .key { display:inline-flex; align-items:center; gap:6px; }
-  .key i { width:14px; height:3px; display:inline-block; }
+  /* meter:begin */
+  .lvl { padding:10px 12px 10px; background:linear-gradient(#0c1d25,#0a171e); border:1px solid #0f2a33;
+         box-shadow:inset 0 0 18px rgba(0,0,0,.7); }
+  .lvl-top { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:8px; }
+  .lvl-top .dev { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sled { display:inline-flex; align-items:center; gap:7px; }
+  .sled b, .cled b { width:12px; height:12px; border-radius:50%; background:#0d2a33; border:2px solid #2b5d68; }
+  .sled.on b { background:radial-gradient(circle at 40% 35%, #fff 0, var(--lime) 40%, #4d7a0f 100%);
+               border-color:#d4f59a; box-shadow:0 0 10px var(--lime); }
+  .cled.on b { background:radial-gradient(circle at 40% 35%, #fff 0, var(--red) 40%, #7a1610 100%);
+               border-color:#ffb3ad; box-shadow:0 0 10px var(--red); }
+  .cled { display:inline-flex; align-items:center; gap:7px; }
+  .verdict { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-top:8px; min-height:22px; }
+  .verdict strong { font:700 14px var(--font); letter-spacing:.14em; text-transform:uppercase; }
+  .verdict span { color:var(--label); font-size:13px; }
+  .verdict.good strong { color:var(--lime); } .verdict.warn strong { color:var(--amber); }
+  .verdict.bad strong { color:var(--red); }
+  .lvl canvas { width:100%; display:block; }
+  .lvl .meter { height:58px; } .lvl .hist { height:40px; margin-top:6px; }
+  /* meter:end */
 
   /* caption mirror */
   .mirror { margin-top:10px; padding:10px 14px 12px; background:#050b0e;
@@ -165,17 +177,17 @@
 
   @media (max-width:560px) {
     body { padding:0; }
-    #setupname, .scope .legend, .mtabs .sub { display:none; }
+    #setupname, .mtabs .sub { display:none; }
     .views[data-view="both"] { grid-template-columns:1fr; }
     .views[data-view="both"] .v-screen { border-left:0; padding-left:0; border-top:1px solid #0f2a33; padding-top:8px; } .bar { justify-content:flex-end; } .logo { margin-right:auto; }
     .deck { grid-template-columns:1fr 1fr; }
     .deck .ctl.center { grid-column:1 / -1; order:-1; }
-    .scope { height:120px; }
   }
   /* small laptop window beside ProPresenter: keep the big dial above the fold */
   @media (max-height:600px) {
     body { padding:0; } .panel { padding:8px 10px; }
-    .scope { height:64px; } .scope .tag, .scope .legend { display:none; }
+    .lvl { padding:6px 10px; } .lvl .hist, .lvl .verdict span { display:none; } .lvl .meter { height:44px; }
+    .lvl-top { margin-bottom:2px; } .verdict { margin-top:2px; }
     .mirror { margin-top:6px; padding:6px 10px; } .mirror .screen { font-size:19px; }
     .ledrow { margin:6px 2px 0; } .deck { zoom:.72; margin-top:0; } .foot { display:none; }
   }
@@ -194,14 +206,18 @@
   </div>
 
   <div class="panel">
-    <div class="scope">
-      <canvas id="scope"></canvas>
-      <div class="tag sub">Sound · Behringer UMC</div>
-      <div class="legend sub">
-        <span class="key"><i style="background:var(--cyan-fill)"></i>Sound</span>
-        <span class="key"><i style="background:var(--lime)"></i>Speech heard</span>
+    <!-- meter-markup:begin -->
+    <div class="lvl" id="lvl">
+      <div class="lvl-top">
+        <span class="label dev">Sound · Behringer UMC</span>
+        <span class="sled" id="sled"><b></b><span class="label">Speech</span></span>
+        <span class="cled" id="cled"><b></b><span class="label">Clip</span></span>
       </div>
+      <canvas class="meter" id="meter"></canvas>
+      <canvas class="hist" id="hist"></canvas>
+      <div class="verdict" id="verdict" aria-live="polite"><strong></strong><span></span></div>
     </div>
+    <!-- meter-markup:end -->
 
     <div class="mirror" id="mirror">
       <div class="mtabs" role="tablist" aria-label="What to show">
@@ -386,37 +402,138 @@ setInterval(() => {
 }, 2600);
 setInterval(() => S.phase === 'live' && render(), 1000);
 
-// scope: scrolling sound envelope (cyan, mirrored) + speech gate (lime square trace)
-const cv = $('scope'), cx = cv.getContext('2d'), N = 240, env = new Array(N).fill(0), gate = new Array(N).fill(0);
-let ph = 0;
-function size() { const r = cv.getBoundingClientRect(); cv.width = r.width * devicePixelRatio; cv.height = r.height * devicePixelRatio; }
-addEventListener('resize', size); size();
-function step() {
-  ph += 1;
-  const speaking = (Math.sin(ph / 23) + Math.sin(ph / 7.3) * .4) > -0.2;
-  const syll = Math.abs(Math.sin(ph / 2.1)) * (0.55 + Math.random() * .45);
-  env.push(speaking ? syll * .9 : Math.random() * .05); env.shift();
-  gate.push(speaking ? 1 : 0); gate.shift();
-  // traces live below a reserved label strip so the lime gate never crosses the text
-  const showLabels = getComputedStyle(cv.parentNode.querySelector('.tag')).display !== 'none';
-  const top = (showLabels ? 26 : 6) * devicePixelRatio;
-  const W = cv.width, H = cv.height, amp = (H - top) / 2 - 4 * devicePixelRatio, mid = top + (H - top) / 2, dx = W / (N - 1);
-  cx.clearRect(0, 0, W, H);
-  cx.strokeStyle = 'rgba(70,214,236,.08)'; cx.lineWidth = 1;
-  for (let i = 1; i < 6; i++) { cx.beginPath(); const y = top + (H - top) * i / 6; cx.moveTo(0, y); cx.lineTo(W, y); cx.stroke(); }
-  cx.beginPath(); cx.moveTo(0, mid);
-  env.forEach((v, i) => cx.lineTo(i * dx, mid - v * amp * .82));
-  for (let i = N - 1; i >= 0; i--) cx.lineTo(i * dx, mid + env[i] * amp * .82);
-  cx.closePath(); cx.fillStyle = 'rgba(42,169,191,.75)'; cx.fill();
-  cx.strokeStyle = 'rgba(157,241,255,.9)'; cx.lineWidth = 1.5 * devicePixelRatio;
-  cx.beginPath(); cx.moveTo(0, mid); cx.lineTo(W, mid); cx.stroke();
-  cx.strokeStyle = '#a3e635'; cx.lineWidth = 2 * devicePixelRatio; cx.shadowColor = '#a3e635'; cx.shadowBlur = 6;
-  cx.beginPath();
-  gate.forEach((g, i) => { const y = g ? mid - amp : mid; i ? cx.lineTo(i * dx, y) : cx.moveTo(0, y); });
-  cx.stroke(); cx.shadowBlur = 0;
+const dpr = () => window.devicePixelRatio || 1;
+function fit(cv) { const r = cv.getBoundingClientRect(); const w = Math.round(r.width * dpr()), h = Math.round(r.height * dpr());
+                   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; } return cv.getContext('2d'); }
+/* meter:begin */
+// ---- fake soundboard input: one sample every 50 ms ---------------------------------------
+const SCEN = { good:{lvl:-22}, quiet:{lvl:-44}, hot:{lvl:-6}, none:{lvl:null}, music:{lvl:-20, music:true} };
+let scen = 'good', tick = 0;
+const BANDS = 31;                                         // 1/3-octave, 20 Hz .. 20 kHz
+function sample() {
+  tick++;
+  const s = SCEN[scen];
+  if (s.lvl == null) return { rms:-90, peak:-90, speech:false, bands:new Array(BANDS).fill(-90) };
+  const speaking = !s.music && (Math.sin(tick / 40) + Math.sin(tick / 13) * .4) > -0.25;
+  let rms;
+  if (s.music) rms = s.lvl + Math.sin(tick / 6) * 3 + (Math.random() - .5) * 2;
+  else rms = speaking ? s.lvl + (Math.abs(Math.sin(tick / 3.2)) - .6) * 14 + (Math.random() - .5) * 3
+                      : Math.min(s.lvl - 20, -56) + Math.random() * 3;
+  const peak = Math.min(0, rms + 9 + Math.random() * 3);
+  const bands = [];
+  for (let i = 0; i < BANDS; i++) {
+    const oct = i / 3 - Math.log2(500 / 20);              // octaves from 500 Hz
+    const shape = s.music ? -Math.abs(oct + 1.5) * 2.5 - (i > 26 ? 8 : 0)       // bass-heavy, broad
+                          : speaking ? -oct * oct * 2.6 + (i === 13 || i === 17 ? 4 : 0) // voice band
+                                     : -12 - Math.abs(oct) * 2;                    // room noise
+    bands.push(rms + shape + (Math.random() - .5) * 5);
+  }
+  return { rms, peak, speech: speaking, bands };
 }
+
+// ---- level meter: segmented bar with a target zone, peak hold, clip LED, verdict, history ----
+const MIN_DB = -60, GOOD_LO = -30, GOOD_HI = -10, HOT = -3;   // GOOD_* tuned at the church rehearsal
+const M = { val:-90, peak:-90, peakT:0, clipT:-1e9, sigT:0, speechT:0, hist:[], acc:[], verdict:null, last:[] };
+const xOf = (db, w) => Math.max(0, Math.min(1, (db - MIN_DB) / -MIN_DB)) * w;
+
+function meterUpdate(sm, now) {
+  M.val = sm.rms > M.val ? sm.rms : Math.max(sm.rms, M.val - 1.2);             // fast attack, slow release
+  if (sm.peak >= M.peak || now - M.peakT > 1500) { M.peak = sm.peak; M.peakT = now; }
+  if (sm.peak >= -1) M.clipT = now;
+  if (sm.rms > -70) M.sigT = now;
+  if (sm.speech) M.speechT = now;
+  M.last = (M.last.concat([sm])).slice(-100);                                   // 5 s
+  M.acc.push(sm);
+  if (M.acc.length >= 5) {                                                      // a history bar per 250 ms
+    const a = M.acc; M.acc = [];
+    M.hist = M.hist.concat([{ db: Math.max(...a.map(x => x.rms)), speech: a.some(x => x.speech),
+                              clip: a.some(x => x.peak >= -1) }]).slice(-120);  // 30 s
+  }
+  // verdict: what to do, in words
+  const sp = M.last.filter(x => x.speech).map(x => x.rms);
+  const avg = sp.length ? sp.reduce((p, q) => p + q, 0) / sp.length : null;
+  let v;
+  if (now - M.sigT > 3000) v = ['bad', 'No sound', 'Check the cable and that the mixer send is up.'];
+  else if (now - M.clipT < 3000) v = ['bad', 'Clipping', 'Too loud: lower the gain on the mixer send.'];
+  else if (avg != null && avg < GOOD_LO - 5) v = ['warn', 'Too quiet', 'Raise the mixer send for this input.'];
+  else if (avg != null && avg > GOOD_HI) v = ['warn', 'Very loud', 'Lower the mixer send a little.'];
+  else if (avg != null) v = ['good', 'Level good', ''];
+  else if (now - M.speechT > 8000) v = ['warn', 'Sound, no talking', 'Music or noise only. Fine between speakers.'];
+  else v = M.verdict || ['good', 'Level good', ''];
+  M.verdict = v;
+}
+
+function meterDraw() {
+  const cv = $('meter'), c = fit(cv), W = cv.width, H = cv.height, k = dpr();
+  c.clearRect(0, 0, W, H);
+  const barY = 14 * k, barH = H - barY - 12 * k;
+  // target zone bracket + shading
+  const gx0 = xOf(GOOD_LO, W), gx1 = xOf(GOOD_HI, W);
+  c.fillStyle = 'rgba(163,230,53,.10)'; c.fillRect(gx0, barY, gx1 - gx0, barH);
+  c.strokeStyle = 'rgba(163,230,53,.7)'; c.lineWidth = 1.5 * k;
+  c.beginPath(); c.moveTo(gx0, barY - 2 * k); c.lineTo(gx0, 6 * k); c.lineTo(gx1, 6 * k); c.lineTo(gx1, barY - 2 * k); c.stroke();
+  c.font = `600 ${9 * k}px -apple-system, system-ui, sans-serif`; c.textBaseline = 'middle';
+  c.fillStyle = '#0b1c24'; const tw = c.measureText('GOOD').width + 8 * k;
+  c.fillRect((gx0 + gx1) / 2 - tw / 2, 1 * k, tw, 10 * k);
+  c.fillStyle = '#a3e635'; c.textAlign = 'center'; c.fillText('GOOD', (gx0 + gx1) / 2, 6 * k);
+  c.fillStyle = 'rgba(245,184,61,.75)'; c.textAlign = 'left'; c.fillText('TOO QUIET', 2 * k, 6 * k);
+  c.fillStyle = 'rgba(255,93,82,.8)'; c.textAlign = 'right'; c.fillText('TOO LOUD', W - 2 * k, 6 * k);
+  // segments
+  const n = 48, gap = 2 * k, sw = (W - gap * (n - 1)) / n;
+  for (let i = 0; i < n; i++) {
+    const db = MIN_DB + (i + 1) * (-MIN_DB / n), x = i * (sw + gap), lit = db <= M.val + 0.01;
+    const col = db > HOT ? '255,93,82' : db > GOOD_HI ? '245,184,61' : db > GOOD_LO ? '163,230,53' : '70,214,236';
+    c.fillStyle = lit ? `rgba(${col},${db > GOOD_LO ? .95 : .75})` : `rgba(${col},.10)`;
+    c.fillRect(x, barY, sw, barH);
+  }
+  // peak hold tick
+  if (M.peak > MIN_DB) { const px = xOf(M.peak, W); c.fillStyle = '#e8fbff'; c.fillRect(px - 1.5 * k, barY - 2 * k, 3 * k, barH + 4 * k); }
+  // scale
+  c.fillStyle = '#6f8b93'; c.textAlign = 'center'; c.font = `${9 * k}px -apple-system, system-ui, sans-serif`;
+  for (const d of W < 420 * k ? [-60, -40, -30, -20, -10, 0] : [-60, -40, -30, -20, -10, -3, 0]) {
+    const x = Math.min(W - 6 * k, Math.max(6 * k, xOf(d, W)));
+    c.fillText(String(d), x, H - 5 * k);
+  }
+}
+
+function histDraw() {
+  const cv = $('hist'), c = fit(cv), W = cv.width, H = cv.height, k = dpr();
+  c.clearRect(0, 0, W, H);
+  const n = 120, bw = W / n, base = H - 4 * k;
+  c.strokeStyle = 'rgba(163,230,53,.25)'; c.setLineDash([3 * k, 3 * k]); c.lineWidth = 1 * k;   // good band edges
+  for (const d of [GOOD_LO, GOOD_HI]) { const y = base - (d - MIN_DB) / -MIN_DB * (base - 2 * k); c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); }
+  c.setLineDash([]);
+  M.hist.forEach((b, i) => {
+    const x = W - (M.hist.length - i) * bw, h = Math.max(0, (b.db - MIN_DB) / -MIN_DB) * (base - 2 * k);
+    c.fillStyle = b.clip ? '#ff5d52' : b.db > GOOD_HI ? '#f5b83d' : b.db >= GOOD_LO ? 'rgba(70,214,236,.85)'
+                : b.db > -70 ? 'rgba(245,184,61,.55)' : 'transparent';
+    c.fillRect(x + .5 * k, base - h, bw - 1 * k, h);
+    if (b.speech) { c.fillStyle = '#a3e635'; c.fillRect(x, base + 1.5 * k, bw, 2.5 * k); }
+  });
+  c.fillStyle = '#6f8b93'; c.font = `${9 * k}px -apple-system, system-ui, sans-serif`; c.textAlign = 'left'; c.textBaseline = 'top';
+  c.fillText('LAST 30 S', 2 * k, 1 * k);
+}
+
+function meterRender() {
+  $('sled').classList.toggle('on', performance.now() - M.speechT < 300);
+  $('cled').classList.toggle('on', performance.now() - M.clipT < 3000);
+  const [cls, word, hint] = M.verdict || ['good', '', ''];
+  const v = $('verdict'); v.className = 'verdict ' + cls;
+  v.querySelector('strong').textContent = word; v.querySelector('span').textContent = hint;
+  meterDraw(); histDraw();
+}
+/* meter:end */
+// demo: tap the meter (or press L) to cycle the simulated input
+const SCEN_ORDER = ['good', 'quiet', 'hot', 'none', 'music'];
+function nextScen() { scen = SCEN_ORDER[(SCEN_ORDER.indexOf(scen) + 1) % SCEN_ORDER.length]; }
+$('lvl').onclick = nextScen;
+addEventListener('keydown', e => { if (e.key.toLowerCase() === 'l' && !e.target.closest('input,textarea')) nextScen(); });
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-setInterval(step, reduce ? 400 : 60);
+setInterval(() => {
+  meterUpdate(sample(), performance.now()); meterRender();
+  const [cls, word] = M.verdict || ['good', 'Level good'];
+  pill('p-sound', cls === 'good' ? '' : cls === 'warn' ? 'warn' : 'err', cls === 'good' ? 'Sound OK' : word);
+}, reduce ? 200 : 50);
 render();
 </script>
 </body>

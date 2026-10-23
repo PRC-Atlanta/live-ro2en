@@ -1,9 +1,10 @@
 # Live RO2EN as an installable Mac app: plan
 
-Written 2026-10-23, from three parallel ideation passes (packaging, operator UI, live-service
-controls) over the code as of `e6f3e93` plus the bug fixes in progress at the time. It replaces
-the "Package as a Mac app" section of `TODO.md` as the plan of record (that section is a subset
-of this one).
+Written 2026-10-23 from three parallel ideation passes (packaging, operator UI, live-service
+controls). **Revised the same day against the code after the bug-fix commits (`a06659f` …
+`56ac124`, 116 tests passing):** §0 lists what those commits already built, and every section
+below now only asks for what is still missing. It replaces the "Package as a Mac app" section of
+`TODO.md` as the plan of record (that section is a subset of this one).
 
 **Goal:** a church volunteer who is not technical installs one app from a DMG and opens it a few
 minutes before the sermon. A short checklist turns green, they press one big button, and captions
@@ -22,6 +23,50 @@ memory is freed. No Terminal, no Homebrew, no config files.
 
 ---
 
+## 0. Where the code stands (after the bug fixes, `56ac124`)
+
+**Already built. Phase 1 sessions must keep these working and must not rebuild them:**
+
+| Area | What exists | Where |
+|---|---|---|
+| Clause pipeline | One worker thread translates and shows clauses in arrival order; hold timers carry a generation | `app.py` `_submit` / `_work_loop` |
+| Falling behind | **Catch-up instead of dropping.** The engine bridges pauses into longer recognition calls (`stt_backlog_s`, `catchup_max_s`), and the app merges waiting clauses into one translation (`lag_warn_s`, `catchup_max_words`). Nothing is dropped. Alerts: `RECOGNITION BEHIND`, `CAPTIONS BEHIND`. | `engine.py` `run`, `app.py` `_catch_up`, `pack_parts` |
+| Audio health | Watchdog `audio` events with a fault kind (`no_frames` after `audio_watchdog_s`, `digital_silence` after `digital_silence_s`). The mic is reopened with backoff (1/2/5 s) after an error or a stall; a re-plugged device is found again by name. The `NO AUDIO` alert clears when the device returns. | `engine.py` `mic_source`, `_reopen_device`; `app.py` `alerts()` |
+| Failure visibility | Engine death is shown (`ENGINE STOPPED`); a failed chunk is logged and counted by outcome (`ok`, `stt_error`, `error`, `empty_stt`, `empty_mt`, `mt_echo`, `passthrough`, `mt_truncated`, `caught_up`, `late`, `pp_error`); warnings are de-duplicated and bounded | `app.py` `_log_failure`, `counts`, `_warn` |
+| Translation checks | Echo detection (an untranslated source is not shown, except an English quote in RO→EN). Truncation is counted. The LLM context resets on a language switch. Glossary alternatives and an optional "the". | `app.py` `is_echo`, `translate.py` |
+| Control safety | `start`, `stop` and `profile` share one lock (no double load or double engine); `starting` status | `app.py` `_control` |
+| API security | Host check (stops DNS rebinding) and Origin check on every state-changing request and on the WebSocket; `web_allowed_hosts` for a LAN or proxy host | `app.py` `request_allowed` |
+| ProPresenter | A stage-display failure no longer hides a main-caption error | `propresenter.py` `_also_stage` |
+| Models | Every model pinned by commit in `requirements/models.lock.txt`, with sha256 for non-HF files; `src/model_lock.py` fetches at the pin and writes `refs/main`, so offline loading works on a fresh install (verified) | `setup.sh`, `src/model_lock.py` |
+| Rehearsal gate | `e2e.py --strict` fails a run on eof/exit, failed-chunk share, first-word ≤ 6 s share and optional WER | `src/live/e2e.py` `gate` |
+| Tests | 37 live failure tests, including the control API end to end | `tests/test_live_failures.py` |
+
+**Still missing, confirmed in the code. The plan below covers each item:**
+- The engine does not exit on stdin EOF: `stdin_loop` just returns. Nothing handles SIGTERM, and
+  `uvicorn.run` never calls `live.stop()`. A crashed or killed orchestrator can therefore leave
+  the engine holding the mic and GPU. → S1
+- A dead engine is shown but not restarted. → S1
+- Models load only when Start is pressed (`start()` → `load_translator()` + engine spawn). →
+  S1 preload/hold
+- There is no input level for a meter or a "sound heard" check, only fault events. → S1
+- **The Fast/Quality switch still stops and restarts the engine** (`set_profile` → `stop()` /
+  `start()`), leaving a gap of several seconds. → S4
+- ffmpeg is still needed to resample rehearsal files that are not 16 kHz (`file_source`), and
+  `setup.sh` installs it with Homebrew. → S1
+- Paths are still the repo's: `ROOT/logs`, `ROOT/<stt_venv>/bin/python`, `ROOT/config.yaml`. → Phase 0
+  `paths.py`, S3
+- ProPresenter has no health ping, reconnect or resend: `ping()` exists but is unused, and an
+  identical text is never re-sent after a manual clear. → S2
+- There is no hide/pause, retract or correction. "Clear" is a one-shot. → S2
+- There are no settings or session-terms endpoints. Glossary, keywords and spellings load once
+  at start. → S3
+- NLLB is still converted on the user's Mac (`ct2-transformers-converter`, at a pinned
+  revision). → S6
+- `config.yaml` no longer has a ProPresenter password, and the live code never sends one, so
+  the password field and Keychain storage are dropped from this plan.
+
+---
+
 ## 1. Decisions (the outcome of the ideation)
 
 ### 1.1 Packaging
@@ -30,16 +75,16 @@ memory is freed. No Terminal, no Homebrew, no config files.
 | Shell | **SwiftUI + WKWebView**: a thin wrapper (about 600 lines) that owns the Python processes, quit, the menu, App Nap and sleep prevention while live, and Sparkle | Tauri (adds a Rust toolchain and uses the same webview anyway); Electron (about 200 MB of Chromium for nothing); py2app/Briefcase/PyInstaller (single environment only, freezing torch/NeMo is fragile); a launcher that opens Safari (can't own the processes or clean up after them) |
 | Python | **One python-build-standalone 3.12** in `Contents/Resources/runtime`. Packages installed with `uv pip install --target` into `site/common` (packages pinned to the same version in both environments: torch, mlx, numpy…), `site/nemo` and `site/mt`. Launched with `python -s -B` and a `PYTHONPATH` per process. No venvs, so nothing has to be relocated. Wheels only, pruned, precompiled `.pyc`. Every cache redirected to `~/Library/Caches/Live RO2EN`. | Copying the two venvs (`pyvenv.cfg` holds absolute paths) |
 | Spike (optional) | Spend one day trying to merge the two environments into one process. torch and mlx versions already match. If it works, the stdin/stdout protocol between the two processes and the risk of orphaned processes both go away. **Not a blocker for v1.** | |
-| ffmpeg | **Removed.** Rehearsal files are decoded with soundfile/libsndfile (mp3, wav, flac). | Bundling ffmpeg |
+| ffmpeg | **Removed.** Rehearsal files are decoded with soundfile/libsndfile (mp3, wav, flac). The one remaining use, resampling non-16 kHz files in `engine.file_source`, moves to `soxr` (a small wheel) and `setup.sh` stops installing ffmpeg. | Bundling ffmpeg |
 | Small model files | `libneedle.dylib`, `whistle.cact` and `silero_vad.onnx` are **bundled and signed**. A dylib downloaded at runtime would fail library validation. | Downloading them |
-| Large models | Downloaded at first run to `~/Library/Application Support/Live RO2EN/hf` (`HF_HOME`), so the existing loaders don't change. A `models.lock.json` manifest lists repo, pinned revision, sha256, size and which profiles need each model. The downloader writes `refs/main` itself after fetching a pinned revision. | Bundling 19 GB |
+| Large models | Downloaded at first run to `~/Library/Application Support/Live RO2EN/hf` (`HF_HOME`), so the existing loaders don't change. **Build on what exists:** `requirements/models.lock.txt` already pins every repo by commit, and `src/model_lock.py` already fetches at the pin and writes `refs/main`. S6 adds a size and a profile tag to each line (for "Fast only" vs "Fast + Best"), plus resumable downloads with progress. HF commit pins are content-addressed, so sha256 is only needed for the `url` files, as now. | Bundling 19 GB; a second manifest format |
 | NLLB | Publish the int8 CTranslate2 conversion **once** to a church-owned Hugging Face repo. | Converting on the user's Mac (pulls about 10 GB of fp32 weights plus transformers) |
 | Distribution | **Developer ID signing, hardened runtime, notarized, stapled DMG.** Sign every Mach-O from the inside out (found with `file`, not by extension), never `--deep`. Entitlements: `device.audio-input`, `cs.allow-jit`, `cs.allow-unsigned-executable-memory`. | Mac App Store (its sandbox doesn't fit this ML stack) |
 | Before there is an Apple account | Ad-hoc signed DMG for an internal pilot. On macOS 15 it is opened through System Settings → Privacy & Security → Open Anyway. Microphone permission resets on every rebuild. | |
 | Updates | **Sparkle 2** with an EdDSA-signed appcast on a *public* releases feed (the source repo is private). It never checks or installs while live; updates install on quit. A model update is a prompt at launch, never during a service. | |
 | Settings | The bundle ships `defaults.yaml` (today's `config.yaml` without the dev sections). The user's `settings.yaml` in Application Support holds overrides only, with `schema_version` and atomic writes. Glossary, keywords and spellings are bundled defaults plus a user additions file. In dev, with no `LIVE_HOME` set, the repo paths keep working. | Editing `config.yaml` |
 | Logs | `~/Library/Logs/Live RO2EN/` holds services jsonl, `engine.log` and diagnostics. | |
-| Security | The control API requires the **per-launch token** that Swift passes in, and checks `Origin`. Today any web page can POST to 127.0.0.1:8765. Remote control from the LAN is opt-in, with a PIN. | |
+| Security | **Done:** Host and Origin checks (`request_allowed`); other web pages on the Mac can no longer drive the API. The WKWebView loads `http://127.0.0.1:<port>`, which is same-origin, so **no per-launch token is needed** for v1. Swift only passes a free port. Remote control from the LAN stays opt-in: `web_host` plus `web_allowed_hosts`, and S2/S9 add a PIN before it is offered in the UI. | A per-launch token (only guards against other local processes, which can already read the mic) |
 
 ### 1.2 Lifecycle: preload so Start is instant
 State machine, one `phase` field on `/ws`:
@@ -57,8 +102,9 @@ plus `error`. The full `phase` enum and contract field list are in §3.
   - Disk space above 1 GB.
   - Optional "Send test caption".
   - Start stays usable when a check is red, but shows a warning.
-- **Shutdown, so no process is ever orphaned.** Today the engine ignores stdin EOF and SIGTERM
-  doesn't call `live.stop()`. The fix has four layers:
+- **Shutdown, so no process is ever orphaned.** Checked again after the fixes, and still true:
+  `engine.py` `stdin_loop` returns on EOF without setting `stop` or queueing the sentinel, and
+  `app.py` `main()` has no SIGTERM handler or shutdown hook. The fix has four layers:
   1. The engine exits on stdin EOF or when its parent PID changes.
   2. The orchestrator calls `live.stop()` on SIGTERM and in the FastAPI shutdown hook.
   3. On quit, Swift calls `POST /api/shutdown`, then SIGTERMs the process group after 5 s and
@@ -67,8 +113,10 @@ plus `error`. The full `phase` enum and contract field list are in §3.
      belong to this bundle).
   The app asks for confirmation before quitting while live.
 - **Crash recovery:**
-  - If the engine dies, it is restarted automatically up to twice in 60 s; the translator stays
-    loaded and a banner is shown. After that the operator is asked.
+  - Today `_reader` shows `ENGINE STOPPED (exit n)` and sets `running = False`. The new
+    behaviour: the engine is restarted automatically up to twice in 60 s, with the same device
+    and mode, while the translator stays loaded and a banner is shown. After that the operator
+    is asked.
   - If the orchestrator dies, Swift restarts it.
 
 ### 1.3 Operator UI
@@ -79,7 +127,8 @@ plus `error`. The full `phase` enum and contract field list are in §3.
   if needed.
 - **Look: an audio-plugin hardware panel** (in the style of Waves Sibilance). The reference
   mockup is **[docs/ui_mockup/live.html](ui_mockup/live.html)**: open it in a browser and use
-  Space, H, 1/2/3 and P. Its `:root` tokens seed `ui/styles/tokens.css`. S5a and S5b match it,
+  Space, H, 1/2/3, V, L (cycles the simulated input level; tapping the meter does the same)
+  and P. Its `:root` tokens seed `ui/styles/tokens.css`. S5a and S5b match it,
   and the review in §4.1 compares screenshots against it.
   - **Frame:**
     - A black toolbar strip of small bevelled grey buttons: Rehearsal, the current setup
@@ -88,12 +137,29 @@ plus `error`. The full `phase` enum and contract field list are in §3.
       edge.
     - A wordmark `LIVE|TRANSLATE` in cyan at the bottom left; "RO ⇄ EN · Offline" at the
       bottom right.
-  - **Scope display (top):** a scrolling sound envelope, filled cyan and mirrored around a
-    bright centre line, with a lime square trace for "speech heard". The labels ("Sound · <device>" and the
-    colour key) sit in a **reserved strip at the top**, and both traces are drawn only below
-    it, so the lime line never crosses text. In the compact layout the labels are hidden and
-    the strip collapses. It replaces a separate
-    level bar and shows at a glance that sound arrives and is recognised as speech.
+  - **Sound meter (top).** Chosen by the user on 2026-10-23. It replaced the scrolling waveform; the waveform and an RTA
+    (spectrum) were compared side by side in
+    **[docs/ui_mockup/compare.html](ui_mockup/compare.html)**. Neither of those shows whether
+    the level is right, and the RTA shows tone, which is for EQ work. The meter has:
+    - A **segmented horizontal level meter**, −60 to 0 dBFS, with fast attack, slow release
+      and a peak-hold tick.
+    - A shaded **GOOD target band** with a bracket, starting at −30 to −10 dBFS speech level,
+      where recognition works best, and "Too quiet" / "Too loud" labels at the ends.
+      Segments are cyan below the band, lime in it, amber above it and red over −3 dBFS.
+    - A **Speech LED**, lit while the voice detector hears talking, and a **Clip LED** that
+      stays lit 3 s after a peak at or above −1 dBFS.
+    - A **30-second history strip**: one bar per 250 ms, coloured by zone, with a lime underline
+      while speech was heard. It shows a quiet patch that has just ended.
+    - **A verdict in words, with one action**, judged on speech frames over the last 5 s:
+      "Level good", "Too quiet — raise the mixer send", "Very loud — lower the mixer send",
+      "Clipping — lower the gain", "No sound — check the cable and the send", or "Sound, no
+      talking" (music or noise only). The Sound pill uses the same verdict.
+    - The band edges are a **starting guess**. They are set from the real soundboard feed at
+      the church rehearsal (§4.5), stored in `defaults.yaml`, and adjustable under Advanced.
+    - **Compact layout:** the meter and verdict word stay; the history strip and hint hide.
+    - **Backend:** S1's engine `level` event (rms_db, peak_db, speech, about 5–20 Hz) drives the
+      meter. The verdict is computed in the UI from those values, so a tuning change needs no
+      engine change.
   - **Text display, with three tabs** (segmented buttons in the inset's top-left; V cycles
     them; the last choice is remembered):
     - **Heard:** the live transcript in the speaker's language, last 4 lines, the newest
@@ -104,8 +170,10 @@ plus `error`. The full `phase` enum and contract field list are in §3.
       Romanian" / "On the big screen · English". They stack on narrow windows.
     - While captions are hidden, On screen dims with an amber "hidden" tag, and Heard keeps
       updating because transcription continues.
-    - Backend: needs a `heard` list on `/ws` (the source of the last N clauses, plus the
-      interim `partial` when it is enabled) next to `screen`.
+    - Backend: `lines[].src` (the last 10 shown clauses) and `partial` already exist on
+      `/ws`. Heard needs one change: failed clauses (`empty_mt`, `mt_echo`, `error`) also go
+      into `lines`, with `dst: null`, so the operator still sees what was heard while nothing
+      was shown.
   - **Control deck, like the plugin's knob row:**
     - **Centre: one big glowing dial, the Start/Stop button.** Its face shows the state:
       "62% Getting ready", "START Ready", or the elapsed time "12:04 Captioning". The ring is
@@ -128,10 +196,10 @@ plus `error`. The full `phase` enum and contract field list are in §3.
     - State is always shown with a word as well, never colour alone.
   - Touch targets at least 44 px; the dial is 172 px.
   - **Small window:** in a 600×500 window next to ProPresenter, the compact layout (height up
-    to 600 px) shrinks the scope and the deck so the dial stays above the fold, and hides the
+    to 600 px) shrinks the meter and the deck so the dial stays above the fold, and hides the
     footer.
   - Status changes are announced with `aria-live`; the problem banner uses `role="alert"`;
-    `prefers-reduced-motion` slows the scope animation.
+    `prefers-reduced-motion` slows the meter updates.
   - The Setup, Settings, After and Help screens use the same frame, toolbar and panel, with
     knobs only where a choice has 2–3 positions; everything else uses plain fields styled as
     dark insets.
@@ -158,7 +226,7 @@ plus `error`. The full `phase` enum and contract field list are in §3.
      time while captioning. Stop takes a 0.6 s hold or a double key press, to prevent an
      accidental stop.
   3. A state line, e.g. "Captioning · Romanian → English · Best quality".
-  4. The sound scope (envelope plus speech trace).
+  4. The sound meter (level against the GOOD band, Speech and Clip LEDs, history, verdict).
   5. The **problem banner**: one plain-language message and one action button.
   6. The **mirror** of what is on the big screen, wrapped the same way ProPresenter wraps it.
   7. Live controls (§1.4).
@@ -179,24 +247,28 @@ plus `error`. The full `phase` enum and contract field list are in §3.
   | spellings | Preferred spellings |
   | engine / STT / MT | (never shown; "the translator") |
 
-- **Error copy:** one message and one action for each of these:
-  - no sound
-  - microphone permission denied
-  - device unplugged (it also reconnects automatically)
-  - ProPresenter unreachable (it also retries every 5 s)
-  - message not found
-  - falling behind
-  - translator crashed
-  - multilingual model unavailable
-  - disk full
-  - models missing
+- **Error copy:** one message and one action for each `problem.code`. Most codes map from
+  signals that already exist:
 
-  Every `problem.code` in the backend must have a string; a test enforces this.
+  | problem.code | Comes from (today) |
+  |---|---|
+  | `no_sound` | engine `audio` event, `fault: digital_silence` |
+  | `device_lost` | engine `audio` `fault: no_frames`, or `error where: audio input` (it reconnects automatically) |
+  | `mic_denied` | new: S1 detects the PortAudio permission error |
+  | `recognition_behind` | engine `backlog ok: false` (`stt_behind`) |
+  | `captions_behind` | `behind_s` (`lag_warn_s`) |
+  | `engine_stopped` | `_reader` engine exit |
+  | `english_unavailable` | engine `mode` event / multilingual `warn` |
+  | `pp_unreachable` / `pp_message_missing` | `pp.last_error`, plus S2's health ping |
+  | `disk_full` / `models_missing` | new: S9 preflight / S6 |
+
+  Every `problem.code` in the backend must have a string; a test enforces this. The raw
+  `alerts`, `warnings` and `counts` that `control.html` shows today stay available under
+  Advanced, so no diagnostic detail is lost.
 - **Settings exposure:**
   - **Basic:** sound input, usual language, quality, "start automatically".
   - **Names & Spellings:** list editors.
-  - **ProPresenter:** host, port, password (kept in the Keychain), message, token, lines (1–3),
-    line width, stage display.
+  - **ProPresenter:** host, port, message, token, lines (1–3), line width, stage display.
   - **Advanced:** English listener, music gate, hold settings, show interim words, latency
     numbers, skipped counts.
   - **Never exposed:** model ids, venvs, context/lookahead/chunk internals, `paths`, `google`,
@@ -212,25 +284,27 @@ plus `error`. The full `phase` enum and contract field list are in §3.
 | Speaker language | 1 / 2 / 3 | Auto / RO→EN / EN→RO, with the current mode shown large. A switch resets the translator context. An amber hint suggests a lock: "Sounds like English — press 3?" |
 | Remove last caption | Backspace | `RollingCaptions.retract()` re-shows the previous lines; logged as `{"event":"correction"}`. |
 | Fix last caption | E | Operator types text that replaces the last caption; logged. |
-| Sound meter + alarm | — | Red "No sound from <device>" after 10 s below −60 dBFS; amber after 30 s of signal with no speech; red "device lost" with reopen attempts every 2 s. |
+| Sound meter + alarm | — | **Alarms exist** (`NO AUDIO` for no frames after 2 s or digital silence after 10 s; automatic reopen at 1/2/5 s). New: `level` events for the sound meter, its verdict ("Too quiet", "Clipping"…), and a "Sound, no talking" hint. |
 | Today's names & terms | T | A textarea in the form `ro = en`, or bare names (guest speaker, sermon title, passage). Applied **live**: glossary, spellings and Whistle keywords. Optionally saved for next time. |
 | ProPresenter health + Reconnect | R | Ping every 5 s, retry with backoff, re-send the current text on recovery. A manual clear in ProPresenter is detected and the text re-sent. |
 
 **Should (v1.1):**
 - Quickest/Best-quality **hot switch** without a gap: keep NLLB loaded alongside Gemma (about
   1.5 GB extra), and send the engine `{"cmd":"cfg"}` instead of respawning it.
-- **Falling-behind auto-fallback:**
-  - Clauses go through a queue worker.
-  - Quality switches to Fast when the oldest unshown clause is over 6 s old, or 3 or more are
-    queued; the operator gets an Undo.
-  - Above 12 s, the oldest clauses are dropped and logged.
-  - When things recover, a return to Quality is offered, not done automatically.
+- **Falling behind.** Catch-up merging is built and is the decided behaviour: nothing is
+  dropped (§0). Still to do:
+  - The UI shows `CAPTIONS BEHIND` with one button, "Switch to Quickest". This needs the hot
+    switch above.
+  - An *automatic* switch to Fast is **not** planned unless the rehearsal suite (§4.2) shows
+    catch-up alone breaks the 6 s ceiling on the target Mac.
 - **Hold last caption.**
 - **Caption lines +/−** at runtime.
-- **Safety filter:**
+- **Safety filter.** Echo and truncation checks exist. Still to add:
   - A blocklist that masks matches.
   - Hallucination-loop suppression: the same output 3 times in a row.
   - Over-long outputs dropped: more than 3× the source's words.
+
+  These are logged as new outcomes, alongside `mt_echo`.
 - **Timing panel:** elapsed time, share of first words within 6 s, backlog.
 - **Transcript export:** bilingual txt, srt or docx.
 - **Phone or iPad remote:** opt-in LAN binding with a PIN and three huge buttons (Hide, Blank,
@@ -256,7 +330,7 @@ plus `error`. The full `phase` enum and contract field list are in §3.
 ## 2. Phases and parallel sessions
 
 ```
-Now ── bug fixes in progress (other sessions) ──┐
+Done ── bug fixes merged (56ac124, 116 tests) ──┐
                                                 ▼
 Phase 0  Contract + seams (1 session, ~1 day) ── must merge before Phase 1
                                                 ▼
@@ -275,30 +349,40 @@ Admin tasks for you, outside the code. **Start these today**, because they have 
 - Book a rehearsal on the church Mac with the soundboard and the real ProPresenter (Phase 3).
 
 ### Phase 0: contract and seams (one session; blocks everything else)
-Start this only **after the current bug-fix sessions have merged**: they edit `app.py`,
-`engine.py` and `control.html`, and this phase restructures those files.
+The bug fixes have merged, so this can start now. `app.py` has grown to about 660 lines and
+`engine.py` to about 520, which makes the split more important: S1, S2, S4 and S9 all need
+`app.py`.
 
 Deliverables:
 1. **`docs/app_contract.md` and `src/live/ui/contract.json`:**
    - Every `/ws` state field, using the names in §3.
    - Every endpoint with its request and response payloads.
    - The `problem.code` enum.
-   - Engine stdin/stdout messages: `loading`, `ready`, `level`, `audio_error`, and the commands
-     `listen`, `cfg`, `keywords`, `stop`.
+   - Engine stdin/stdout messages. **Document the existing ones first:** `ready`, `partial`,
+     `clause`, `eof`, `warn`, `error {where}`, `mode`, `backlog {ok,s,msg}`,
+     `audio {ok,fault,msg}`, and the commands `mode` and `stop`. Then the new ones: `loading`,
+     `level`, and the commands `listen`, `cfg`, `keywords`. Audio faults stay on the existing
+     `audio` event; there is no separate `audio_error`.
    - Environment variables: `LIVE_HOME`, `LIVE_LOG_DIR`, `LIVE_CACHE_DIR`,
-     `LIVE_ENGINE_PYTHON`, `LIVE_ENGINE_PYTHONPATH`, `HF_HOME`, `LIVE_TOKEN`.
-   - Orchestrator flags: `--port --token --settings --hold`.
+     `LIVE_ENGINE_PYTHON`, `LIVE_ENGINE_PYTHONPATH`, `HF_HOME`.
+   - Orchestrator flags: `--port --settings --hold` (existing: `--config --file --autostart
+     --exit-on-eof --headless --pp-port --mode --profile`).
    - The bundle layout.
 2. **Split `app.py` along seams, with no behaviour change:**
    - `app.py`: wiring, `main()`, and an `include_router` for each module.
-   - `live/lifecycle.py`: `Live` start/stop/engine/reader, owned by S1.
-   - `live/pipeline.py`: `_on_clause`/`_handle_locked`, translate → captions → ProPresenter →
-     log, owned by S4.
-   - `live/state.py`: the `/ws` payload builder. Each module adds its fields through one
-     `register_state(fn)` call, so nobody edits a shared dict.
+   - `live/lifecycle.py`, owned by S1: `start`, `stop`, `load_translator`, `_start_engine`,
+     `_reader`, `_on_engine_error`, `set_mode`, `set_profile`.
+   - `live/pipeline.py`, owned by S4: `_on_clause`, `_flush`, `_submit`, `_work_loop`,
+     `_catch_up`, `_drain`, `_handle`, `_handle_locked`, `_log_failure`/`_write_log`, and the
+     helpers `is_echo`, `pack_parts`, `merge_clauses`.
+   - `live/state.py`: `state()`, `alerts()`, `_broadcast`. Each module adds its fields through
+     one `register_state(fn)` call, so nobody edits a shared dict.
+   - `live/security.py`: `allowed_hosts`, `request_allowed` and the middleware.
    - `live/routes/` with one router file per stream: `output.py`, `settings.py`, `setup.py`,
      `session.py`, `system.py`.
-   - Existing endpoints keep their URLs. All tests still pass.
+   - `Live` stays importable as `live.app.Live`, and the helpers stay importable from
+     `live.app` (re-exports), because `tests/test_live_failures.py` imports them from there.
+     Existing endpoints keep their URLs. All 116 tests still pass unchanged.
 3. **`live/paths.py`:** resolves every data, model, log and cache path from `LIVE_HOME`, falling
    back to the repo root. It is small and S3, S6 and S7 all depend on it.
 4. **UI skeleton:**
@@ -308,9 +392,11 @@ Deliverables:
 5. **A contract test:** pytest checks that the `/ws` payload and each endpoint response validate
    against `contract.json`. Endpoints not yet built return 501 with the correct shape.
 
-Done when: the existing tests and `e2e.py --mixed` against the mock give the same results as
-before, `contract.json` exists, and the stream owners' file boundaries (below) are true in the
-tree.
+Done when:
+- The existing tests pass unchanged.
+- `e2e.py --mixed --strict` against the mock passes, with the same counts as before.
+- `contract.json` exists.
+- The stream owners' file boundaries (below) are true in the tree.
 
 ### Phase 1: parallel sessions
 Rules for every session:
@@ -324,21 +410,22 @@ Rules for every session:
 
 | # | Session | Owns (files) | Depends on | Acceptance |
 |---|---|---|---|---|
-| **S1** | **Lifecycle, readiness, audio health** | `engine.py`, `live/lifecycle.py`, `live/routes/system.py` | Phase 0 | 1. `--hold` mode and the `listen`, `cfg` and `keywords` stdin commands. 2. `loading` and `level` events (~5 Hz: rms_db, peak_db, speech) and `audio_error` on stream status or exceptions. 3. Device reopen. 4. Exit on EOF and on parent death. 5. SIGTERM/shutdown hook, `/api/shutdown`, pidfiles, engine auto-restart (2 per 60 s). 6. Preload at launch; `phase`, `progress` and `audio` state; soundfile in place of ffmpeg. **Tests:** Start→live in under 1 s after `ready`; `kill -9` of the orchestrator means the engine exits within 2 s; killing the engine mid-run means captions resume; zero frames give a "No sound" problem after 10 s on a fake clock. |
+| **S1** | **Lifecycle, readiness, audio level** | `engine.py`, `live/lifecycle.py`, `live/routes/system.py`, `setup.sh` (drop ffmpeg) | Phase 0 | *Already done, keep:* the watchdog `audio` events, mic reopen and re-find by name, the backlog events. *New:* 1. `--hold` mode and the `listen`, `cfg` and `keywords` stdin commands. 2. `loading` and `level` events (5–20 Hz: rms_db, peak_db, speech), which drive the sound meter in §1.3. 3. `mic_denied` detection. 4. Exit on stdin EOF and on parent death. 5. SIGTERM/shutdown hook, `/api/shutdown`, pidfiles, engine auto-restart (2 per 60 s; replaces today's `ENGINE STOPPED` dead end). 6. Preload at launch; `phase`, `progress` and `audio` state. 7. `soxr` in place of ffmpeg. **Tests:** Start→live in under 1 s after `ready`; `kill -9` of the orchestrator means the engine exits within 2 s; killing the engine mid-run means captions resume (extends `test_engine_death_is_shown`); `level` reports about −inf dBFS for zero frames; a 44.1 kHz rehearsal file plays without ffmpeg on PATH. |
 | **S2** | **Output controls + ProPresenter robustness** | `captions.py`, `propresenter.py`, `mock_propresenter.py`, `live/routes/output.py` | Phase 0 | 1. Hide/show (`paused`), blank, retract, fix-last, lines resize. 2. `pp.health()`, `force_resend()`, `list_messages()`, backoff and reconnect. 3. `POST /api/pp/test` and `/api/pp/test_caption`. 4. Mock fault injection: `/mock/fail {n}`, `/mock/down`, `/mock/up`. **Tests:** with Hide on, no ProPresenter call is made while the log still gets `paused` entries; retract re-shows the previous lines; mock down → 3 failures → up → the current text is re-sent; a manual clear in the mock is followed by a resend; a message missing from the mock gives `message_missing`. |
-| **S3** | **Settings, names & spellings, session terms** | `live/settings.py`, `defaults.yaml`, `live/routes/settings.py`, `translate.py` (Glossary), `textnorm.py` (spellings merge), path lookups in `whistle_en.py`/`stt_run.py` | Phase 0 (`paths.py`) | 1. Layered settings: defaults ← user `settings.yaml`, with `schema_version`, migrations and atomic writes. 2. `GET/PUT /api/settings` with a whitelist and `restart_required`. 3. `/api/keywords`, `/api/spellings`, `/api/terms` (session terms applied live; sends the engine the `keywords` command defined by S1). 4. "Import config.yaml". 5. ProPresenter password stored in the Keychain. **Tests:** settings survive a restart; hidden keys are rejected; session term "Ionuț Pop" reaches `Glossary.relevant` and the spellings map with no restart; nothing is written into the repo when `LIVE_HOME` is set. |
-| **S4** | **Pacing, hot switch, safety filter** | `live/pipeline.py`, `translate.py` (`reset_context`, dual translator only; coordinate with S3 on Glossary lines), `config.yaml` `live.backlog_*` | Phase 0 | 1. Queue worker. 2. `backlog` and `pace` state. 3. Auto-fallback to Fast, with an `auto_actions` entry and Undo. 4. Drop above 12 s. 5. Hot translator swap with no engine respawn. 6. Context reset on language flip or resume. 7. Hallucination-loop, length-ratio and blocklist filters. **Tests:** a translator sleeping 2 s per call with clauses every 1 s gives `profile=="fast"` plus an auto action; switching profiles in an `e2e.py` rehearsal shows no stop/start gap in the mock events; a repeated output is dropped and counted. |
+| **S3** | **Settings, names & spellings, session terms** | `live/settings.py`, `defaults.yaml`, `live/routes/settings.py`, `translate.py` (Glossary), `textnorm.py` (spellings merge), path lookups in `whistle_en.py`/`stt_run.py` | Phase 0 (`paths.py`) | 1. Layered settings: defaults ← user `settings.yaml`, with `schema_version`, migrations and atomic writes. 2. `GET/PUT /api/settings` with a whitelist and `restart_required`. 3. `/api/keywords`, `/api/spellings`, `/api/terms` (session terms applied live; sends the engine the `keywords` command defined by S1). 4. "Import config.yaml". **Tests:** settings survive a restart; hidden keys are rejected; session term "Ionuț Pop" reaches `Glossary.relevant` and the spellings map with no restart; nothing is written into the repo when `LIVE_HOME` is set. |
+| **S4** | **Hot switch, pace state, safety filter** | `live/pipeline.py`, `set_profile` in `live/lifecycle.py` (agreed with S1), `translate.py` (translator objects, `reset_context`; coordinate with S3 on the Glossary lines) | Phase 0; S1's `cfg` engine command | *Already done, keep:* the queue worker, catch-up merging, echo/truncation checks, the context reset on language switch. *New:* 1. **Hot Fast↔Quality switch:** both translators kept loaded when RAM allows (≥ 24 GB, otherwise a warm reload with the engine left running), and profile pause settings sent with `{"cmd":"cfg"}`, never a restart. 2. `pace {state, behind_s}` derived from `behind_s`/`stt_behind`, and `backlog {n, oldest_s}` from the work queue. 3. Context reset on resume (with S2's pause). 4. Hallucination-loop, length-ratio and blocklist filters, as new logged outcomes. **Tests:** switching profiles during an `e2e.py --strict` rehearsal shows no `stop`/`ready` pair in the engine events and no caption gap over 3 s; a repeated output is dropped and counted; the existing catch-up tests still pass. |
 | **S5a** | **UI: Live screen + Help + strings** | `ui/screens/live.js`, `ui/screens/help.js`, `ui/components/*`, `ui/i18n/strings.en.js` | Phase 0 (UI skeleton, `contract.json`); works against `mock_state.js` | The Live screen from §1.3, matching `docs/ui_mockup/live.html`; the controls and shortcuts from §1.4, the problem banner and all error copy. **Tests:** with the mock driving every `phase`, labels and colours are correct; every shortcut posts the right action; works at 600×500; every `problem.code` in `contract.json` has a string (the test fails on a missing one); a Playwright smoke run in the in-app browser passes. |
 | **S5b** | **UI: Setup wizard + Settings + After-sermon** | `ui/screens/setup/*`, `ui/screens/settings/*`, `ui/screens/after.js`, `ui/components/listeditor.js` | Phase 0; works against `mock_state.js` | The wizard (6 steps), the settings tabs and exposure rules, the summary, rating and export screen. **Tests:** against the mock, a fresh install reaches Live; Next stays disabled until the meter hears sound; a failed ProPresenter test shows the fix text; an edit survives a reload; `restart_required` shows "Applies next time you press Start". |
-| **S6** | **Models & first-run download** | `models.lock.json`, `live/model_setup.py`, `live/routes/setup.py`, `scripts/publish_models.py`, hardware and disk checks | Phase 0 (`paths.py`), the church Hugging Face repo | 1. `GET /api/setup` (models present, disk, RAM, recommended profile). 2. `POST /api/setup/download|cancel`, run as a separate child with `LIVE_ALLOW_NETWORK=1`, so the live processes never get network access. 3. sha256 check; writes `refs/main` itself. 4. A per-profile subset. 5. The NLLB ct2 build published once. **Tests:** on an empty `LIVE_HOME`: pick Fast → download → interrupt → resume → all sha256 OK → the app runs offline with `netaudit` showing 0. |
+| **S6** | **Models & first-run download** | `requirements/models.lock.txt` (add size and profile columns), `src/model_lock.py` (extend), `live/model_setup.py`, `live/routes/setup.py`, `scripts/publish_models.py`, hardware and disk checks | Phase 0 (`paths.py`), the church Hugging Face repo | *Already done, keep:* pinned commits, `fetch()` and `pin_all()` writing `refs/main`, the sha256 checks in `setup.sh`, `test_setup_downloads_are_pinned`. *New:* 1. `GET /api/setup` (models present, disk, RAM, recommended profile). 2. `POST /api/setup/download|cancel` with progress and resume, run as a separate child with `LIVE_ALLOW_NETWORK=1`, so the live processes never get network access. 3. A per-profile subset. 4. The NLLB ct2 build published once to the church repo and pinned in the lock, replacing the on-Mac conversion. 5. `setup.sh live` calls the same downloader, so dev and app share one path. **Tests:** on an empty `LIVE_HOME`: pick Fast → download → interrupt → resume → all checks OK → the app runs offline with `netaudit` showing 0; `test_pinned_refs_let_offline_loading_find_the_model` still passes. |
 | **S7** | **Embedded Python runtime** | `packaging/build_runtime.sh`, `packaging/prune.txt`, `packaging/audit_macho.sh` | Phase 0 (env-var contract). No `src/` edits | python-build-standalone with the common/nemo/mt site directories, pruned, compiled, and the otool audit (no `/opt/homebrew`, `/usr/local` or `/Users`). Size report. Optional: the env-merge spike, reported separately. **Test:** the dev app runs end to end on a rehearsal file using only `LIVE_ENGINE_PYTHON` and the runtime folder, copied to a different path. |
-| **S8** | **Swift shell** | `macos/` (Xcode/SwiftPM project, `ProcessSupervisor`, `WebView`, `Info.plist`, entitlements, Sparkle wiring) | Phase 0 contract; uses the repo venvs until S7 is done | 1. Free port and token. 2. Readiness shown during launch. 3. App Nap and sleep blocked while live. 4. Quit confirmation while live. 5. A clean quit leaves 0 processes; stale processes are cleaned up on the next launch; the orchestrator is restarted if it dies. 6. Microphone and Local Network permissions are attributed to the app. **Test:** `pgrep -f "Live RO2EN"` is empty after Cmd-Q and after Force Quit plus a relaunch. |
-| **S9** | **Preflight, post-service report, diagnostics** | `live/preflight.py`, `live/report.py`, `live/routes/session.py` | Phase 0; reads S1/S2 health through `state.py` | 1. `POST /api/preflight` returns the checklist. 2. `POST /api/rate`. 3. `POST /api/export {txt\|srt\|docx}`. 4. Summary stats. 5. `logs/services/index.csv`. 6. `POST /api/diagnostics` writes a zip to the Desktop with logs and settings, the password redacted. 7. `POST /api/unload`. **Tests:** preflight against the mock passes; against a closed port it fails with detail; `report.py` on a fixture jsonl gives an srt/txt and correct counts; the diagnostics zip contains no secrets. |
+| **S8** | **Swift shell** | `macos/` (Xcode/SwiftPM project, `ProcessSupervisor`, `WebView`, `Info.plist`, entitlements, Sparkle wiring) | Phase 0 contract; uses the repo venvs until S7 is done | 1. A free port (the page is same-origin, so `request_allowed` accepts it with no token). 2. Readiness shown during launch. 3. App Nap and sleep blocked while live. 4. Quit confirmation while live. 5. A clean quit leaves 0 processes; stale processes are cleaned up on the next launch; the orchestrator is restarted if it dies. 6. Microphone and Local Network permissions are attributed to the app. **Test:** `pgrep -f "Live RO2EN"` is empty after Cmd-Q and after Force Quit plus a relaunch. |
+| **S9** | **Preflight, post-service report, diagnostics** | `live/preflight.py`, `live/report.py`, `live/routes/session.py` | Phase 0; reads S1/S2 health through `state.py` | 1. `POST /api/preflight` returns the checklist. 2. `POST /api/rate`. 3. `POST /api/export {txt\|srt\|docx}`. 4. Summary stats. 5. `logs/services/index.csv`. 6. `POST /api/diagnostics` writes a zip to the Desktop with logs and settings, never `.env`. 7. `POST /api/unload`. **Tests:** preflight against the mock passes; against a closed port it fails with detail; `report.py` on a fixture jsonl gives an srt/txt and correct counts (it reads the outcome and event records the app already writes); the diagnostics zip contains no `.env` or key files. |
 
 Where files are shared, and who owns each part:
 - `translate.py`: S3 owns the Glossary; S4 owns the translator objects and context.
 - `engine.py`: S1 only. S3 and S4 send commands that S1 defines in the contract.
-- `config.yaml`/`defaults.yaml`: S3 owns the file; S4 adds only the `backlog_*` keys.
+- `config.yaml`/`defaults.yaml`: S3 owns the file; others propose keys in their PR.
+- `lifecycle.py`: S1 owns it; S4 owns only `set_profile`.
 
 Everything else is disjoint.
 
@@ -354,7 +441,9 @@ Everything else is disjoint.
 - **S11: Integration and docs.**
   - Merges Phase 1 PRs in this order: S2, S3, S1, S4, S9, S6, then S5a/S5b, then S7/S8.
   - Fixes contract drift.
-  - Removes `/legacy` and `control.html` once S5 has replaced them.
+  - Removes `/legacy` and `control.html` once S5 has replaced them, and checks first that
+    everything `control.html` shows today (alerts, warnings, outcome counts, cut-off
+    translations) is visible in the new UI, under Advanced if not on the Live screen.
   - Rewrites README §1/§3 for volunteers.
   - Writes a one-page **"Sunday quick card"** (PDF, printable).
   - Updates `TODO.md`, `PROGRESS.md` and `DECISIONS.md`.
@@ -363,7 +452,12 @@ Everything else is disjoint.
 
 ## 3. Contract field list (seed for Phase 0)
 
-`/ws` state additions. Existing fields are kept.
+`/ws` fields that **exist today** (keep the names): `running, status, mode, profile, profiles,
+lang, partial, latency_last, latency_median, lines[{src,dst,lat,lang}], screen, pp_error,
+warnings, counts, alerts, translator, stt`. Existing endpoints: `GET /`, `GET /api/state`,
+`GET /api/devices`, `POST /api/{start,stop,mode,profile,clear}`, `WS /ws`.
+
+Additions:
 
 ```
 phase: needs_setup|loading|ready|starting|listening|captioning|stopping|stopped|unloading|error
@@ -407,23 +501,28 @@ Every check below must pass before a volunteer uses the app in a service.
    session in §2. If anything else is touched, explain it or move it.
 5. **Look check** (UI PRs): screenshots at 1280×800 and 600×500 next to
    `docs/ui_mockup/live.html` at the same sizes. Same frame, colour roles and control layout;
-   the dial is above the fold at 600×500. No trace or graphic overlaps any text, for example the
-   lime speech line against the scope labels.
+   the dial is above the fold at 600×500. No trace or graphic overlaps any text. Each
+   simulated input level (good, too quiet, clipping, no sound, music) gives the matching meter
+   colour and verdict.
 6. **Copy check** (UI PRs): no technical term from the rename table appears in visible UI text.
    Enforced by a grep test over `ui/`.
 
 ### 4.2 Integration (S11, after each merge and once at the end)
 - **Automated rehearsal suite** (`scripts/app_rehearsal.sh`, written by S11):
-  - Runs `e2e.py --mixed` and one real sermon file through the mock ProPresenter, with
-    `sandbox-exec` blocking the network.
+  - Runs `e2e.py --mixed --strict` and one real sermon file (`e2e.py --audio … --strict`)
+    through the mock ProPresenter, with `sandbox-exec` blocking the network
+    (`scripts/offline.sb`). Both reuse the existing `gate()`.
   - Checks:
+    - The gate passes.
     - `netaudit` is 0.
     - The latency share within 6 s is no worse than the baselines in `BENCHMARK.md` (92%
       Quality, 98% Fast) minus 2 points.
     - Start→first caption is under 1 s after `ready`.
     - No stop/start gap appears on a profile switch.
     - Hide, retract and blank behave as specified (checked in the mock's events).
-- **Fault drills, scripted against the mock:**
+- **Fault drills, scripted against the mock.** Unit tests already cover a dead engine, a dead or
+  silent mic, a replugged mic, recognition and caption backlog, and a stage error. The drills
+  check the same faults end to end, with real processes:
   - ProPresenter down and back up.
   - Manual clear in ProPresenter.
   - Engine `kill -9`.
@@ -485,17 +584,17 @@ Follow `docs/clean_install_test.md`:
 Each prompt assumes a fresh session in its own worktree on `main`, after Phase 0 has merged.
 Every prompt starts with the same line:
 
-> Read `docs/APP_PLAN.md` (sections 1, 2 and 4.1) and `docs/app_contract.md`. Touch only the
+> Read `docs/APP_PLAN.md` (sections 0, 1, 2 and 4.1) and `docs/app_contract.md`. Touch only the
 > files your row in §2 lists. Finish by meeting your row's acceptance tests and the §4.1
 > checklist, then open a PR.
 
 After that line, use one of these:
 - **Phase 0:** "You are Phase 0 in docs/APP_PLAN.md §2. Do deliverables 1–5. Do not change
   behaviour. All existing tests and `e2e.py --mixed` against the mock must give the same results."
-- **S1:** "You are S1: lifecycle, readiness, audio health."
+- **S1:** "You are S1: lifecycle, readiness, audio level."
 - **S2:** "You are S2: output controls and ProPresenter robustness."
 - **S3:** "You are S3: settings, names & spellings, session terms."
-- **S4:** "You are S4: pacing, hot switch, safety filter."
+- **S4:** "You are S4: hot switch, pace state, safety filter."
 - **S5a:** "You are S5a: UI Live screen, Help and strings. Work against `ui/mock_state.js`."
 - **S5b:** "You are S5b: UI Setup wizard, Settings and After-sermon. Work against
   `ui/mock_state.js`."
