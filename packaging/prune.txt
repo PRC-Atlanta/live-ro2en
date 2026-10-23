@@ -1,0 +1,59 @@
+# What build_runtime.sh deletes from the runtime folder after installing, before precompiling.
+# One rule per line: <kind> <pattern>
+#   path <glob>   a path relative to the runtime folder (find -path; * also matches /)
+#   dir  <name>   every directory with this name under site/ (find -name)
+#   file <glob>   every file with this name anywhere (find -name)
+# Keep it conservative: only things nothing imports at run time. `testing` packages stay
+# (numpy.testing, torch.testing are imported by the libraries themselves); only `tests` go.
+# The relocated end-to-end run (rehearsal file through engine + translator) is the check.
+
+# --- interpreter: no GUI, no build tooling, no installers ---
+path runtime/include
+path runtime/share
+path runtime/lib/pkgconfig
+path runtime/lib/itcl*
+path runtime/lib/tcl*
+path runtime/lib/tk*
+path runtime/lib/thread*
+path runtime/lib/libtcl*
+path runtime/lib/libpython3.12.dylib
+path runtime/lib/python3.12/config-3.12-darwin
+path runtime/lib/python3.12/test
+path runtime/lib/python3.12/idlelib
+path runtime/lib/python3.12/tkinter
+path runtime/lib/python3.12/turtledemo
+path runtime/lib/python3.12/turtle.py
+path runtime/lib/python3.12/ensurepip
+path runtime/lib/python3.12/lib2to3
+path runtime/lib/python3.12/pydoc_data
+path runtime/lib/python3.12/lib-dynload/_tkinter*
+path runtime/lib/python3.12/site-packages/pip
+path runtime/lib/python3.12/site-packages/pip-*
+path runtime/bin/2to3*
+path runtime/bin/idle3*
+path runtime/bin/pip*
+path runtime/bin/pydoc3*
+path runtime/bin/python3-config
+path runtime/bin/python3.12-config
+
+# --- packages: test suites, C/C++ headers and static libraries for building extensions ---
+dir tests
+path site/*/torch/include
+path site/*/torch/share
+path site/*/mlx/share
+path site/*/numpy/_core/include
+path site/*/numpy/_core/lib
+path site/*/pyarrow/include
+path site/*/pyarrow/src
+path site/*/onnxruntime/tools
+path site/*/onnxruntime/transformers
+path site/*/tensorboard/webfiles.zip
+file *.a
+file *.pyx
+file *.pxd
+file *.cpp
+file *.c
+file *.h
+file *.hpp
+file *.cu
+file *.cuh

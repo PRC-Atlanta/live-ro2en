@@ -31,3 +31,5 @@ __pycache__/
 .DS_Store
 *.partial
 data/propresenter/
+# packaging/build_runtime.sh output
+build/
