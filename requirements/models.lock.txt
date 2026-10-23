@@ -16,11 +16,7 @@
 hf surogate/jackrabbit-110m-ro ad5437c325ed7cec485bd478e3de2dfc91df719e size=2534809600 profile=fast files=jackrabbit-110m-ro.nemo,lm-4gram-ro.nemo
 hf mlx-community/parakeet-tdt-0.6b-v3 ed2b7e8c15f9aaa0b5772e2efb986255eaef7e15 size=2509044141 profile=fast files=model.safetensors,config.json,tokenizer.model,tokenizer.vocab,vocab.txt,README.md,.gitattributes
 hf facebook/nllb-200-distilled-1.3B 7be3e24664b38ce1cac29b8aeed6911aa0cf0576 size=22188150 profile=fast files=config.json,tokenizer_config.json,special_tokens_map.json,sentencepiece.bpe.model,tokenizer.json
-# PLACEHOLDER PIN: the church Hugging Face repo for the int8 CTranslate2 NLLB build does not exist
-# yet. Publish it with scripts/publish_models.py, then replace the repo name and the all-zero commit
-# on the next line with the line that script prints. Until then the app cannot download Fast; dev
-# installs still work because setup.sh converts the model into models/ct2 (see dir=).
-hf CHURCH-ORG-PLACEHOLDER/nllb-200-distilled-1.3B-ct2-int8 0000000000000000000000000000000000000000 size=1383677176 profile=fast files=model.bin,config.json,shared_vocabulary.json dir=models/ct2/nllb-200-distilled-1.3B
+hf PRC-Media/nllb-200-distilled-1.3B-ct2-int8 c2ba844b276bfd6f2527fe93c258656c7c15f939 size=1383677176 profile=fast files=config.json,model.bin,shared_vocabulary.json dir=models/ct2/nllb-200-distilled-1.3B
 hf facebook/nllb-200-3.3B 1a07f7d195896b2114afcb79b7b57ab512e7b43e size=17599743779 profile=bench
 hf mlx-community/gemma-4-12B-it-qat-4bit e70c6b3ba0979b3357dcd2f223ad8bde7787a6b6 size=11020140534 profile=quality files=model-00001-of-00003.safetensors,model-00002-of-00003.safetensors,model-00003-of-00003.safetensors,model.safetensors.index.json,config.json,generation_config.json,processor_config.json,tokenizer.json,tokenizer_config.json,chat_template.jinja,README.md,.gitattributes
 hf mlx-community/EuroLLM-22B-Instruct-2512-mlx-4bit dcb329c32383c834402db9c0dc569593a6bc529c size=12750497964 profile=bench

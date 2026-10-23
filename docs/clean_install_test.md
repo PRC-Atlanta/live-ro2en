@@ -31,9 +31,7 @@ Anyway**. Note that in the result.
 5. **Both permission prompts.** The app asks for the **Microphone** (when the sound check
    starts) and for the **Local Network** (when it first talks to ProPresenter). Allow both.
    Both prompts must name **Live RO2EN**, not "python3.12" or Terminal.
-6. **First-run download.** (Blocked until the church Hugging Face repo for the NLLB build
-   exists: until then `models.lock.txt` holds a placeholder pin and Setup reports
-   "not available to download yet".) In Setup choose **Fast**. Interrupt the download once (turn
+6. **First-run download.** In Setup choose **Fast**. Interrupt the download once (turn
    Wi-Fi off for 10 s, or quit the app mid-download), then resume it in Setup. It must
    continue from where it stopped, not from zero, and finish with every check OK.
 7. **Wi-Fi off.** Turn Wi-Fi off (and unplug Ethernet) for the rest of the test.

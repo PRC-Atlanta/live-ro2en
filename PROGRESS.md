@@ -39,7 +39,6 @@ Venvs (uv, Python 3.12): `.venv` (core/scoring/Google), `.venv-nemo` (Jackrabbit
 - Send the Google terms question (draft in conversation); correct sermons in clean mode for training data.
 - Rehearsal on the church Mac with the soundboard and the real ProPresenter.
 - Developer ID Application certificate + `xcrun notarytool store-credentials live-ro2en` (for S10).
-- The church Hugging Face repo for the NLLB build.
 - More sermons: drop into ./Audio and rerun `GOOGLE=chirp_3 scripts/run_sermon_pipeline.sh`.
 - Human corrections of review_packet → `src/review_packet.py rescore review_packet/corrections.json`.
 

@@ -469,8 +469,8 @@ Left for S11, found during the merges (all done 2026-10-23):
   - the microphone in real use (only file runs);
   - the Swift app's window and dialogs by eye;
   - `/code-review high` on each stream.
-- Waiting on you: the church Hugging Face repo for the NLLB build. Until it exists, neither
-  profile can be downloaded in the app.
+- Done 2026-10-23: the NLLB build is published to `PRC-Media/nllb-200-distilled-1.3B-ct2-int8`
+  and pinned in `models.lock.txt`.
 
 Independent reviews of Phase 0 and 1 (2026-10-23). Phase 0's split preserved behaviour. Fixed,
 with tests (265 pass):
@@ -504,8 +504,8 @@ Still not verified:
 ### Phase 2 status (2026-10-23)
 S11's cleanup is done (98ee266). S10 is merged: `make dist` builds, signs (ad hoc until a
 Developer ID certificate exists), packages and verifies the app; the macOS 14 runtime build
-works with the current pins. A packaged app stops at Setup until the church Hugging Face repo
-for the NLLB build exists. Sparkle is still a stub (needs the user's EdDSA key and feed).
+works with the current pins. The NLLB build is published to the church Hugging Face repo
+(`PRC-Media/nllb-200-distilled-1.3B-ct2-int8`), so Setup can download Fast. Sparkle is still a stub (needs the user's EdDSA key and feed).
 
 ### Phase 2: assembly
 - **S10: Release pipeline.**

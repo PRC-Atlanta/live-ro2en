@@ -21,7 +21,7 @@ Plan and status: [docs/APP_PLAN.md](docs/APP_PLAN.md).
 - [ ] Signed + notarized build: needs a *Developer ID Application* certificate and the
       `live-ro2en` notarytool keychain profile (`docs/release.md`), then `make dist notarize`.
 - [ ] Sparkle auto-update: EdDSA key and appcast (the user generates the key).
-- [ ] The church Hugging Face repo for the NLLB build (until then neither quality downloads in the app).
+- [x] The church Hugging Face repo for the NLLB build: `PRC-Media/nllb-200-distilled-1.3B-ct2-int8` (2026-10-23).
 - [ ] Clean-install test on a fresh user account (`docs/clean_install_test.md`), a usability test
       with a volunteer, and the dress rehearsal at church (sets the meter's GOOD band).
 - [x] Release workflow runs on GitHub (macos-14): ad-hoc DMG artifact, VERIFY PASS (2026-10-23).

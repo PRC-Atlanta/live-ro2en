@@ -158,11 +158,12 @@ def test_lock_has_sizes_and_profiles_for_every_app_download():
     assert model_lock.entries("hf")["surogate/jackrabbit-110m-ro"] == "ad5437c325ed7cec485bd478e3de2dfc91df719e"
 
 
-def test_ct2_placeholder_pin_is_marked():
-    lines = (ROOT / "requirements" / "models.lock.txt").read_text()
-    ph = [i for i in model_lock.items() if i["rev"] == model_lock.PLACEHOLDER]
-    assert all("PLACEHOLDER" in i["repo"] for i in ph) and "PLACEHOLDER PIN" in lines
-    assert "publish_models.py" in lines and (ROOT / "scripts" / "publish_models.py").is_file()
+def test_ct2_build_is_published():
+    """The int8 NLLB build is pinned to the church repo, not the placeholder."""
+    assert not [i for i in model_lock.items() if i["rev"] == model_lock.PLACEHOLDER]
+    ct2 = [i for i in model_lock.subset("fast") if i["dir"]]
+    assert ct2[0]["repo"] == "PRC-Media/nllb-200-distilled-1.3B-ct2-int8"
+    assert (ROOT / "scripts" / "publish_models.py").is_file()
 
 
 def test_setup_sh_live_uses_the_app_downloader():

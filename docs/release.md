@@ -62,10 +62,9 @@ synthetic reading). **Never add a church recording**: the DMG is distributed.
 7. Publish the DMG on the public releases page and, once Sparkle is wired up, the appcast
    entry (below).
 
-**Known blocker (2026-10-23):** until the church Hugging Face repo for the int8 NLLB build exists
-(the `CHURCH-ORG-PLACEHOLDER` line in `requirements/models.lock.txt`), a packaged app can never
-finish Setup: Fast needs that model, and the dev conversion in `models/ct2` is not bundled. The
-app opens, the orchestrator answers, and it stays on Setup (`needs_setup`, `models_missing`).
+The int8 NLLB build Fast needs is published to `PRC-Media/nllb-200-distilled-1.3B-ct2-int8`
+(Hugging Face, public) and pinned in `requirements/models.lock.txt`. A new NLLB build goes up with
+`scripts/publish_models.py --write-lock`.
 
 Without a Developer ID certificate, `make dist` signs **ad hoc** and says so loudly. That DMG is
 for the internal pilot only: on another Mac it opens only through System Settings → Privacy &
