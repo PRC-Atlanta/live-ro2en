@@ -487,21 +487,16 @@ with tests (265 pass):
 - The Swift shell sets `PYTHONDONTWRITEBYTECODE`, `PYTHONNOUSERSITE` and `NUMBA_CACHE_DIR`.
 - POST bodies must be JSON objects (415/400); a failing state provider is logged once and skipped.
 
-Reported by the reviews, not checked or fixed yet:
-- Live: an engine crash during a profile reload or Start ends the service (non-blocking lock);
-  slow crash loops restart forever; a Settings save during a hot switch is lost; ProPresenter
-  timeouts run on the caption worker; changing `live.en_recognizer` while idle does not rewarm.
-- UI: "No sound" while no engine runs; stale Live state while the websocket is down; Settings →
-  usual language is not sent to a warm engine; success toasts when nothing changed; a
-  `restricted` microphone leaves the wizard's mic step blank.
-- Shell: a hung (not crashed) orchestrator is never restarted; a startup timeout sends SIGTERM
-  only, and Try Again then does nothing; the JIT entitlements belong on `python3.12` (S10);
-  the audit does not fail x86_64-only files.
-- Support: export and diagnostics answer 500 on a write error; preflight does not check the
-  ProPresenter text token or the Best models; diagnostics reads whole logs into memory and
-  `engine.log` is never rotated; the dev diagnostics zip takes the wrong `settings.yaml`; `.docx`
-  export keeps XML-invalid characters; `index.csv` notes can start formulas; the rehearsal mix
-  script hard-codes `.venv-nemo`.
+Second round (13f5428): every remaining reported finding was checked and fixed with a test,
+plus the four problems an independent review of 713c0cb found (a warm engine after a rehearsal
+was never counted as crashing; the "download paused" warning was wiped; an idle switch could
+load the same translator twice; a reload wrote "ready" over a Start). 285 tests pass, also with
+`LIVE_HOME` set.
+
+Still not verified:
+- The macOS 14 runtime build (needs the network; MLX may have no macOS 14 wheel at the pin).
+- The Swift shell's hang restart and SIGKILL escalation (built, not exercised).
+- The microphone in real use; the Swift app's window and dialogs by eye.
 
 ### Phase 2: assembly
 - **S10: Release pipeline.**
