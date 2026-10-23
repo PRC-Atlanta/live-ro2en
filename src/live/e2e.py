@@ -28,6 +28,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE.parent)); sys.path.insert(0, str(HERE))
 from app import Live                         # noqa: E402
+import paths                                 # noqa: E402
 from mock_propresenter import serve          # noqa: E402
 
 EN_TEXT = ("For God so loved the world, that he gave his only begotten Son, that whosoever believeth "
@@ -40,6 +41,19 @@ def free_port() -> int:
     s = socket.socket(); s.bind(("127.0.0.1", 0)); p = s.getsockname()[1]; s.close(); return p
 
 
+MIX_SCRIPT = """
+import json, sys
+import numpy as np, soundfile as sf, soxr
+out, parts = sys.argv[1], json.loads(sys.argv[2])
+chunks = []
+for path, ss, t in parts:
+    a, sr = sf.read(path, dtype="float32", always_2d=True)
+    a = a[int(ss * sr):int((ss + t) * sr)].mean(axis=1)
+    chunks.append(soxr.resample(a, sr, 16000) if sr != 16000 else a)
+sf.write(out, np.concatenate(chunks), 16000, subtype="PCM_16")
+"""
+
+
 def make_mixed(out: pathlib.Path) -> pathlib.Path:
     """RO (Ephesians, 60 s) + English TTS (macOS `say`, offline) + RO (Revelation, 60 s)."""
     tmp = out.parent
@@ -47,17 +61,11 @@ def make_mixed(out: pathlib.Path) -> pathlib.Path:
     subprocess.run(["say", "-r", "165", "-o", str(tmp / "en.aiff"), EN_TEXT], check=True)
     parts = [("work/bible/excerpts/49-Efes_00.flac", 0, 60), (str(tmp / "en.aiff"), 0, 999),
              ("work/bible/excerpts/66-Apoc_00.flac", 0, 60)]
-    wavs = []
-    for i, (p, ss, t) in enumerate(parts):
-        w = tmp / f"part{i}.wav"
-        subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-ss", str(ss), "-t", str(t), "-i",
-                        str(ROOT / p if not pathlib.Path(p).is_absolute() else p),
-                        "-ac", "1", "-ar", "16000", str(w)], check=True)
-        wavs.append(w)
-    lst = tmp / "list.txt"
-    lst.write_text("".join(f"file '{w}'\n" for w in wavs))
-    subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(lst),
-                    "-c", "copy", str(out)], check=True)
+    # decode, cut, downmix and resample in the engine's interpreter (soundfile + soxr), so
+    # the rehearsal needs no ffmpeg, like the app
+    srcs = [(str(ROOT / p if not pathlib.Path(p).is_absolute() else p), ss, t) for p, ss, t in parts]
+    subprocess.run([str(paths.engine_python(".venv-nemo", ROOT)), "-c", MIX_SCRIPT, str(out), json.dumps(srcs)],
+                   check=True)
     return out
 
 

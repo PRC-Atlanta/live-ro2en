@@ -111,12 +111,15 @@ class ParakeetSTT:
         self.m = from_pretrained(repo)
 
     def __call__(self, audio: np.ndarray) -> str:
-        import tempfile
-
-        import soundfile as sf
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as f:
-            sf.write(f.name, audio, SR, subtype="PCM_16")
-            return self.m.transcribe(f.name).text.strip()
+        # what transcribe(path) does, minus its ffmpeg decode: the app ships without ffmpeg
+        import mlx.core as mx
+        from parakeet_mlx.audio import get_logmel
+        cfg = self.m.preprocessor_config
+        assert cfg.sample_rate == SR, cfg.sample_rate
+        if len(audio) < cfg.hop_length:
+            return ""
+        x = mx.array(np.clip(audio, -1.0, 1.0).astype(np.float32))    # float32, as load_audio gives
+        return self.m.generate(get_logmel(x, cfg))[0].text.strip()
 
 
 def make_stt(name: str):
