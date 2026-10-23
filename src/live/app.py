@@ -11,14 +11,11 @@ Never imports google_stt."""
 from __future__ import annotations
 
 import argparse
-import asyncio
 import collections
-import datetime as dt
 import json
 import os
 import pathlib
 import queue
-import statistics
 import subprocess
 import sys
 import threading
@@ -40,42 +37,25 @@ HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
+import paths                                         # noqa: E402
+import security                                      # noqa: E402
 from captions import RollingCaptions                 # noqa: E402
-from langid import LangTracker, score as lang_score  # noqa: E402
+from langid import LangTracker                       # noqa: E402
+from lifecycle import LifecycleMixin                 # noqa: E402
+from output import OutputMixin                       # noqa: E402
+from pipeline import PipelineMixin                   # noqa: E402
 from propresenter import ProPresenter                # noqa: E402
-from segmenter import split_clauses                  # noqa: E402
-from translate import Glossary, make_translator      # noqa: E402
-from textnorm import apply_spellings, fold_diacritics, tokens   # noqa: E402
+from state import StateMixin                         # noqa: E402
+from translate import Glossary                       # noqa: E402
+# re-exported: tests and tools import these from live.app
+from pipeline import is_echo, merge_clauses, pack_parts            # noqa: E402,F401
+from security import LOOPBACK, allowed_hosts, request_allowed      # noqa: E402,F401
 
 
-def is_echo(src: str, out: str, min_words: int = 4) -> bool:
-    """The translator returned the source unchanged (same words, diacritics ignored).
-    Short clauses are exempt: a name or 'Amin' may legitimately be the same."""
-    s, o = [fold_diacritics(t) for t in tokens(src)], [fold_diacritics(t) for t in tokens(out)]
-    return len(s) >= min_words and s == o
+class Live(LifecycleMixin, PipelineMixin, OutputMixin, StateMixin):
+    """One service: the engine child, the translator, ProPresenter and the control state.
+    The behaviour lives in the mixins (lifecycle, pipeline, output, state); this is the data."""
 
-
-def pack_parts(parts: list[str], max_words: int) -> list[str]:
-    """Join consecutive clauses into calls of at most max_words (a clause longer than that
-    stays whole), so a backlog is translated in few calls without overrunning max_tokens."""
-    out: list[str] = []
-    for p in parts:
-        if out and len(out[-1].split()) + len(p.split()) <= max_words:
-            out[-1] = f"{out[-1]} {p}"
-        else:
-            out.append(p)
-    return out
-
-
-def merge_clauses(a: dict, b: dict) -> dict:
-    """Clause `a` followed by clause `b` as one clause (text fields joined, a's start)."""
-    return {**b, **{k: f"{a.get(k) or ''} {b.get(k) or ''}".strip() for k in ("ro", "multi", "en")},
-            "t_start": a["t_start"], "t_speech": a.get("t_speech", a["t_start"]),
-            # stt_s stays b's (what delayed b's t_emit, so vad_wait_s stays right); total kept apart
-            "stt_s_total": a.get("stt_s_total", a["stt_s"]) + b["stt_s"], "audio_s": a["audio_s"] + b["audio_s"]}
-
-
-class Live:
     def __init__(self, cfg: dict, args):
         self.cfg = cfg
         self.profile = cfg["live"].get("profile", "fast")
@@ -84,7 +64,7 @@ class Live:
         self.pp = ProPresenter(**cfg["propresenter"])
         self.caps = RollingCaptions(cfg["propresenter"]["max_chars_per_line"], cfg["propresenter"]["max_lines"])
         self.lang = LangTracker(self.lc.get("language_mode", "auto"))
-        self.gloss = Glossary(ROOT / cfg["paths"]["glossary"])
+        self.gloss = Glossary(paths.resource(cfg["paths"]["glossary"], ROOT))
         self.tr = None
         self.engine: subprocess.Popen | None = None
         self.running = False
@@ -94,6 +74,7 @@ class Live:
         self.partial = ""
         self.lock = threading.Lock()
         self.listeners: set = set()
+        self._state_fns: list = []                     # register_state(): extra state fields
         self.log_path = None
         self.eof = threading.Event()
         self._pending: dict | None = None
@@ -113,514 +94,27 @@ class Live:
         self._worker_lock = threading.Lock()
         self._control = threading.RLock()              # start / stop / profile never overlap
         self._hold_gen = 0                             # a hold timer from an older fragment is stale
+        for cls in type(self).__mro__:                 # each mixin's own fields and register_state()
+            if "_mixin_init" in vars(cls):
+                vars(cls)["_mixin_init"](self)
 
-    def _profile_cfg(self, name: str) -> dict:
-        """config.yaml `live` settings with the chosen profile's overrides on top."""
-        return {**self.cfg["live"], **(self.cfg.get("profiles", {}).get(name) or {})}
-
-    def set_profile(self, name: str):
-        """Switch fast <-> quality: restarts the engine and reloads the translator if needed."""
-        with self._control:
-            if name not in self.cfg.get("profiles", {}) or name == self.profile:
-                return
-            was_running = self.running
-            self.stop()
-            new = self._profile_cfg(name)
-            if new["translator"] != self.lc["translator"]:
-                with self._proc_lock:                  # never pulled from under a translation
-                    self.tr = None
-            self.profile, self.lc = name, new
-            if was_running:
-                self.start()
-            self._broadcast()
-
-    # --- control ---------------------------------------------------------------------
-    def load_translator(self):
-        with self._proc_lock:                          # the warm-up uses the model too
-            if self.tr is None:
-                self.status = "loading translator"
-                tr = make_translator(self.lc["translator"])
-                if hasattr(tr, "context_clauses"):
-                    tr.context_clauses = int(self.lc.get("context_clauses", 2))
-                tr.translate("Bună dimineața.", "ro", "en", self.gloss)    # warm-up
-                self.tr = tr
-
-    def start(self, device=None):
-        with self._control:
-            if self.running:
-                return
-            self.running = True                        # Start is disabled while loading
-            self.status = "starting"
-            self._broadcast()
-            try:
-                self._drain()                          # a previous run's clauses finish first
-                self.load_translator()
-                self._start_engine(device)
-            except Exception as e:
-                self.running = False
-                self.status = f"start failed: {type(e).__name__}: {e}"
-                self._broadcast()
-                raise
-
-    def _start_engine(self, device=None):
-        logdir = ROOT / self.lc["transcript_log_dir"]
-        logdir.mkdir(parents=True, exist_ok=True)
-        self.log_path = logdir / f"{dt.datetime.now():%Y-%m-%d_%H%M%S}.jsonl"
-        py = ROOT / self.lc["stt_venv"] / "bin" / "python"
-        cmd = [str(py), str(HERE / "engine.py"), "--stt", self.lc["stt_model"], "--mode", self.lang.mode,
-               "--cfg", json.dumps({**{k: self.lc[k] for k in ("vad_threshold", "min_pause_ms", "max_clause_s",
-                                                                "partial_every_s", "min_commit_s", "max_commit_s",
-                                                                "en_recognizer", "context_s", "lookahead_words",
-                                                                "audio_watchdog_s", "digital_silence_s",
-                                                                "stt_backlog_s", "catchup_max_s") if k in self.lc},
-                                   "parakeet_stream": self.cfg.get("parakeet_stream") or {},
-                                   "whistle": {**(self.cfg.get("whistle") or {}),   # whistle_<key> in live/profile overrides
-                                               **{k[len("whistle_"):]: v for k, v in self.lc.items()
-                                                  if k.startswith("whistle_")}}})]
-        if getattr(self.args, "file", None):
-            cmd += ["--file", self.args.file, "--realtime"]
-        elif device or self.lc.get("input_device") is not None:
-            cmd += ["--device", str(device or self.lc["input_device"])]
-        self.status = "starting engine"
-        self.warnings, self.counts = [], collections.Counter()
-        self.audio_fault = self.behind_s = self.stt_behind = None
-        self.eof.clear()
-        self._stopping = False
-        with open(ROOT / "logs" / "engine.log", "a") as err:     # the child keeps its own copy
-            self.engine = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                           stderr=err, text=True, bufsize=1)
-        self._reader_thread = threading.Thread(target=self._reader, args=(self.engine,), daemon=True)
-        self._reader_thread.start()
-
-    def stop(self):
-        with self._control:
-            self._stopping = True
-            if self.engine and self.engine.poll() is None:
-                try:
-                    self.engine.stdin.write(json.dumps({"cmd": "stop"}) + "\n"); self.engine.stdin.flush()
-                    self.engine.wait(20)     # it transcribes the speech it still holds, then emits eof
-                except Exception:
-                    self.engine.kill()
-            if self._reader_thread and self._reader_thread is not threading.current_thread():
-                self._reader_thread.join(30)  # let the final clause be translated, shown and logged
-            self._drain()                    # nothing from this run may land in the next one
-            self.running = False
-            self.status = "stopped"
-            self._broadcast()
-
-    def set_mode(self, mode: str):
-        self.lang.set_mode(mode)
-        if self.engine and self.engine.poll() is None:
-            self.engine.stdin.write(json.dumps({"cmd": "mode", "mode": mode}) + "\n"); self.engine.stdin.flush()
-        self._broadcast()
-
-    def clear(self):
-        self.caps.clear()
-        self.pp.clear()
-        self._broadcast()
-
-    # --- clause pipeline ---------------------------------------------------------------
-    def _reader(self, engine: subprocess.Popen):
-        for line in engine.stdout:
-            try:
-                ev = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if ev["type"] == "ready":
-                self.status = f"listening ({ev['source']})"
-            elif ev["type"] == "warn":
-                # e.g. the multilingual model failed to load: auto-detect degrades to RO only
-                if ev["msg"] == "audio input reopened":
-                    self.audio_fault = None              # the device is back
-                else:
-                    self._warn(ev["msg"])
-                self._log_event({"event": "warn", "msg": ev["msg"]})
-            elif ev["type"] == "error":
-                self._on_engine_error(ev)
-            elif ev["type"] == "mode":
-                # the engine could not run the requested mode (no multilingual model)
-                self.lang.set_mode(ev["mode"])
-                self._warn(ev["msg"])
-                self._log_event({"event": "mode", "mode": ev["mode"], "msg": ev["msg"]})
-            elif ev["type"] == "backlog":
-                self.stt_behind = None if ev["ok"] else ev["msg"]
-                self._log_event({"event": "backlog", "ok": ev["ok"], "s": ev["s"]})
-            elif ev["type"] == "audio":
-                self.audio_fault = None if ev["ok"] else ev["msg"]
-                self._log_event({"event": "audio", "ok": ev["ok"], "msg": ev["msg"]})
-            elif ev["type"] == "partial":
-                self.partial = ev["text"]
-            elif ev["type"] == "clause":
-                self._on_clause(ev)
-            elif ev["type"] == "eof":
-                self._flush()
-                self._drain()                # the last clause is shown and logged before eof
-                self.status = "input ended"
-                self.eof.set()
-            self._broadcast()
-        rc = engine.wait()
-        if engine is not self.engine:        # an older engine; a newer run owns the state
-            return
-        self._flush()                        # a held fragment must not die with the engine
-        self._drain()
-        if engine is not self.engine:        # a new run started while this one drained
-            return
-        if not self.eof.is_set() and not self._stopping:
-            self.status = f"ENGINE STOPPED (exit {rc}): captions halted, see logs/engine.log"
-            self._log_event({"event": "engine_exit", "rc": rc})
-        self.running = False
-        self._broadcast()
-
-    def _on_clause(self, ev: dict):
-        """Hold very short fragments ('Dar acum.') briefly and merge them with the next
-        clause: translating 1-3 words alone is poor. Sentence-final fragments go now."""
-        with self.lock:
-            if self._timer:
-                self._timer.cancel()
-            self._hold_gen += 1                        # a timer that already fired is now stale
-            p = self._pending
-            cap = self.lc.get("max_chunk_s", 0)
-            if p and cap and ev["t_end"] - p.get("t_speech", p["t_start"]) > cap:
-                # merging would make the first word wait too long: send the fragment on its own
-                self._pending = None
-                self._submit(p)
-                p = None
-            if p:
-                ev = merge_clauses(p, ev)
-            self._pending = None
-            text = ev.get("multi") if self.lang.current == "en" else ev["ro"]
-            text = text or ev["ro"] or ""
-            short = len(text.split()) < self.lc.get("hold_min_words", 4) and not text.rstrip().endswith(("?", "!"))
-            if short and not (cap and ev["t_end"] - ev.get("t_speech", ev["t_start"]) > cap):
-                self._pending = ev
-                self._timer = threading.Timer(self.lc.get("hold_s", 1.2), self._flush, args=(self._hold_gen,))
-                self._timer.daemon = True
-                self._timer.start()
-                return
-            self._submit(ev)                 # under the lock: a timer flush cannot slip in between
-
-    def _flush(self, gen: int | None = None):
-        """Send the held fragment. A hold timer passes its generation: if a newer clause has
-        arrived since (and merged or re-held the fragment), the timer is stale and does nothing."""
-        with self.lock:
-            if gen is not None and gen != self._hold_gen:
-                return
-            ev, self._pending = self._pending, None
-            if ev:
-                self._submit(ev)
-
-    def _submit(self, ev: dict):
-        self._work.put(ev)
-        with self._worker_lock:
-            if not (self._worker and self._worker.is_alive()):
-                self._worker = threading.Thread(target=self._work_loop, daemon=True)
-                self._worker.start()
-
-    def _work_loop(self):
-        while True:
-            ev = self._work.get()
-            n = 1
-            try:
-                ev, n = self._catch_up(ev)
-                self._handle(ev)
-                self._broadcast()
-            finally:
-                for _ in range(n):
-                    self._work.task_done()
-
-    def _catch_up(self, ev: dict) -> tuple[dict, int]:
-        """Behind (this clause already late, more waiting): merge the waiting clauses into
-        one, translated in a single call, so the captions get back to the speaker instead of
-        falling further behind clause by clause. Nothing is dropped."""
-        warn_s = float(self.lc.get("lag_warn_s", 6.0))
-        cap = int(self.lc.get("catchup_max_words", 60))
-        if not warn_s or not cap or time.time() - ev["t_end"] < warn_s / 2:
-            return ev, 1
-        n = 1
-        while max(len((ev.get(k) or "").split()) for k in ("ro", "multi", "en")) < cap:
-            try:
-                nxt = self._work.get_nowait()
-            except queue.Empty:
-                break
-            ev, n = merge_clauses(ev, nxt), n + 1
-        if n > 1:
-            ev = {**ev, "caught_up": n}
-            with self.lock:
-                self.counts["caught_up"] += n
-        return ev, n
-
-    def _drain(self):
-        """Wait until every submitted clause has been translated, shown and logged."""
-        self._work.join()
-
-    def _on_engine_error(self, ev: dict):
-        """The engine survived a failure (one chunk, the English stream, the audio device):
-        count and log it, and keep it visible."""
-        where = ev.get("where", "engine")
-        if where == "transcribe":
-            self.status = f"speech recognition failed on one chunk ({ev['msg'][:60]}); still listening"
-            self._log_failure(ev, "stt_error", error=ev["msg"])
-        elif where == "audio input":                   # retried every few seconds: one live alert
-            self.audio_fault = f"input device: {ev['msg']}"
-            self._log_event({"event": "error", "where": where, "msg": ev["msg"]})
-        else:
-            self._warn(f"{where}: {ev['msg']}")
-            self._log_event({"event": "error", "where": where, "msg": ev["msg"]})
-
-    def _warn(self, msg: str, keep: int = 20):
-        """Shown until the next start; a repeated message is listed once, and the list is
-        bounded so a recurring fault cannot flood the control page."""
-        if msg not in self.warnings:
-            self.warnings = (self.warnings + [msg])[-keep:]
-
-    def _handle(self, ev: dict):
-        """Never let one bad chunk stop the service: log it and carry on."""
-        with self._proc_lock:
-            try:
-                self._handle_locked(ev)
-            except Exception as e:                       # noqa: BLE001
-                import traceback
-                self.status = f"error on one chunk ({type(e).__name__}); still listening"
-                with open(ROOT / "logs" / "app_errors.log", "a") as f:
-                    f.write(f"{dt.datetime.now().isoformat()} {ev.get('ro', '')[:200]!r}\n{traceback.format_exc()}\n")
-                self._log_failure(ev, "error", error=f"{type(e).__name__}: {e}")
-
-    def _log_failure(self, ev: dict, outcome: str, **extra):
-        """A clause that produced no caption still gets a log record and a count, so empty
-        or failed chunks are visible in the metrics instead of silently missing."""
-        rec = {"id": ev.get("id"), "outcome": outcome, "t_start": ev.get("t_start"), "t_end": ev.get("t_end"),
-               "ro": ev.get("ro", ""), "multi": ev.get("multi", ""), "en": ev.get("en", ""),
-               "audio_s": ev.get("audio_s"), "stt_s": ev.get("stt_s"), "profile": self.profile,
-               "time": dt.datetime.now().isoformat(timespec="milliseconds"), **extra}
-        with self.lock:
-            self.counts[outcome] += 1
-        self._write_log(rec)
-
-    def _log_event(self, rec: dict):
-        self._write_log({**rec, "time": dt.datetime.now().isoformat(timespec="milliseconds")})
-
-    def _write_log(self, rec: dict):
-        if self.log_path:
-            with open(self.log_path, "a") as f:
-                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-
-    def _handle_locked(self, ev: dict):
-        # language: in auto mode decide from the multilingual transcript
-        probe = ev.get("multi") or ev.get("ro") or ""
-        lang = self.lang.update(probe)
-        # English text: Whistle when configured (ev["en"]), else the Parakeet text (A/B switch)
-        src_text = ev["ro"] if lang == "ro" else (ev.get("en") or ev.get("multi") or ev["ro"])
-        src_text = apply_spellings(src_text, self.cfg.get("spellings") or {})
-        if not src_text.strip():
-            self._log_failure(ev, "empty_stt", lang=lang)
-            return
-        tgt = "en" if lang == "ro" else "ro"
-        clauses, tail = split_clauses(src_text)
-        parts = clauses + ([tail] if tail else [])        # at a pause everything is committed
-        if ev.get("caught_up"):                           # catching up: few calls, each bounded
-            parts = pack_parts(parts, int(self.lc.get("catchup_max_words", 60)))
-        t0 = time.time()
-        out, truncated = [], False
-        for p in parts:
-            out.append(self.tr.translate(p, lang, tgt, self.gloss, use_context=True)
-                       if hasattr(self.tr, "context") else self.tr.translate(p, lang, tgt, self.gloss))
-            truncated |= bool(getattr(self.tr, "last_truncated", False))
-        translation = " ".join(o for o in out if o)
-        t_tr = time.time() - t0
-        if not translation.strip():                     # nothing new to show: not a success
-            self._log_failure(ev, "empty_mt", lang=lang, source=src_text, mt_s=round(t_tr, 3))
-            return
-        passthrough = False
-        if is_echo(src_text, translation):
-            s = lang_score(src_text)
-            if (tgt == "en" and s < -0.15) or (tgt == "ro" and s > 0.15):
-                passthrough = True                      # e.g. an English quote in RO→EN: show it
-                with self.lock:
-                    self.counts["passthrough"] += 1
-            else:                                       # untranslated source is not a caption
-                self._log_failure(ev, "mt_echo", lang=lang, source=src_text, translation=translation,
-                                  mt_s=round(t_tr, 3))
-                return
-        if truncated:                                   # shown (better than nothing), but counted
-            with self.lock:
-                self.counts["mt_truncated"] += 1
-        shown = self.caps.add(translation)
-        t1 = time.time()
-        ok = self.pp.show(shown)
-        t_disp = time.time()
-        latency = t_disp - ev["t_end"]
-        n_g, ok_g = self.gloss.adherence(src_text, translation, lang)
-        rec = {"id": ev["id"], "outcome": "ok", "t_start": ev["t_start"], "t_end": ev["t_end"], "t_display": t_disp,
-               "lang": lang, "source": src_text,
-               "en_recognizer": (ev.get("source") or ("whistle" if ev.get("en") else "parakeet")) if lang == "en" else None, "translation": translation, "latency_s": round(latency, 3),
-               # average delay per word, approximating words as evenly spread over the commit
-               "word_lag_s": round(latency + (ev["t_end"] - ev["t_start"]) / 2, 3), "profile": self.profile,
-               "t_speech": ev.get("t_speech", ev["t_start"]),
-               "first_word_s": round(t_disp - ev.get("t_speech", ev["t_start"]), 3),  # what a bilingual listener notices
-               "stt_s": ev["stt_s"], "vad_wait_s": round(ev["t_emit"] - ev["t_end"] - ev["stt_s"], 3),
-               "mt_s": round(t_tr, 3), "pp_s": round(t_disp - t1, 4), "pp_ok": ok,
-               "caught_up": ev.get("caught_up", 1), "mt_truncated": truncated, "passthrough": passthrough,
-               "pp_error": self.pp.last_error, "audio_s": ev["audio_s"], "glossary": [n_g, ok_g],
-               "time": dt.datetime.now().isoformat(timespec="milliseconds")}
-        warn_s = float(self.lc.get("lag_warn_s", 6.0))
-        late = bool(warn_s) and latency > warn_s
-        self.behind_s = round(latency, 1) if late else None     # clears on the next timely caption
-        with self.lock:
-            self.history = (self.history + [rec])[-10:]
-            self.counts["ok"] += 1
-            if late:
-                self.counts["late"] += 1
-            if ok:
-                self.lat.append(latency)
-            else:
-                self.counts["pp_error"] += 1
-        self._write_log(rec)
-
-    # --- UI state ------------------------------------------------------------------------
-    def state(self) -> dict:
-        with self.lock:
-            lat = self.lat[-30:]
-            return {"running": self.running, "status": self.status, "mode": self.lang.mode, "profile": self.profile,
-                    "profiles": list(self.cfg.get("profiles", {})),
-                    "lang": self.lang.current, "partial": self.partial,
-                    "latency_last": round(lat[-1], 2) if lat else None,
-                    "latency_median": round(statistics.median(lat), 2) if lat else None,
-                    "lines": [{"src": h["source"], "dst": h["translation"], "lat": h["latency_s"],
-                               "lang": h["lang"]} for h in self.history],
-                    "screen": self.caps.text, "pp_error": self.pp.last_error,
-                    "warnings": list(self.warnings), "counts": dict(self.counts),
-                    "alerts": self.alerts(),
-                    "translator": self.lc["translator"], "stt": self.lc["stt_model"]}
-
-    def alerts(self) -> list[str]:
-        """Live faults the operator must see now (cleared when they recover)."""
-        out = []
-        if self.audio_fault and self.running:
-            out.append(f"NO AUDIO: {self.audio_fault}")
-        if self.stt_behind and self.running:
-            out.append(f"RECOGNITION BEHIND: {self.stt_behind}; catching up in longer chunks")
-        if self.behind_s:
-            out.append(f"CAPTIONS BEHIND: last one {self.behind_s} s after the speech "
-                       f"(> {self.lc.get('lag_warn_s', 6.0)} s); the computer cannot keep up")
-        return out
-
-    def _broadcast(self):
-        for q in list(self.listeners):
-            try:
-                q.put_nowait(self.state())
-            except Exception:
-                pass
-
-
-PAGE = (HERE / "control.html").read_text()
-
-
-LOOPBACK = {"127.0.0.1", "localhost", "::1"}
-
-
-def allowed_hosts(lc: dict) -> set[str]:
-    """Host names the control page may be reached by (loopback + web_host + extras)."""
-    return {"127.0.0.1", "localhost", "::1", str(lc.get("web_host", "127.0.0.1"))} | \
-        set(lc.get("web_allowed_hosts") or [])
-
-
-def request_allowed(headers, method: str, hosts: set[str], port: int) -> bool:
-    """Only the control page itself may drive or watch the service. Host must be one of
-    ours (stops DNS rebinding); anything that changes state, and the WebSocket, must come
-    from our own origin (stops any other web page in a browser on this Mac from stopping or
-    clearing the captions, or reading the transcript)."""
-    from urllib.parse import urlsplit
-    if urlsplit("//" + (headers.get("host") or "")).hostname not in hosts:
-        return False
-    if method in ("GET", "HEAD"):
-        return True
-    origin = headers.get("origin")
-    if origin is None:                   # non-browser client (curl, scripts): Host check is enough
-        return method == "WS" or "application/json" in (headers.get("content-type") or "")
-    o = urlsplit(origin)
-    if o.hostname not in hosts or o.scheme not in ("http", "https"):
-        return False
-    # the page itself, or the same host behind a proxy listed in web_allowed_hosts
-    return (o.port or {"http": 80, "https": 443}[o.scheme]) == port or o.hostname not in LOOPBACK
+    @property
+    def root(self) -> pathlib.Path:
+        """Code/data root for paths.*: the repo in dev (read late, so a test can repoint it)."""
+        return ROOT
 
 
 def build_app(live: Live):
-    from fastapi import FastAPI, Request, WebSocketDisconnect
-    from fastapi.responses import HTMLResponse, JSONResponse
+    from fastapi import FastAPI
+    from fastapi.staticfiles import StaticFiles
+    from routes import output, session, settings, setup, system
     app = FastAPI()
     hosts, port = allowed_hosts(live.lc), int(live.cfg["live"]["web_port"])
-
-    @app.middleware("http")
-    async def same_origin_only(request: Request, call_next):
-        if not request_allowed(request.headers, request.method, hosts, port):
-            return JSONResponse({"error": "forbidden: only the control page may use this API. Opening it "
-                                          "from another machine? Add that host name to live.web_allowed_hosts "
-                                          "in config.yaml."}, status_code=403)
-        return await call_next(request)
-
-    @app.get("/")
-    def index():
-        return HTMLResponse(PAGE)
-
-    @app.get("/api/state")
-    def state():
-        return JSONResponse(live.state())
-
-    @app.get("/api/devices")
-    def devices():
-        try:
-            import sounddevice as sd
-            return [{"index": i, "name": d["name"]} for i, d in enumerate(sd.query_devices())
-                    if d["max_input_channels"] > 0]
-        except Exception as e:
-            return JSONResponse({"error": str(e)}, status_code=500)
-
-    @app.post("/api/{action}")
-    async def act(action: str, body: dict | None = None):
-        body = body or {}
-        loop = asyncio.get_running_loop()
-        if action == "start":
-            await loop.run_in_executor(None, live.start, body.get("device"))
-        elif action == "stop":
-            await loop.run_in_executor(None, live.stop)
-        elif action == "mode":
-            live.set_mode(body["mode"])
-        elif action == "profile":
-            await loop.run_in_executor(None, live.set_profile, body["profile"])
-        elif action == "clear":
-            await loop.run_in_executor(None, live.clear)
-        return live.state()
-
-    # registered as a plain route: with `from __future__ import annotations` FastAPI cannot
-    # resolve a `sock: WebSocket` parameter (imported here, not at module level) and closed
-    # every connection with 1008, so the page never received live updates
-    async def ws(sock):
-        if not request_allowed(sock.headers, "WS", hosts, port):
-            await sock.close(code=1008)          # policy violation: not our control page
-            return
-        await sock.accept()
-        q: asyncio.Queue = asyncio.Queue(maxsize=50)
-        loop = asyncio.get_running_loop()
-
-        class Bridge:
-            def put_nowait(self, s):
-                loop.call_soon_threadsafe(lambda: q.full() or q.put_nowait(s))
-        b = Bridge()
-        live.listeners.add(b)
-        try:
-            await sock.send_json(live.state())
-            while True:
-                try:
-                    s = await asyncio.wait_for(q.get(), 1.0)
-                except asyncio.TimeoutError:
-                    s = live.state()
-                await sock.send_json(s)
-        except (WebSocketDisconnect, RuntimeError):
-            pass
-        finally:
-            live.listeners.discard(b)
-    from starlette.routing import WebSocketRoute
-    app.router.routes.append(WebSocketRoute("/ws", ws))
+    security.install(app, hosts, port)
+    app.include_router(system.router(live, hosts, port))
+    for mod in (output, settings, setup, session):
+        app.include_router(mod.router(live))
+    app.mount("/ui", StaticFiles(directory=HERE / "ui", html=True), name="ui")   # new UI (S5)
     return app
 
 
@@ -632,12 +126,15 @@ def main():
     ap.add_argument("--exit-on-eof", action="store_true")
     ap.add_argument("--headless", action="store_true", help="no web server")
     ap.add_argument("--pp-port", type=int)
+    ap.add_argument("--port", type=int, help="control page port (overrides live.web_port; the app passes a free one)")
     ap.add_argument("--mode")
     ap.add_argument("--profile", help="fast | quality (overrides live.profile)")
     a = ap.parse_args()
     cfg = yaml.safe_load(open(a.config))
     if a.pp_port:
         cfg["propresenter"]["port"] = a.pp_port
+    if a.port:
+        cfg["live"]["web_port"] = a.port
     if a.mode:
         cfg["live"]["language_mode"] = a.mode
     if a.profile:

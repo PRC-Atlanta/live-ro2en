@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live RO2EN</title>
+<link rel="stylesheet" href="styles/tokens.css">
+</head>
+<body>
+<nav class="bar" id="nav">
+  <span class="logo">RO⇄EN</span>
+  <a href="#live">Live</a><a href="#setup">Setup</a><a href="#settings">Settings</a>
+  <a href="#after">After</a><a href="#help">Help</a>
+  <span class="conn" id="conn">connecting…</span>
+</nav>
+<main id="screen"></main>
+<script type="module">
+  // ?mock=<scenario> drives the UI from mock_state.js instead of the live /ws feed
+  import { createStore } from "./core/store.js";
+  import { connect } from "./core/api.js";
+  import { startRouter } from "./core/router.js";
+
+  const store = createStore();
+  const mock = new URLSearchParams(location.search).get("mock");
+  const conn = document.getElementById("conn");
+  if (mock !== null) {
+    const { startMock } = await import("./mock_state.js");
+    startMock(store, mock || "live");
+    conn.textContent = `mock: ${mock || "live"}`;
+  } else {
+    connect(store, ok => { conn.textContent = ok ? "connected" : "reconnecting…"; conn.dataset.ok = ok; });
+  }
+  startRouter(document.getElementById("screen"), store);
+</script>
+</body>
+</html>

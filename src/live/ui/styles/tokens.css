@@ -1,0 +1,28 @@
+/* Design tokens from docs/ui_mockup/live.html (plugin look: dark teal panel, cyan accents). */
+:root {
+  --bg-0:#060d12; --bg-1:#0a1a22; --bg-2:#10262f; --bg-3:#16323d;
+  --edge:#2b6f7e; --edge-glow:rgba(70,214,236,.28);
+  --cyan:#46d6ec; --cyan-hi:#9df1ff; --cyan-dim:#1f7f92; --cyan-fill:#2aa9bf;
+  --lime:#a3e635; --amber:#f5b83d; --red:#ff5d52;
+  --ink:#d9eef2; --label:#b9cbd0; --mute:#6f8b93;
+  --bar:#0b0d0e; --btn:#2a2f31; --btn-hi:#3a4144; --btn-edge:#555d60;
+  --font: -apple-system, "SF Pro Display", "Helvetica Neue", system-ui, sans-serif;
+  --num: "SF Pro Rounded", ui-rounded, -apple-system, system-ui, sans-serif;
+  /* sound meter (contract: level events; tuned at the rehearsal) */
+  --meter-good: var(--lime); --meter-hot: var(--amber); --meter-clip: var(--red);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body { background: var(--bg-0); color: var(--ink); font: 15px/1.4 var(--font); }
+.bar { display: flex; gap: 4px; align-items: center; padding: 3px 4px; background: var(--bar);
+       border-bottom: 1px solid #000; flex-wrap: wrap; }
+.bar a { font: 12px var(--font); color: #dfe5e7; padding: 4px 10px; text-decoration: none;
+         background: linear-gradient(var(--btn-hi), var(--btn)); border: 1px solid var(--btn-edge); border-radius: 2px; }
+.bar a[aria-current="page"] { color: var(--cyan-hi); border-color: var(--edge); }
+.logo { font-weight: 800; padding: 0 8px; letter-spacing: -.5px; }
+.conn { margin-left: auto; font-size: 12px; color: var(--mute); padding: 0 8px; }
+.conn[data-ok="true"] { color: var(--lime); }
+main { padding: 16px; max-width: 760px; margin: 0 auto; }
+.placeholder { border: 1px dashed var(--edge); padding: 16px; color: var(--label); }
+.placeholder pre { color: var(--mute); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }

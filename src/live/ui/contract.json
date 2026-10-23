@@ -1,0 +1,146 @@
+{
+  "version": 1,
+  "about": "Contract between the orchestrator (src/live/app.py), the UI (src/live/ui/) and the Mac shell. Types: bool, str, num, int, null, unions 'a|b', {enum:[...]}, {list:T}, {map:T}, {object:{field:T}}. 'built' false = planned; the owner session adds it. Read docs/app_contract.md first.",
+
+  "types": {
+    "phase": {"enum": ["needs_setup", "loading", "ready", "starting", "listening", "captioning", "stopping", "stopped", "unloading", "error"]},
+    "line": {"object": {"src": "str", "dst": "str", "lat": "num", "lang": {"enum": ["ro", "en"]}}},
+    "problem_code": {"enum": ["no_sound", "device_lost", "mic_denied", "recognition_behind", "captions_behind",
+                              "engine_stopped", "english_unavailable", "pp_unreachable", "pp_message_missing",
+                              "disk_full", "models_missing"]},
+    "not_built": {"object": {"error": {"enum": ["not_implemented"]}, "endpoint": "str", "owner": "str"}}
+  },
+
+  "state": {
+    "running":        {"type": "bool", "built": true},
+    "status":         {"type": "str", "built": true},
+    "mode":           {"type": {"enum": ["auto", "ro-en", "en-ro"]}, "built": true},
+    "profile":        {"type": "str", "built": true},
+    "profiles":       {"type": {"list": "str"}, "built": true},
+    "lang":           {"type": {"enum": ["ro", "en"]}, "built": true},
+    "partial":        {"type": "str", "built": true},
+    "latency_last":   {"type": "num|null", "built": true},
+    "latency_median": {"type": "num|null", "built": true},
+    "lines":          {"type": {"list": "@line"}, "built": true},
+    "screen":         {"type": "str", "built": true},
+    "pp_error":       {"type": "str|null", "built": true},
+    "warnings":       {"type": {"list": "str"}, "built": true},
+    "counts":         {"type": {"map": "int"}, "built": true},
+    "alerts":         {"type": {"list": "str"}, "built": true},
+    "translator":     {"type": "str", "built": true},
+    "stt":            {"type": "str", "built": true},
+
+    "phase":          {"type": "@phase", "built": false, "owner": "S1"},
+    "progress":       {"type": {"object": {"label": "str", "pct": "num"}}, "nullable": true, "built": false, "owner": "S1"},
+    "audio":          {"type": {"object": {"device": "str|null", "rms_db": "num|null", "peak_db": "num|null", "speech": "bool",
+                                           "last_voice_s": "num|null", "ok": "bool"}}, "built": false, "owner": "S1"},
+    "pp":             {"type": {"object": {"connected": "bool", "since": "num|null", "last_ms": "num|null",
+                                           "error_code": {"enum": ["unreachable", "auth", "message_missing", null]}}},
+                       "built": false, "owner": "S2"},
+    "pace":           {"type": {"object": {"state": {"enum": ["ok", "slow", "behind"]}, "behind_s": "num|null"}}, "built": false, "owner": "S4"},
+    "backlog":        {"type": {"object": {"n": "int", "oldest_s": "num|null"}}, "built": false, "owner": "S4"},
+    "paused":         {"type": "bool", "built": false, "owner": "S2"},
+    "held":           {"type": "bool", "built": false, "owner": "S2"},
+    "problem":        {"type": {"object": {"code": "@problem_code", "severity": {"enum": ["info", "warn", "error"]},
+                                           "action": {"object": {"id": "str", "label": "str"}}}},
+                       "nullable": true, "built": false, "owner": "S1"},
+    "auto_actions":   {"type": {"list": {"object": {"t": "num", "msg": "str"}}}, "built": false, "owner": "S4"},
+    "elapsed_s":      {"type": "num|null", "built": false, "owner": "S9"},
+    "first_word_ok_pct": {"type": "num|null", "built": false, "owner": "S9"},
+    "session_terms_n": {"type": "int", "built": false, "owner": "S3"},
+    "corrections_n":  {"type": "int", "built": false, "owner": "S2"},
+    "preflight":      {"type": {"object": {"checks": {"list": {"object": {"id": "str", "ok": "bool", "detail": "str"}}}}},
+                       "nullable": true, "built": false, "owner": "S9"}
+  },
+
+  "endpoints": [
+    {"method": "GET",  "path": "/",                 "owner": "S1", "built": true, "response": "html"},
+    {"method": "GET",  "path": "/legacy",           "owner": "S1", "built": true, "response": "html"},
+    {"method": "GET",  "path": "/ui/",              "owner": "S5a", "built": true, "response": "html"},
+    {"method": "GET",  "path": "/api/state",        "owner": "S1", "built": true, "response": "@state"},
+    {"method": "WS",   "path": "/ws",               "owner": "S1", "built": true, "response": "@state"},
+    {"method": "POST", "path": "/api/start",        "owner": "S1", "built": true, "request": {"device": "int|str|null"}, "response": "@state"},
+    {"method": "POST", "path": "/api/stop",         "owner": "S1", "built": true, "response": "@state"},
+    {"method": "POST", "path": "/api/preload",      "owner": "S1", "built": false},
+    {"method": "POST", "path": "/api/shutdown",     "owner": "S1", "built": false},
+    {"method": "POST", "path": "/api/unload",       "owner": "S1", "built": false},
+    {"method": "GET",  "path": "/api/health",       "owner": "S1", "built": false},
+    {"method": "GET",  "path": "/api/readiness",    "owner": "S1", "built": false},
+    {"method": "GET",  "path": "/api/permissions",  "owner": "S1", "built": false},
+
+    {"method": "POST", "path": "/api/clear",        "owner": "S2", "built": true, "response": "@state"},
+    {"method": "POST", "path": "/api/mode",         "owner": "S2", "built": true, "request": {"mode": "str"}, "response": "@state"},
+    {"method": "POST", "path": "/api/profile",      "owner": "S2", "built": true, "request": {"profile": "str"}, "response": "@state"},
+    {"method": "POST", "path": "/api/pause",        "owner": "S2", "built": false, "request": {"on": "bool"}},
+    {"method": "POST", "path": "/api/blank",        "owner": "S2", "built": false},
+    {"method": "POST", "path": "/api/hold",         "owner": "S2", "built": false, "request": {"on": "bool"}},
+    {"method": "POST", "path": "/api/retract",      "owner": "S2", "built": false},
+    {"method": "POST", "path": "/api/correct",      "owner": "S2", "built": false, "request": {"text": "str"}},
+    {"method": "POST", "path": "/api/layout",       "owner": "S2", "built": false, "request": {"lines": "int", "chars": "int"}},
+    {"method": "POST", "path": "/api/pp/test",      "owner": "S2", "built": false},
+    {"method": "POST", "path": "/api/pp/test_caption", "owner": "S2", "built": false},
+    {"method": "POST", "path": "/api/reconnect",    "owner": "S2", "built": false},
+
+    {"method": "GET",  "path": "/api/settings",     "owner": "S3", "built": false},
+    {"method": "PUT",  "path": "/api/settings",     "owner": "S3", "built": false},
+    {"method": "GET",  "path": "/api/keywords",     "owner": "S3", "built": false},
+    {"method": "PUT",  "path": "/api/keywords",     "owner": "S3", "built": false},
+    {"method": "GET",  "path": "/api/spellings",    "owner": "S3", "built": false},
+    {"method": "PUT",  "path": "/api/spellings",    "owner": "S3", "built": false},
+    {"method": "POST", "path": "/api/terms",        "owner": "S3", "built": false, "request": {"lines": {"list": "str"}, "save": "bool"}},
+    {"method": "POST", "path": "/api/import_config", "owner": "S3", "built": false},
+
+    {"method": "GET",  "path": "/api/devices",      "owner": "S6", "built": true, "response": {"list": {"object": {"index": "int", "name": "str"}}}},
+    {"method": "GET",  "path": "/api/setup",        "owner": "S6", "built": false},
+    {"method": "POST", "path": "/api/setup/download", "owner": "S6", "built": false},
+    {"method": "POST", "path": "/api/setup/cancel", "owner": "S6", "built": false},
+
+    {"method": "POST", "path": "/api/preflight",    "owner": "S9", "built": false},
+    {"method": "POST", "path": "/api/rate",         "owner": "S9", "built": false, "request": {"score": "int", "tags": {"list": "str"}, "note": "str"}},
+    {"method": "POST", "path": "/api/export",       "owner": "S9", "built": false, "request": {"format": {"enum": ["txt", "srt", "docx"]}}},
+    {"method": "POST", "path": "/api/diagnostics",  "owner": "S9", "built": false},
+    {"method": "POST", "path": "/api/rehearsal",    "owner": "S9", "built": false, "request": {"sample": "str"}}
+  ],
+
+  "engine": {
+    "events": {
+      "ready":   {"built": true,  "fields": {"stt": "str", "multi": "bool", "source": "str"}},
+      "partial": {"built": true,  "fields": {"text": "str"}},
+      "clause":  {"built": true,  "fields": {"id": "int", "ro": "str", "multi": "str", "en": "str", "source": "str?",
+                                             "t_start": "num", "t_speech": "num", "t_end": "num", "t_emit": "num",
+                                             "stt_s": "num", "audio_s": "num"}},
+      "eof":     {"built": true,  "fields": {}},
+      "warn":    {"built": true,  "fields": {"msg": "str"}},
+      "error":   {"built": true,  "fields": {"where": {"enum": ["transcribe", "audio input", "english stream", "engine"]}, "msg": "str"}},
+      "mode":    {"built": true,  "fields": {"mode": "str", "msg": "str"}},
+      "backlog": {"built": true,  "fields": {"ok": "bool", "s": "num", "msg": "str"}},
+      "audio":   {"built": true,  "fields": {"ok": "bool", "fault": {"enum": ["no_frames", "digital_silence", "mic_denied", null]}, "msg": "str"}},
+      "loading": {"built": false, "owner": "S1", "fields": {"label": "str", "pct": "num"}},
+      "level":   {"built": false, "owner": "S1", "fields": {"rms_db": "num", "peak_db": "num", "speech": "bool"}}
+    },
+    "commands": {
+      "mode":     {"built": true,  "fields": {"mode": {"enum": ["auto", "ro-en", "en-ro"]}}},
+      "stop":     {"built": true,  "fields": {}},
+      "listen":   {"built": false, "owner": "S1", "fields": {"on": "bool"}},
+      "cfg":      {"built": false, "owner": "S1", "fields": {"cfg": {"map": "num|str|bool"}}},
+      "keywords": {"built": false, "owner": "S1", "fields": {"words": {"list": "str"}}}
+    }
+  },
+
+  "env": {
+    "LIVE_HOME":              {"built": true, "about": "user data root; unset in dev = the repo"},
+    "LIVE_LOG_DIR":           {"built": true, "about": "logs; default <LIVE_HOME>/logs"},
+    "LIVE_CACHE_DIR":         {"built": true, "about": "caches; default <LIVE_HOME>/.cache"},
+    "LIVE_ENGINE_PYTHON":     {"built": true, "about": "engine interpreter; default <repo>/<stt_venv>/bin/python"},
+    "LIVE_ENGINE_PYTHONPATH": {"built": true, "about": "PYTHONPATH for the engine child (embedded runtime)"},
+    "LIVE_ALLOW_NETWORK":     {"built": true, "about": "1 only for setup/download children"},
+    "HF_HOME":                {"built": true, "about": "model cache; the app sets <LIVE_HOME>/hf"}
+  },
+
+  "flags": {
+    "--config": {"built": true}, "--file": {"built": true}, "--autostart": {"built": true},
+    "--exit-on-eof": {"built": true}, "--headless": {"built": true}, "--pp-port": {"built": true},
+    "--mode": {"built": true}, "--profile": {"built": true}, "--port": {"built": true},
+    "--settings": {"built": false, "owner": "S3"}, "--hold": {"built": false, "owner": "S1"}
+  }
+}
