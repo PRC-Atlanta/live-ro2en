@@ -170,7 +170,11 @@ class LifecycleMixin:
     def _translator_lost(self, e: Exception):
         """No translator is loaded mid-service: end it so the operator sees it (engine_stopped,
         Start again loads the translator) instead of a service that logs an error per clause."""
-        self.stop()
+        keep, self._keep_warm = self._keep_warm, False    # no re-preload: it would clear the error
+        try:
+            self.stop()
+        finally:
+            self._keep_warm = keep
         self._start_error = self.status = f"translator failed to load: {type(e).__name__}: {e}"
         self._broadcast()
 
@@ -269,6 +273,7 @@ class LifecycleMixin:
                     self._go_live(device)
                 else:
                     self._retire_engine()              # warm on another input or model: replace it
+                    self._await_spare()
                     self.load_translator()
                     self._start_engine(device)
                 if paused:                             # after _new_run, which resets the warnings
@@ -281,8 +286,15 @@ class LifecycleMixin:
                 self._broadcast()
                 raise
 
+    def _await_spare(self):
+        """A spare that is loading may be this profile's translator: take it, not a second copy."""
+        sp = self._spares_thread
+        if self.tr is None and sp is not None and sp.is_alive() and sp is not threading.current_thread():
+            sp.join()
+
     def _go_live(self, device=None):
         """Start on the warm engine: a new service log, then {"cmd":"listen","on":true}."""
+        self._await_spare()
         self.load_translator()                         # loaded by preload; reloaded after an unload
         want = device if device is not None else self.lc.get("input_device")
         self._new_run()
@@ -409,9 +421,7 @@ class LifecycleMixin:
     def _reload_translator(self):
         self._broadcast()                              # phase loading
         try:
-            sp = self._spares_thread                   # it may be loading this very model as a spare:
-            if sp is not None and sp.is_alive():       # wait and take it, not a second copy in memory
-                sp.join()
+            self._await_spare()
             self.load_translator()
             if not self.running:                       # a Start meanwhile owns the status
                 self.status = "ready"
@@ -734,10 +744,12 @@ class LifecycleMixin:
 
     def _restart_when_free(self, rc, dead, now):
         if not self._control.acquire(timeout=RESTART_WAIT_S):
-            self.status = f"ENGINE STOPPED (exit {rc}): captions halted, see logs/engine.log"
-            self._engine_dead = self.status
-            self.running, self.phase_hint = False, None
-            self._broadcast()
+            # still busy after RESTART_WAIT_S: give up, unless the holder moved on without us
+            if self.engine is dead and not (self._stopping or self._shutting_down):
+                self.status = f"ENGINE STOPPED (exit {rc}): captions halted, see logs/engine.log"
+                self._engine_dead = self.status
+                self.running, self.phase_hint = False, None
+                self._broadcast()
             return
         try:
             if self.engine is not dead:              # the holder started a new engine meanwhile

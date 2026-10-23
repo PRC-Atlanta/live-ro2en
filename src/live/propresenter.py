@@ -118,19 +118,20 @@ class ProPresenter:
     def _send(self, text: str) -> bool:
         """Put `text` on screen now ("" = hide), whatever was sent before. Under _lock."""
         if text:
-            ok = self._req("POST", f"/v1/message/{self._mid()}/trigger",
-                           [{"name": self.token_name, "text": {"text": text}}]) in (200, 204)
-            self._also_stage("PUT", text)
+            code = self._req("POST", f"/v1/message/{self._mid()}/trigger",
+                             [{"name": self.token_name, "text": {"text": text}}])
+            self._also_stage(code, "PUT", text)
         else:
-            ok = self._req("GET", f"/v1/message/{self._mid()}/clear") in (200, 204)
-            self._also_stage("DELETE")
+            code = self._req("GET", f"/v1/message/{self._mid()}/clear")
+            self._also_stage(code, "DELETE")
+        ok = code in (200, 204)
         self._last = text if ok else None      # unknown after a failure: resend next time
         return ok
 
-    def _also_stage(self, method: str, text=None) -> None:
+    def _also_stage(self, main_code: int, method: str, text=None) -> None:
         """Mirror to the stage message. Its result must not hide a failed main caption: the
         main error stays, and a stage failure is reported on its own."""
-        if not self.stage or self.error_code == "unreachable":   # no second timeout on the caption path
+        if not self.stage or main_code == 0:     # unreachable: no second timeout on the caption path
             return
         main_err, main_code = self.last_error, self.error_code
         self._req(method, "/v1/stage/message", text)

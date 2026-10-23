@@ -607,8 +607,56 @@ def test_idle_switch_while_the_spare_still_loads_does_not_load_it_twice(sandbox,
         assert until(lambda: live._spares_thread is not None and live._spares_thread.is_alive(), 5)
         spec = live._profile_cfg(other)["translator"]
         live.set_profile(other)                          # while that spare is still loading
-        assert until(lambda: live.tr is not None and live.state()["phase"] == "ready", 10)
+        live.start()                                     # and Start pressed straight away
+        assert until(lambda: live.tr is not None and live._listening, 10)
         assert loads.count(spec) == 1 and inflight[1] == 1
+    finally:
+        live.shutdown()
+
+
+def test_a_restart_that_waited_too_long_leaves_a_newer_engine_alone(sandbox, monkeypatch):
+    monkeypatch.setattr(lifecycle, "RESTART_WAIT_S", 0.5)
+    live = _live(sandbox)
+    try:
+        live.preload(wait=True)
+        live.start()
+        assert until(lambda: live._listening, 5)
+        first = live.engine
+        with live._control:                          # a very slow switch...
+            os.kill(first.pid, signal.SIGKILL)
+            assert until(lambda: first.poll() is not None, 5)
+            live.engine = types.SimpleNamespace(poll=lambda: None, pid=None)   # ...that started a new engine
+            time.sleep(1.0)                          # the restart gave up waiting meanwhile
+            assert live.running and live._engine_dead is None
+            live.engine = first
+    finally:
+        live.shutdown()
+
+
+def test_translator_lost_mid_service_stays_visible(sandbox, monkeypatch):
+    import translate
+    live = _live(sandbox)
+
+    def broken(spec):
+        raise RuntimeError("out of memory")
+    try:
+        live._keep_warm = True                       # as in the app, which preloads at launch
+        live.start()                                 # cold: a non-hold engine, whose stop re-preloads
+        assert until(lambda: live._listening, 5)
+        monkeypatch.setattr(translate, "make_translator", broken)
+        monkeypatch.setattr(lifecycle, "make_translator", broken)
+        live.lc["keep_both_translators"] = False
+        for p in live.cfg["profiles"].values():
+            p["keep_both_translators"] = False
+        other = next(p for p in live.cfg["profiles"] if p != live.profile)
+        with pytest.raises(RuntimeError):
+            live.set_profile(other)
+        assert until(lambda: not live.running, 5)
+        time.sleep(1.0)                              # a re-preload would have cleared it by now
+        st = live.state()
+        assert st["phase"] == "error" and st["problem"]["code"] == "engine_stopped"
+        assert "translator failed to load" in st["status"]
+        assert not live._engine_alive()              # nothing re-preloaded behind the error
     finally:
         live.shutdown()
 

@@ -133,6 +133,7 @@ export const S = {
     nothingToFix: "There is no caption to fix yet.",
     nothingToRemove: "There is no caption to remove.",
     rehearsal: "Rehearsal started", diagnostics: "Saved a diagnostics file to the Desktop",
+    savedAt: path => `Saved a diagnostics file in ${path}`,
   },
 
   fix: { title: "Fix last caption", hint: "Type what the big screen should say instead.", ok: "Replace", cancel: "Cancel" },

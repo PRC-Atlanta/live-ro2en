@@ -493,6 +493,10 @@ was never counted as crashing; the "download paused" warning was wiped; an idle 
 load the same translator twice; a reload wrote "ready" over a Start). 285 tests pass, also with
 `LIVE_HOME` set.
 
+A third review (of 13f5428) found nothing critical; its seven findings are fixed in the next
+commit, except a cosmetic one: a health ping and a caption can interleave their ProPresenter
+error text (caption order is safe). 287 tests pass.
+
 Still not verified:
 - The macOS 14 runtime build (needs the network; MLX may have no macOS 14 wheel at the pin).
 - The Swift shell's hang restart and SIGKILL escalation (built, not exercised).

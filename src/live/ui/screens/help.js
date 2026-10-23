@@ -61,7 +61,10 @@ export function render(el, store) {
       const action = b.dataset.do;
       const res = await send(action, {});                 // rehearsal: the first recording in samples/
       b.disabled = false;
-      toast(messageFor(res) || DONE[action], res.ok ? "ok" : res.notBuilt ? "info" : "warn");
+      // the backend falls back from the Desktop to the app's log folder: say where it really is
+      const where = res.ok && action === "diagnostics" && res.data?.path && !/\/Desktop\/[^/]+$/.test(res.data.path)
+        ? S.toast.savedAt(res.data.path) : null;
+      toast(messageFor(res) || where || DONE[action], res.ok ? "ok" : res.notBuilt ? "info" : "warn");
       if (res.ok && action === "rehearsal") location.hash = "#live";
     };
   });

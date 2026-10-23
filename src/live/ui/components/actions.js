@@ -49,7 +49,7 @@ export function messageFor(res, action) {
   if (res.data?.error === "nothing_to_change") return action === "retract" ? S.toast.nothingToRemove : S.toast.nothingToFix;
   // a refusal the backend words for the operator (a full sentence), e.g. "Stop captioning before …"
   const d = res.data?.detail;
-  if ((res.status === 404 || res.status === 409) && typeof d === "string" && /^[A-Z].*\.$/.test(d)) return d;
+  if ([404, 409, 507].includes(res.status) && typeof d === "string" && /^[A-Z].*\.$/.test(d)) return d;
   if (res.offline) return S.toast.offline;
   return S.toast.failed;
 }

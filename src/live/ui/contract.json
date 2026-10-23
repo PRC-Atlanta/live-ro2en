@@ -56,7 +56,8 @@
     "rated":         {"object": {"ok": "bool", "log": "str", "summary": "@summary"}},
     "exported":      {"object": {"ok": "bool", "format": "str", "path": "str", "log": "str"}},
     "no_session":    {"object": {"error": {"enum": ["no_session"]}, "detail": "str"}},
-    "nothing_to_change": {"object": {"error": {"enum": ["nothing_to_change"]}, "detail": "str"}}
+    "nothing_to_change": {"object": {"error": {"enum": ["nothing_to_change"]}, "detail": "str"}},
+    "write_failed":  {"object": {"error": {"enum": ["write_failed"]}, "detail": "str"}}
   },
 
   "state": {
@@ -160,8 +161,9 @@
     {"method": "POST", "path": "/api/rate",         "owner": "S9", "built": true, "request": {"score": "int", "tags": {"list": "str"}, "note": "str", "log": "str?"},
      "response": "@rated", "errors": {"400": ["@bad_request"], "404": ["@no_session"]}},
     {"method": "POST", "path": "/api/export",       "owner": "S9", "built": true, "request": {"format": {"enum": ["txt", "srt", "docx"]}, "log": "str?"},
-     "response": "@exported", "errors": {"400": ["@bad_request"], "404": ["@no_session"]}},
-    {"method": "POST", "path": "/api/diagnostics",  "owner": "S9", "built": true, "response": {"object": {"ok": "bool", "path": "str"}}},
+     "response": "@exported", "errors": {"400": ["@bad_request"], "404": ["@no_session"], "507": ["@write_failed"]}},
+    {"method": "POST", "path": "/api/diagnostics",  "owner": "S9", "built": true, "response": {"object": {"ok": "bool", "path": "str"}},
+     "errors": {"507": ["@write_failed"]}},
     {"method": "POST", "path": "/api/rehearsal",    "owner": "S9", "built": true, "request": {"sample": "str?"}, "response": "@state"}
   ],
 

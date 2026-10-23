@@ -33,6 +33,7 @@ final class ProcessSupervisor {
     private var watchdog: (pid: pid_t, pipe: Int32)?
     private var stopping = false
     private var gaveUp: String?                // launch timed out: report instead of restarting
+    private var startAfterReap = false         // Try again pressed while the old child was still there
     private var generation = 0                 // invalidates timers/polls of an earlier child
     private var restarts: [Date] = []
     private var pollTimer: Timer?
@@ -77,8 +78,9 @@ final class ProcessSupervisor {
     func retry() {
         restarts.removeAll()
         if pid == 0 { start(); return }
-        // still there (it ignored SIGTERM): end it; the exit handler reports, then Try again starts
-        gaveUp = gaveUp ?? "The translator stopped answering."
+        // still there (it ignored SIGTERM): end it, and start again as soon as it is gone
+        startAfterReap = true
+        status = .launching("Starting…")
         killpg(pid, SIGKILL)
     }
 
@@ -177,6 +179,12 @@ final class ProcessSupervisor {
         endWatchdog(killGroup: true)           // takes an orphaned engine with it
         removePidfile()
 
+        if startAfterReap {                    // the operator already pressed Try again
+            startAfterReap = false
+            gaveUp = nil
+            start()
+            return
+        }
         if let why = gaveUp {
             gaveUp = nil
             status = .failed(why, logTail: logTail())
@@ -227,9 +235,12 @@ final class ProcessSupervisor {
 
     private func startStatePolling(_ gen: Int) {
         pollTimer?.invalidate()
-        var lastGood = Date(), ending = false
+        var lastGood = Date(), lastTick = Date(), ending = false
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self, gen == self.generation, self.pid != 0, !self.stopping, !ending else { return }
+            // after sleep or timer throttling, a gap is not 20 s of failed polls: start counting again
+            if Date().timeIntervalSince(lastTick) > 5 { lastGood = Date() }
+            lastTick = Date()
             self.getJSON("/api/state") { obj, _ in
                 guard gen == self.generation else { return }
                 if let obj { lastGood = Date(); self.onState?(obj); return }
