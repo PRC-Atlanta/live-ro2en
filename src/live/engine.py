@@ -1,13 +1,20 @@
 """ASR engine process: audio in -> VAD -> clause commits -> STT. Speaks JSON lines.
 
   <stt venv>/bin/python src/live/engine.py --stt jackrabbit-tdt-boost [--device NAME|INDEX]
-                                           [--file audio.wav --realtime]
-stdout events (one JSON per line):
-  {"type":"ready", ...}
+                                           [--file audio.wav --realtime] [--hold]
+stdout events (one JSON per line; docs/app_contract.md has the full list):
+  {"type":"loading","label":..,"pct":..}                         while the models load
+  {"type":"ready", ..., "hold": bool}
+  {"type":"level","rms_db":..,"peak_db":..,"speech":..}          ~10 Hz, for the sound meter
+  {"type":"input","device":name}                                 each time the mic is opened
+  {"type":"listen","on":bool}                                    hold <-> live acknowledged
   {"type":"partial","text":...}                                  (UI only)
   {"type":"clause","id":n,"ro":..,"multi":..,"t_start":..,"t_end":..,"t_emit":..,"stt_s":..}
   {"type":"eof"} when a --file source ends
-stdin commands: {"cmd":"mode","mode":"auto|ro-en|en-ro"}, {"cmd":"stop"}
+stdin commands: mode, stop, listen {on}, cfg {cfg}, keywords {words}, device {device}.
+--hold: load and warm up, open the input for the level meter only, and transcribe nothing
+until {"cmd":"listen","on":true} (a --file source waits to play until then).
+The engine exits on stdin EOF and when its parent dies, so it never outlives the app.
 t_end = wall-clock time of the last voiced frame of the clause (the latency origin).
 Never imports google_stt."""
 from __future__ import annotations
@@ -40,6 +47,7 @@ from segmenter import PauseTracker          # noqa: E402
 from vad import FRAME, SileroVAD            # noqa: E402
 
 SR = 16000
+LEVEL_FLOOR_DB = -120.0                     # "minus infinity" for the meter (JSON has no -inf)
 _OUT = sys.stdout
 
 
@@ -117,15 +125,90 @@ def make_stt(name: str):
 
 # --- audio sources ------------------------------------------------------------------------
 
-def file_source(path: str, realtime: bool, q: queue.Queue, stop: threading.Event) -> None:
+def to_db(x: float) -> float:
+    return max(LEVEL_FLOOR_DB, round(20.0 * float(np.log10(x)), 1)) if x > 0 else LEVEL_FLOOR_DB
+
+
+class LevelMeter:
+    """Input level for the sound meter: rms and peak over each 1/hz window, sent as `level`
+    events from the capture side, so the meter keeps moving while a recognition call runs.
+    `speech` is the voice detector's verdict, set by the processing loop (`voice`)."""
+
+    def __init__(self, hz: float = 10.0):
+        self.every = 1.0 / min(20.0, max(5.0, hz))
+        self._lock = threading.Lock()
+        self._sq, self._n, self._peak, self._t = 0.0, 0, 0.0, None
+        self._voiced = self._last = False
+
+    def voice(self, on: bool) -> None:
+        self._last = on
+        self._voiced |= on
+
+    def feed(self, fr: np.ndarray, now: float | None = None) -> None:
+        now = time.time() if now is None else now
+        x = np.asarray(fr, dtype=np.float32)
+        ev = None
+        with self._lock:
+            if self._t is None:
+                self._t = now
+            self._sq += float(np.dot(x, x))
+            self._n += len(x)
+            self._peak = max(self._peak, float(np.abs(x).max()) if len(x) else 0.0)
+            if now - self._t >= self.every:
+                rms = (self._sq / self._n) ** 0.5 if self._n else 0.0
+                ev = {"rms_db": to_db(rms), "peak_db": to_db(self._peak), "speech": self._voiced or self._last}
+                self._sq, self._n, self._peak, self._t, self._voiced = 0.0, 0, 0.0, now, False
+        if ev:
+            emit({"type": "level", **ev})
+
+
+class SourceCtl:
+    """What the capture thread should do: the input device to use (switched live with the
+    `device` command, e.g. while the Setup wizard tries inputs), when a file in hold may
+    start playing (`go`), and the level meter it feeds."""
+
+    def __init__(self, device=None, meter: LevelMeter | None = None, hold: bool = False):
+        self.device = device
+        self.meter = meter
+        self.changed = threading.Event()
+        self.go = threading.Event()
+        if not hold:
+            self.go.set()
+
+    def switch(self, device) -> None:
+        self.device = device
+        self.changed.set()
+
+
+def resample(x: np.ndarray, sr: int) -> np.ndarray:
+    """To 16 kHz with soxr (a small wheel: no ffmpeg needed). Linear interpolation is the
+    fallback if soxr is missing, so a rehearsal still plays."""
+    if sr == SR:
+        return x
+    try:
+        import soxr
+        return soxr.resample(x, sr, SR).astype(np.float32)
+    except ImportError:
+        n = int(round(len(x) * SR / sr))
+        return np.interp(np.arange(n) * (sr / SR), np.arange(len(x)), x).astype(np.float32)
+
+
+def read_audio(path: str) -> np.ndarray:
+    """Mono float32 at 16 kHz from any file libsndfile reads (wav, flac, mp3, aiff, ogg)."""
     import soundfile as sf
     x, sr = sf.read(path, dtype="float32", always_2d=True)
-    x = x.mean(1)
-    if sr != SR:
-        import subprocess
-        x = np.frombuffer(subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-i", path, "-ac", "1",
-                                          "-ar", str(SR), "-f", "f32le", "-"], capture_output=True,
-                                         check=True).stdout, np.float32)
+    return resample(np.ascontiguousarray(x.mean(1), dtype=np.float32), int(sr))
+
+
+def file_source(path: str, realtime: bool, q: queue.Queue, stop: threading.Event,
+                ctl: SourceCtl | None = None) -> None:
+    x = read_audio(path)
+    if ctl is not None:                          # hold: the file plays from Start, not before
+        while not ctl.go.wait(0.1):
+            if stop.is_set():
+                q.put(None)
+                return
+    meter = ctl.meter if ctl is not None else None
     t0 = time.time()
     for i in range(0, len(x) - FRAME + 1, FRAME):
         if stop.is_set():
@@ -135,8 +218,30 @@ def file_source(path: str, realtime: bool, q: queue.Queue, stop: threading.Event
             d = due - time.time()
             if d > 0:
                 time.sleep(d)
-        q.put((time.time(), x[i:i + FRAME]))
+        fr = x[i:i + FRAME]
+        if meter is not None:
+            meter.feed(fr)
+        q.put((time.time(), fr))
     q.put(None)
+
+
+def _device_name(sd, dev) -> str | None:
+    """The name of the input actually opened (the system default when dev is None)."""
+    try:
+        if dev is None:
+            d = sd.default.device
+            dev = d[0] if isinstance(d, (list, tuple)) else d
+        return sd.query_devices(dev)["name"]
+    except Exception:                            # noqa: BLE001  a fake or odd backend: unnamed
+        return None
+
+
+def _mic_denied() -> bool:
+    try:
+        import permissions
+        return permissions.microphone() in ("denied", "restricted")
+    except Exception:                            # noqa: BLE001  unknown: let the audio speak
+        return False
 
 
 def _reopen_device(sd, dev, name: str | None):
@@ -157,55 +262,83 @@ def _reopen_device(sd, dev, name: str | None):
 
 
 def mic_source(device, q: queue.Queue, stop: threading.Event, stall_s: float = 2.0,
-               retry_s: tuple[float, ...] = (1, 2, 5)) -> None:
+               retry_s: tuple[float, ...] = (1, 2, 5), ctl: SourceCtl | None = None) -> None:
     """Capture until stop. A device that fails to open, errors, or stops delivering audio
     (USB glitch, unplugged and replugged) is reported and reopened with backoff, so the
-    service recovers on its own instead of waiting for the operator to restart it."""
+    service recovers on its own instead of waiting for the operator to restart it.
+    `ctl.switch(device)` moves to another input without restarting the engine."""
     import sounddevice as sd
     last = {"t": time.time()}
+    meter = ctl.meter if ctl is not None else None
 
     def cb(indata, frames, t, status):
         last["t"] = time.time()
-        q.put((last["t"], indata[:, 0].copy()))
-    dev = int(device) if isinstance(device, str) and device.isdigit() else device
+        fr = indata[:, 0].copy()
+        if meter is not None:
+            meter.feed(fr, last["t"])
+        q.put((last["t"], fr))
+
+    def pick(d):
+        return int(d) if isinstance(d, str) and d.isdigit() else d
+    dev = pick(device)
     name = None                                  # the device's name, to find it again after a replug
     failures = 0
     while not stop.is_set():
+        if ctl is not None and ctl.changed.is_set():     # the operator chose another input
+            ctl.changed.clear()
+            dev, name, failures = pick(ctl.device), None, 0
         try:
             if failures:
                 dev = _reopen_device(sd, dev, name)
             elif dev is not None:
                 name = sd.query_devices(dev)["name"]
+            if _mic_denied():                    # macOS gives a denied app silence, not an error
+                q.put({"fault": "mic_denied", "msg": "the Mac does not allow this app to use the microphone"})
             with sd.InputStream(samplerate=SR, channels=1, dtype="float32", blocksize=FRAME,
                                 device=dev, callback=cb):
                 last["t"] = time.time()
+                emit({"type": "input", "device": name or _device_name(sd, dev)})
                 if failures:
                     emit({"type": "warn", "msg": "audio input reopened"})
                 failures = 0
                 while not stop.is_set():
                     time.sleep(0.1)
+                    if ctl is not None and ctl.changed.is_set():
+                        break
                     if time.time() - last["t"] > stall_s:
                         raise RuntimeError(f"no audio callbacks for {stall_s:.0f} s")
         except Exception as e:                   # wrong index, device busy, unplugged mid-run
             emit({"type": "error", "where": "audio input", "msg": f"{type(e).__name__}: {e} (reopening)"})
-            stop.wait(retry_s[min(failures, len(retry_s) - 1)])
+            end = time.time() + retry_s[min(failures, len(retry_s) - 1)]
+            while time.time() < end and not stop.is_set() and not (ctl is not None and ctl.changed.is_set()):
+                time.sleep(0.02)
             failures += 1
 
 
 # --- main loop ----------------------------------------------------------------------------
 
+def loading(label: str, pct: float) -> None:
+    """Model-loading progress for the launch screen (`progress` in the app state)."""
+    emit({"type": "loading", "label": label, "pct": float(pct)})
+
+
 class Engine:
+    meter: LevelMeter | None = None                      # set by main(); tests run without one
+
     def __init__(self, stt_name: str, mode: str, cfg: dict):
         self.mode = mode
+        loading("Loading speech recognition", 5)
         self.stt = make_stt(stt_name)
         self.multi = None
         if stt_name != "parakeet-mlx":
+            loading("Loading language detection", 45)
             try:
                 self.multi = ParakeetSTT()
             except Exception as e:                      # language auto-detect degrades to RO only
                 emit({"type": "warn", "msg": f"multilingual model unavailable: {e}"})
         else:
             self.multi = self.stt
+        loading("Loading the voice detector", 70)
         self.vad = SileroVAD()
         self.pt = PauseTracker(frame_ms=32, threshold=cfg.get("vad_threshold", 0.5),
                                min_pause_ms=cfg.get("min_pause_ms", 350),
@@ -233,6 +366,7 @@ class Engine:
         self.wcfg = cfg.get("whistle") or {}
         self.en_rec = cfg.get("en_recognizer", "parakeet")
         if self.en_rec == "whistle":
+            loading("Loading English recognition", 80)
             from whistle_en import WhistleSTT
             self.whistle = WhistleSTT(self.wcfg)
         self.streamer = self.whistle                     # English streaming recognizer (EN→RO locked)
@@ -247,6 +381,7 @@ class Engine:
         from concurrent.futures import ThreadPoolExecutor
         self._pool = ThreadPoolExecutor(max_workers=1)
         if self.en_rec == "parakeet-stream":
+            loading("Loading English recognition", 85)
             from parakeet_stream import ParakeetStreamSTT
             self.streamer = ParakeetStreamSTT(cfg.get("parakeet_stream") or {})
         self._wstream = None                             # (assembler, wall_t0, chunk buffer)
@@ -255,6 +390,57 @@ class Engine:
         if not self.english_ok and self.mode != "ro-en":
             self._refuse(self.mode)
             self.mode = "ro-en"
+        loading("Ready", 100)
+
+    # --- live changes (stdin commands, applied in order with the audio) -------------------
+    def apply_cfg(self, cfg: dict) -> list[str]:
+        """`{"cmd":"cfg"}`: pause and commit settings without a restart (a profile switch).
+        Returns the keys that would need a restart instead (they are ignored here)."""
+        ctxs = [c for c in (getattr(self, "stt_ctx", None), getattr(self, "multi_ctx", None)) if c is not None]
+        later = []
+        for k, v in (cfg or {}).items():
+            try:
+                if k == "vad_threshold":
+                    self.pt.threshold = float(v)
+                elif k == "min_pause_ms":
+                    self.pt.min_pause_ms = int(v)
+                elif k == "max_clause_s":
+                    self.pt.max_clause_s = float(v)
+                elif k == "partial_every_s":
+                    self.partial_every = float(v)
+                elif k == "min_commit_s":
+                    self.min_commit = int(float(v) * SR / FRAME)
+                elif k == "max_commit_s":
+                    self.max_commit = int(float(v) * SR / FRAME)
+                elif k == "audio_watchdog_s":
+                    self.no_audio_s = float(v)
+                elif k == "digital_silence_s":
+                    self.silent_s = float(v)
+                elif k == "stt_backlog_s":
+                    self.backlog_s = float(v)
+                elif k == "catchup_max_s":
+                    self.catchup_max = int(float(v) * SR / FRAME)
+                elif k == "lookahead_words":
+                    for c in ctxs:
+                        c.hold_words = int(v)
+                elif k == "context_s":
+                    for c in ctxs:
+                        c.ctx_n, c.max_ctx_words = int(float(v) * SR), max(1, int(float(v) * 3))
+                elif k == "en_recognizer" and v == getattr(self, "en_rec", v):
+                    pass                                          # unchanged: nothing to do
+                elif k in ("whistle", "parakeet_stream"):
+                    pass                  # recognizer options: names come by `keywords`, the rest at the next start
+                else:
+                    later.append(k)
+            except (TypeError, ValueError):
+                later.append(k)
+        return later
+
+    def set_keywords(self, words: list[str]) -> None:
+        """`{"cmd":"keywords"}`: the user's and today's names for the English recognizer."""
+        w = getattr(self, "whistle", None)
+        if w is not None and hasattr(w, "set_keywords"):
+            w.set_keywords([str(x) for x in words or [] if str(x).strip()])
 
     def _next_id(self) -> int:
         with self._id_lock:
@@ -360,10 +546,18 @@ class Engine:
             self.streamer.end_stream(**({} if wait else {"wait": 0}))
             self._wstream = None
 
-    def run(self, q: queue.Queue, stop: threading.Event | None = None) -> None:
-        """Process queued audio until the None sentinel. Items are (time, frame) or
-        {"mode": m}; a mode change travels through the queue so the speech buffered before it
-        is committed under the old mode, never dropped or spliced onto later audio."""
+    def run(self, q: queue.Queue, stop: threading.Event | None = None, hold: bool = False,
+            idle_watch: bool = True) -> None:
+        """Process queued audio until the None sentinel. Items are (time, frame) or a command
+        dict ({"mode"}, {"listen"}, {"cfg"}, {"keywords"}, {"fault"}); commands travel through
+        the queue so the speech buffered before one is committed under the old settings,
+        never dropped or spliced onto later audio.
+        hold: start in hold (level meter and watchdog only, nothing transcribed) until
+        {"listen": True}. idle_watch=False: no "no frames" alarm while holding (a file that
+        waits for Start delivers nothing yet)."""
+        listening = not hold
+        denied = False                                   # macOS refused the mic: silence is expected
+        meter = getattr(self, "meter", None)
         frames: list[np.ndarray] = []
         probs: list[float] = []
         times: list[float] = []
@@ -393,7 +587,7 @@ class Engine:
             try:
                 item = q.get(timeout=0.5)
             except queue.Empty:
-                if self.no_audio_s and time.time() - last_frame > self.no_audio_s:
+                if self.no_audio_s and (listening or idle_watch) and time.time() - last_frame > self.no_audio_s:
                     audio_state("no_frames", f"no audio from the input device for {time.time() - last_frame:.0f} s")
                 continue
             if item is None:
@@ -402,6 +596,34 @@ class Engine:
                 emit({"type": "eof"})
                 return
             if isinstance(item, dict):
+                if "listen" in item:
+                    on = bool(item["listen"])
+                    if on and not listening:             # Start: the warm engine goes live
+                        listening, pause_pending, last_partial = True, False, 0.0
+                        last_frame = time.time()
+                        self.pt.reset()
+                        for c in (getattr(self, "stt_ctx", None), getattr(self, "multi_ctx", None)):
+                            if c is not None:
+                                c.reset()                # no context from before this service
+                        self._held_t = None
+                    elif not on and listening:           # Stop: commit what was said, then hold
+                        self._stop_whistle_stream()
+                        commit_all()
+                        listening = False
+                    emit({"type": "listen", "on": listening})   # after the last clause of the run
+                    continue
+                if "cfg" in item:
+                    later = self.apply_cfg(item["cfg"])
+                    if later:
+                        emit({"type": "warn", "msg": f"applied at the next start: {', '.join(sorted(later))}"})
+                    continue
+                if "keywords" in item:
+                    self.set_keywords(item["keywords"])
+                    continue
+                if "fault" in item:                      # from the capture thread
+                    denied = item["fault"] == "mic_denied"
+                    audio_state(item["fault"], item.get("msg", ""))
+                    continue
                 m = item.get("mode")
                 if m and m != "ro-en" and not self.english_ok:
                     self._refuse(m)                      # stays RO→EN; the app is told why
@@ -422,12 +644,20 @@ class Engine:
                     emit({"type": "backlog", "ok": True, "s": round(lag, 1), "msg": "caught up"})
             if np.abs(fr).max() > 1e-6:
                 last_sound = last_frame
-            if self.silent_s and last_frame - last_sound > self.silent_s:
+                denied = False                           # real sound: the permission is there
+            if denied:
+                pass                                     # keep mic_denied, not "digital silence"
+            elif self.silent_s and last_frame - last_sound > self.silent_s:
                 audio_state("digital_silence",
                             f"input is digital silence for {last_frame - last_sound:.0f} s (muted or dead mic?)")
             else:
                 audio_state(None)
             p = self.vad(fr)
+            if meter is not None:
+                meter.voice(p >= self.pt.threshold)
+            if not listening:                            # hold: meter only; keep the pre-roll
+                pre = (pre + [(ts, fr)])[-self.pre_roll:]
+                continue
             if self._whistle_streaming(ts, fr, p):
                 continue
             if not frames and p < self.pt.threshold:
@@ -479,7 +709,8 @@ class Engine:
                     pass
 
 
-def main() -> None:
+def main(make_engine=None) -> None:
+    """make_engine(stt, mode, cfg): the Engine; tests pass one without models."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--stt", default="jackrabbit-tdt-boost")
     ap.add_argument("--mode", default="auto")
@@ -488,32 +719,81 @@ def main() -> None:
     ap.add_argument("--realtime", action="store_true")
     ap.add_argument("--cfg", default="{}")
     ap.add_argument("--no-partials", action="store_true")
+    ap.add_argument("--hold", action="store_true", help="load, meter the input, transcribe only after listen")
     a = ap.parse_args()
     protect_stdout()
     cfg = json.loads(a.cfg)
     if a.no_partials:
         cfg["partial_every_s"] = 0
-    eng = Engine(a.stt, a.mode, cfg)
-    eng.realtime = not a.file or a.realtime      # a fast file run is not "behind"
     stop = threading.Event()
     q: queue.Queue = queue.Queue()
-
-    def stdin_loop():
-        for line in sys.stdin:
-            try:
-                c = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if c.get("cmd") == "mode":
-                q.put({"mode": c["mode"]})       # applied in order with the audio
-            elif c.get("cmd") == "stop":
-                q.put(None); stop.set(); return  # sentinel first: buffered speech is still committed
-    threading.Thread(target=stdin_loop, daemon=True).start()
+    meter = LevelMeter(float(cfg.get("level_hz", 10)))
+    ctl = SourceCtl(a.device, meter, hold=bool(a.hold and a.file))
+    # commands and the exit watch run from the start: an app that dies while the models are
+    # still loading must not leave the engine behind
+    threading.Thread(target=stdin_loop, args=(sys.stdin, q, stop, ctl), daemon=True).start()
+    threading.Thread(target=parent_watch, args=(os.getppid(), q, stop), daemon=True).start()
+    try:
+        eng = (make_engine or Engine)(a.stt, a.mode, cfg)
+    except Exception as e:                       # noqa: BLE001  shown by the app, then exit 1
+        emit({"type": "error", "where": "engine", "msg": f"models failed to load: {type(e).__name__}: {e}"})
+        raise
+    eng.realtime = not a.file or a.realtime      # a fast file run is not "behind"
+    eng.meter = meter
     src = threading.Thread(target=file_source if a.file else mic_source,
-                           args=((a.file, a.realtime) if a.file else (a.device,)) + (q, stop), daemon=True)
-    emit({"type": "ready", "stt": a.stt, "multi": eng.multi is not None, "source": a.file or a.device or "default"})
+                           args=((a.file, a.realtime) if a.file else (a.device,)) + (q, stop),
+                           kwargs={"ctl": ctl}, daemon=True)
+    emit({"type": "ready", "stt": a.stt, "multi": eng.multi is not None, "source": a.file or a.device or "default",
+          "hold": bool(a.hold)})
     src.start()
-    eng.run(q, stop)
+    eng.run(q, stop, hold=a.hold, idle_watch=not a.file)
+
+
+def _exit_soon(q: queue.Queue, stop: threading.Event, grace_s: float) -> None:
+    """The app is gone: stop now, and exit for sure within grace_s even if a recognition call
+    or the model loading is still running (nobody is left to read the result)."""
+    stop.set()
+    q.put(None)
+    t = threading.Timer(grace_s, lambda: os._exit(0))
+    t.daemon = True
+    t.start()
+
+
+def stdin_loop(stdin, q: queue.Queue, stop: threading.Event, ctl: SourceCtl, grace_s: float = 1.0) -> None:
+    """Commands from the app, one JSON object per line. End of input means the app closed
+    the pipe or died (even kill -9): the engine exits instead of holding the mic."""
+    for line in stdin:
+        try:
+            c = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(c, dict):
+            continue
+        if c.get("cmd") == "mode":
+            q.put({"mode": c["mode"]})           # applied in order with the audio
+        elif c.get("cmd") == "listen":
+            on = bool(c.get("on", True))
+            if on:
+                ctl.go.set()                     # a file waiting in hold starts playing
+            q.put({"listen": on})
+        elif c.get("cmd") == "cfg":
+            q.put({"cfg": c.get("cfg") if isinstance(c.get("cfg"), dict) else {}})
+        elif c.get("cmd") == "keywords":
+            q.put({"keywords": [w for w in c.get("words") or [] if isinstance(w, str)]})
+        elif c.get("cmd") == "device":
+            ctl.switch(c.get("device"))          # the mic thread reopens on the new input
+        elif c.get("cmd") == "stop":
+            q.put(None); stop.set(); return      # sentinel first: buffered speech is still committed
+    _exit_soon(q, stop, grace_s)
+
+
+def parent_watch(ppid: int, q: queue.Queue, stop: threading.Event, every_s: float = 0.5) -> None:
+    """Exit when the app that started us is gone (we were re-parented)."""
+    while not stop.is_set():
+        if os.getppid() != ppid:
+            _exit_soon(q, stop, 1.0)
+            return
+        time.sleep(every_s)
 
 
 if __name__ == "__main__":

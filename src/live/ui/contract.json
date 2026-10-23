@@ -14,6 +14,13 @@
     "pp_test": {"object": {"ok": "bool", "detail": "str", "messages": {"list": "str"}, "message_found": "bool", "pp": "@pp_status"}},
     "pp_test_caption": {"object": {"ok": "bool", "detail": "str", "pp": "@pp_status"}},
     "bad_request": {"object": {"error": {"enum": ["bad_request"]}, "detail": "str"}},
+    "health": {"object": {"ok": "bool", "pid": "int", "phase": "@phase", "uptime_s": "num", "restarts": "int",
+                          "engine": {"object": {"alive": "bool", "pid": "int|null", "hold": "bool", "listening": "bool"}}}},
+    "readiness": {"object": {"phase": "@phase", "ready": "bool", "status": "str",
+                             "progress": {"object": {"label": "str", "pct": "num"}, "nullable": true},
+                             "problem": {"object": {"code": "@problem_code", "severity": {"enum": ["info", "warn", "error"]},
+                                                    "action": {"object": {"id": "str", "label": "str"}}}, "nullable": true}}},
+    "permissions": {"object": {"microphone": {"enum": ["granted", "denied", "restricted", "undetermined", "unknown"]}}},
     "preflight": {"object": {"checks": {"list": {"object": {"id": "str", "ok": "bool", "detail": "str", "code": "str?"}}},
                              "ok": "bool?", "t": "num?"}},
     "summary": {"object": {"elapsed_s": "num|null", "phrases": "int", "outcomes": {"map": "int"}, "failed": "int",
@@ -53,10 +60,10 @@
     "translator":     {"type": "str", "built": true},
     "stt":            {"type": "str", "built": true},
 
-    "phase":          {"type": "@phase", "built": false, "owner": "S1"},
-    "progress":       {"type": {"object": {"label": "str", "pct": "num"}}, "nullable": true, "built": false, "owner": "S1"},
+    "phase":          {"type": "@phase", "built": true, "owner": "S1"},
+    "progress":       {"type": {"object": {"label": "str", "pct": "num"}}, "nullable": true, "built": true, "owner": "S1"},
     "audio":          {"type": {"object": {"device": "str|null", "rms_db": "num|null", "peak_db": "num|null", "speech": "bool",
-                                           "last_voice_s": "num|null", "ok": "bool"}}, "built": false, "owner": "S1"},
+                                           "last_voice_s": "num|null", "ok": "bool"}}, "built": true, "owner": "S1"},
     "pp":             {"type": {"object": {"connected": "bool", "since": "num|null", "last_ms": "num|null",
                                            "error_code": {"enum": ["unreachable", "auth", "message_missing", null]}}},
                        "built": true, "owner": "S2"},
@@ -66,7 +73,7 @@
     "held":           {"type": "bool", "built": true, "owner": "S2"},
     "problem":        {"type": {"object": {"code": "@problem_code", "severity": {"enum": ["info", "warn", "error"]},
                                            "action": {"object": {"id": "str", "label": "str"}}}},
-                       "nullable": true, "built": false, "owner": "S1"},
+                       "nullable": true, "built": true, "owner": "S1"},
     "auto_actions":   {"type": {"list": {"object": {"t": "num", "msg": "str"}}}, "built": false, "owner": "S4"},
     "elapsed_s":      {"type": "num|null", "built": true, "owner": "S9"},
     "first_word_ok_pct": {"type": "num|null", "built": true, "owner": "S9"},
@@ -83,12 +90,15 @@
     {"method": "WS",   "path": "/ws",               "owner": "S1", "built": true, "response": "@state"},
     {"method": "POST", "path": "/api/start",        "owner": "S1", "built": true, "request": {"device": "int|str|null"}, "response": "@state"},
     {"method": "POST", "path": "/api/stop",         "owner": "S1", "built": true, "response": "@state"},
-    {"method": "POST", "path": "/api/preload",      "owner": "S1", "built": false},
-    {"method": "POST", "path": "/api/shutdown",     "owner": "S1", "built": false},
-    {"method": "POST", "path": "/api/unload",       "owner": "S1", "built": false},
-    {"method": "GET",  "path": "/api/health",       "owner": "S1", "built": false},
-    {"method": "GET",  "path": "/api/readiness",    "owner": "S1", "built": false},
-    {"method": "GET",  "path": "/api/permissions",  "owner": "S1", "built": false},
+    {"method": "POST", "path": "/api/preload",      "owner": "S1", "built": true, "request": {"device": "int|str|null?"}, "response": "@state",
+     "about": "load the translator and a warm engine (hold) in the background; watch phase/progress. Does nothing while models are missing (phase needs_setup)"},
+    {"method": "POST", "path": "/api/shutdown",     "owner": "S1", "built": true, "response": {"object": {"ok": "bool"}},
+     "about": "stop the service and the engine, then the process exits (the shell's Quit)"},
+    {"method": "POST", "path": "/api/unload",       "owner": "S1", "built": true, "response": "@state",
+     "about": "free the memory: engine ended, translator dropped; phase -> unloading -> stopped"},
+    {"method": "GET",  "path": "/api/health",       "owner": "S1", "built": true, "response": "@health"},
+    {"method": "GET",  "path": "/api/readiness",    "owner": "S1", "built": true, "response": "@readiness"},
+    {"method": "GET",  "path": "/api/permissions",  "owner": "S1", "built": true, "response": "@permissions"},
 
     {"method": "POST", "path": "/api/clear",        "owner": "S2", "built": true, "response": "@state"},
     {"method": "POST", "path": "/api/mode",         "owner": "S2", "built": true, "request": {"mode": "str"}, "response": "@state"},
@@ -135,7 +145,7 @@
 
   "engine": {
     "events": {
-      "ready":   {"built": true,  "fields": {"stt": "str", "multi": "bool", "source": "str"}},
+      "ready":   {"built": true,  "fields": {"stt": "str", "multi": "bool", "source": "str", "hold": "bool?"}},
       "partial": {"built": true,  "fields": {"text": "str"}},
       "clause":  {"built": true,  "fields": {"id": "int", "ro": "str", "multi": "str", "en": "str", "source": "str?",
                                              "t_start": "num", "t_speech": "num", "t_end": "num", "t_emit": "num",
@@ -146,15 +156,24 @@
       "mode":    {"built": true,  "fields": {"mode": "str", "msg": "str"}},
       "backlog": {"built": true,  "fields": {"ok": "bool", "s": "num", "msg": "str"}},
       "audio":   {"built": true,  "fields": {"ok": "bool", "fault": {"enum": ["no_frames", "digital_silence", "mic_denied", null]}, "msg": "str"}},
-      "loading": {"built": false, "owner": "S1", "fields": {"label": "str", "pct": "num"}},
-      "level":   {"built": false, "owner": "S1", "fields": {"rms_db": "num", "peak_db": "num", "speech": "bool"}}
+      "loading": {"built": true, "owner": "S1", "fields": {"label": "str", "pct": "num"}},
+      "level":   {"built": true, "owner": "S1", "fields": {"rms_db": "num", "peak_db": "num", "speech": "bool"},
+                  "about": "~10 Hz (level_hz, 5-20) from the capture side; dBFS, -120 = nothing (zero samples)"},
+      "listen":  {"built": true, "owner": "S1", "fields": {"on": "bool"},
+                  "about": "answer to the listen command; listen off comes after the run's last clause"},
+      "input":   {"built": true, "owner": "S1", "fields": {"device": "str|null"},
+                  "about": "the input device opened (its name), on every open, reopen and device switch"}
     },
     "commands": {
       "mode":     {"built": true,  "fields": {"mode": {"enum": ["auto", "ro-en", "en-ro"]}}},
       "stop":     {"built": true,  "fields": {}},
-      "listen":   {"built": false, "owner": "S1", "fields": {"on": "bool"}},
-      "cfg":      {"built": false, "owner": "S1", "fields": {"cfg": {"map": "num|str|bool"}}},
-      "keywords": {"built": false, "owner": "S1", "fields": {"words": {"list": "str"}}, "about": "sent by S3: the user's + today's additions; the engine calls WhistleSTT.set_keywords(words) (bundled file + these, replacing earlier additions)"}
+      "listen":   {"built": true, "owner": "S1", "fields": {"on": "bool"},
+                   "about": "--hold engines: on = transcribe (a --file starts playing), off = commit what is held, then back to the meter only"},
+      "cfg":      {"built": true, "owner": "S1", "fields": {"cfg": {"map": "num|str|bool"}},
+                   "about": "hot: vad_threshold min_pause_ms max_clause_s partial_every_s min/max_commit_s audio_watchdog_s digital_silence_s stt_backlog_s catchup_max_s context_s lookahead_words; others answer warn 'applied at the next start'"},
+      "device":   {"built": true, "owner": "S1", "fields": {"device": "int|str|null"},
+                   "about": "switch the mic without a restart (the orchestrator sends it when live.input_device changes while idle)"},
+      "keywords": {"built": true, "owner": "S1", "fields": {"words": {"list": "str"}}, "about": "sent by S3: the user's + today's additions; the engine calls WhistleSTT.set_keywords(words) (bundled file + these, replacing earlier additions)"}
     }
   },
 
@@ -172,6 +191,6 @@
     "--config": {"built": true}, "--file": {"built": true}, "--autostart": {"built": true},
     "--exit-on-eof": {"built": true}, "--headless": {"built": true}, "--pp-port": {"built": true},
     "--mode": {"built": true}, "--profile": {"built": true}, "--port": {"built": true},
-    "--settings": {"built": true, "owner": "S3"}, "--hold": {"built": false, "owner": "S1"}
+    "--settings": {"built": true, "owner": "S3"}, "--hold": {"built": true, "owner": "S1"}
   }
 }

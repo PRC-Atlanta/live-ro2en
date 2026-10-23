@@ -53,7 +53,8 @@ def _live(tmp_path, pp_port=None):
     cfg["live"]["preflight_min_free_gb"] = 0
     live = Live(cfg, types.SimpleNamespace(file=None))
     live.lc["preflight_min_free_gb"] = 0
-    live.tr = types.SimpleNamespace(translate=lambda t, *a, **k: f"EN: {t}")
+    live._models_missing = lambda: []     # phase must not depend on this machine's model cache
+    live.tr =types.SimpleNamespace(translate=lambda t, *a, **k: f"EN: {t}")
     live.pp = types.SimpleNamespace(show=lambda text: True, clear=lambda: True, last_error=None)
     return report.attach(live)
 

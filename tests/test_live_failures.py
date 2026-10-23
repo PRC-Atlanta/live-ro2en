@@ -56,6 +56,7 @@ def test_engine_death_is_shown(tmp_path):
     live.engine = FakeEngine([{"type": "ready", "source": "default"},
                               {"type": "warn", "msg": "multilingual model unavailable: boom"}], rc=1)
     live.running = True
+    live.lc["engine_restarts"] = 0         # restarts used up (tests/test_lifecycle.py: the restart)
     live._reader(live.engine)
     st = live.state()
     assert not st["running"] and "ENGINE STOPPED (exit 1)" in st["status"]
