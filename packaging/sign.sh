@@ -17,6 +17,7 @@
 #                 for distribution (SIGN_ALLOW_ANY=1 overrides, for experiments only).
 # Never asks for or prints a password or key: codesign uses the keychain as it is.
 set -euo pipefail
+export LC_ALL=C          # `file` output can hold non-UTF-8 bytes; a UTF-8 awk stops on them
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(dirname "$HERE")"
 APP="${1:-$REPO/build/dist/Live RO2EN.app}"

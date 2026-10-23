@@ -12,6 +12,7 @@
 # MACOS_MIN (default 14.0, LC_BUILD_VERSION minos), and every file must have an arm64 slice.
 # Exit 0 = pass, 1 = fail. Writes DIR/macho_audit.txt.
 set -euo pipefail
+export LC_ALL=C          # `file` output can hold non-UTF-8 bytes; a UTF-8 awk stops on them
 HERE="$(cd "$(dirname "$0")" && pwd)"
 DIR="${1:-$(dirname "$HERE")/build/runtime}"
 DIR="$(cd "$DIR" && pwd)"

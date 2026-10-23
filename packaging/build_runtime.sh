@@ -134,7 +134,7 @@ find "$OUT" -type d -name __pycache__ -prune -exec rm -rf {} +
 say "scrub build-machine load paths"
 macho_files() {   # every Mach-O under $1, found with `file` (not by extension)
   find "$1" -type f ! -name '*.py' ! -name '*.pyc' -print0 | xargs -0 file --no-pad -F $'\t' 2>/dev/null |
-    awk -F'\t' '$2 ~ /Mach-O/ && $1 !~ / \(for architecture / {print $1}' | sort -u
+    LC_ALL=C awk -F'\t' '$2 ~ /Mach-O/ && $1 !~ / \(for architecture / {print $1}' | sort -u
 }
 BAD='^(/opt/homebrew|/usr/local|/Users/)'
 nscrub=0
