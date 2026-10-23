@@ -5,8 +5,10 @@ ProPresenter, like `e2e.py --mixed`, and switches profile twice while it plays.
   .venv-mt/bin/python tests/hot_switch_rehearsal.py [--first quality] [--at 40 100] [--strict]
 
 Passes when: one engine process for the whole run (no stop/ready pair), every switch was hot
-(engine cfg sent, no restart), the caption gap across each switch is at most --max-gap s, and
-the e2e gate (eof, failed chunks, first word within 6 s) passes."""
+(engine cfg sent, no restart), each switch adds at most --max-gap s to the caption gap
+(screen gap across the switch minus the speech gap between those two clauses) and blocks
+translation no longer than that, and the e2e gate (eof, failed chunks, first word within
+6 s) passes. The raw screen gap is reported too (gap_s)."""
 from __future__ import annotations
 
 import argparse
@@ -76,14 +78,18 @@ def main() -> None:
     for r in rows:
         if "outcome" in r and "event" not in r:
             outcomes[r["outcome"]] = outcomes.get(r["outcome"], 0) + 1
-    trig = sorted(e["t"] for e in mock.events if e["path"].endswith("/trigger") and "t" in e) or \
-        sorted(r["t_display"] for r in recs)
+    shown = sorted((r["t_display"], r["t_end"]) for r in recs)
     gaps = []
     for s in switches:
-        before = [t for t in trig if t <= s["t"]]
-        after = [t for t in trig if t > s["t"]]
-        s["gap_s"] = round(after[0] - before[-1], 2) if before and after else None
-        gaps.append(s["gap_s"])
+        # the captions either side of the switch: the screen gap, the speech gap between
+        # those clauses, and what the switch added on top (a restart used to add 10 s or more)
+        before = [x for x in shown if x[0] <= s["t"]]
+        after = [x for x in shown if x[0] > s["t"]]
+        if before and after:
+            (d0, e0), (d1, e1) = before[-1], after[0]
+            s.update(gap_s=round(d1 - d0, 2), speech_gap_s=round(e1 - e0, 2),
+                     added_s=round(max(0.0, (d1 - d0) - (e1 - e0)), 2))
+        gaps.append(s.get("added_s"))
     prof_ev = [r for r in rows if r.get("event") == "profile"]
     fw = sorted(r["first_word_s"] for r in recs)
     summary = {"clauses": len(recs), "failed_chunks": sum(v for k, v in outcomes.items() if k != "ok"),
@@ -103,7 +109,10 @@ def main() -> None:
         reasons.append("a switch was not hot")
     for g in gaps:
         if g is None or g > a.max_gap:
-            reasons.append(f"caption gap {g} s across a switch (> {a.max_gap} s)")
+            reasons.append(f"a switch added {g} s to the caption gap (> {a.max_gap} s)")
+    for e in prof_ev:
+        if e.get("blocked_s", 0) > a.max_gap:
+            reasons.append(f"translation was blocked {e['blocked_s']} s by a switch")
     summary.update(passed=not reasons, fail_reasons=reasons)
     print(json.dumps(summary, ensure_ascii=False, default=str))
     if a.strict and reasons:
