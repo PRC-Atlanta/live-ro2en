@@ -144,16 +144,16 @@
   "t": 114.24
  },
  {
-  "w0": 46,
+  "w0": 45,
   "w1": 47,
-  "ref": "să",
+  "ref": "motivați să",
   "alt": "motivație,",
-  "before": "niște întoiați. Copiii noștri la motivați",
+  "before": "și niște întoiați. Copiii noștri la",
   "after": "ne rugăm pentru ei vor fi",
   "id": "br-random-1_00874#012",
   "excerpt": "br-random-1_00874",
   "swap": false,
-  "t": 19.63
+  "t": 19.23
  },
  {
   "w0": 79,
@@ -195,7 +195,7 @@
   "w0": 204,
   "w1": 205,
   "ref": "într-un",
-  "alt": "în",
+  "alt": "în un",
   "before": "clară cum trebuie să predau ștafeta",
   "after": "interval bine stabilit. Dacă o secundă",
   "id": "br-random-1_00874#016",
@@ -456,16 +456,16 @@
   "t": 73.11
  },
  {
-  "w0": 174,
+  "w0": 173,
   "w1": 176,
-  "ref": "l-a costat",
+  "ref": "nevheghere l-a costat",
   "alt": "neveghere, locostat,",
-  "before": "răbdare. Și momentul acela de nevheghere",
+  "before": "aibă răbdare. Și momentul acela de",
   "after": "grav domnia, împărăția, l-a costat sănătatea,",
   "id": "br-recalo_00399#038",
   "excerpt": "br-recalo_00399",
   "swap": false,
-  "t": 76.07
+  "t": 74.35
  },
  {
   "w0": 179,
@@ -495,7 +495,7 @@
   "w0": 198,
   "w1": 199,
   "ref": "care-i-a",
-  "alt": "i-o",
+  "alt": "care i-o",
   "before": "nu se comportă cu oameni la",
   "after": "dat mult diferit și la oameni",
   "id": "br-recalo_00399#041",
@@ -507,7 +507,7 @@
   "w0": 206,
   "w1": 207,
   "ref": "care-i-a",
-  "alt": "i-o",
+  "alt": "care i-o",
   "before": "mult diferit și la oameni la",
   "after": "dat mai puțin diferit. Deci Dumnezeu",
   "id": "br-recalo_00399#042",

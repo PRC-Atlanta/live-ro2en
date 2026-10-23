@@ -67,6 +67,9 @@ def main() -> None:
     sermons = sorted({r["sermon"] for r in rows})
     forced = eval_sermons()
     hold = split_sermons(sermons, a.holdout_frac, a.seed, forced)
+    if not set(sermons) - hold:
+        raise SystemExit(f"no training data: every corrected sermon ({', '.join(sermons) or 'none'}) is held out "
+                         "(evaluation sermons always are). Correct at least one other sermon first.")
     keys = ("audio_filepath", "duration", "text")
     for name, sel in (("train", lambda r: r["sermon"] not in hold), ("holdout", lambda r: r["sermon"] in hold)):
         with open(D / f"{name}.jsonl", "w") as f:

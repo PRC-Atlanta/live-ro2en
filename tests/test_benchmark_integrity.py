@@ -54,8 +54,12 @@ def test_stt_queue_reports_failed_model(tmp_path):
     fake.mkdir(parents=True)
     (fake / "python").write_text("#!/bin/sh\necho boom\nexit 3\n")
     (fake / "python").chmod(0o755)
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    import os
     r = subprocess.run(["bash", str(ROOT / "scripts" / "run_stt_queue.sh"), str(tmp_path / "venv"),
-                        "m.csv", "segs", "pytest-queue", "fake-model"], capture_output=True, text=True)
-    (ROOT / "logs" / "stt_pytest-queue_fake-model.log").unlink(missing_ok=True)
+                        "m.csv", "segs", "pytest-queue", "fake-model"], capture_output=True, text=True,
+                       env={**os.environ, "LOGS": str(logs)})
     assert r.returncode == 1
     assert "exit=3" in r.stdout and "QUEUE-FAILED: fake-model" in r.stdout
+    assert (logs / "stt_pytest-queue_fake-model.log").read_text().strip() == "boom"   # the model really ran

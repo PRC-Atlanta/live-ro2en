@@ -18,12 +18,12 @@ Machine: Apple M3 Max, 36 GB. All timings were taken on an otherwise idle machin
 
 | Role | Choice | Why |
 |---|---|---|
-| Live STT (RO) | **Jackrabbit 110M, CTC + 4-gram LM, beam 8** (`jackrabbit-ctc-lm-b8`) | Best local Bible WER family (4.96%, within 0.2 pt of beam 32), best term accuracy (95%), 0.2 s per 6 s clause with the encoder on the Apple GPU |
+| Live STT (RO) | **Jackrabbit 110M, CTC + 4-gram LM, beam 8** (`jackrabbit-ctc-lm-b8`) | Best local Bible WER family (4.84%, within 0.2 pt of beam 32), best term accuracy (95%), 0.2 s per 6 s clause with the encoder on the Apple GPU |
 | Live STT (EN) + language detection | **Parakeet-TDT-0.6B-v3** (MLX) | Multilingual, 0.14 s per 6 s clause; used for English clauses and for the RO/EN decision |
 | Live translation (default "quality" profile) | **Gemma 4 12B** (MLX 4-bit), 2.5 s chunks, 4 chunks of context | Repairs STT slips, 100% glossary adherence on sermons; **92% of first words on screen within the 6 s ceiling** (Phase 3b) |
 | "Fast" profile | NLLB-200-distilled-1.3B (CTranslate2 int8), 2.5 s chunks | 98% within 6 s and lower delay, but translates STT errors literally ("bread to the Germans") |
 | Not live (yet) | EuroLLM-22B | Best translations (chrF++ 66) but 3.2 s median end to end on this Mac |
-| Silver reference (dev) | **Google Chirp 3** | Only system better than the best local model on the Bible (3.73% vs 4.78% WER) |
+| Silver reference (dev) | **Google Chirp 3** | Only system better than the best local model on the Bible (3.58% vs 4.66% WER) |
 
 Jackrabbit is CC-BY-NC-4.0: fine for internal church use, not for commercial redistribution.
 The Apache-2.0 fallback is SpeD 110M (9.0% WER).
@@ -43,33 +43,35 @@ live engine uses; "clause 6 s" is the STT time for a 6 s clause, and "stream lat
 
 | Model | WER % | WER-nodiac % | CER % | Term acc % (near) | vs Google silver WER % | RTF | Clause 6 s (p90) | Sim. stream latency | License |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| Google Chirp 3 (cloud, dev only) | **3.73** | 3.60 | 1.69 | 86.8 (13.2) | — | — | — | — | Google ToS |
-| Jackrabbit CTC + LM (beam 32) | 4.78 | 4.71 | 2.18 | 95.1 (3.9) | 4.23 | 0.088 | 0.51 (0.56) | 0.91 s | CC-BY-NC-4.0 |
-| Jackrabbit CTC + LM + phrase boost | 4.86 | 4.76 | 2.19 | **96.1** (3.4) | 4.26 | 0.129 | 0.78 (0.86) | 1.21 s | CC-BY-NC-4.0 |
-| **Jackrabbit CTC + LM, beam 8 (live)** | 4.96 | 4.89 | 2.24 | 95.1 (3.9) | 4.33 | 0.035 | 0.20 (0.21) | **0.56 s** | CC-BY-NC-4.0 |
-| Jackrabbit CTC + Bible LM (held-out) | 5.01 | 4.84 | 2.07 | 93.7 (5.4) | 4.85 | — | — | — | CC-BY-NC-4.0 |
-| Google Chirp 2 + phrase set (dev only) | 5.04 | 4.84 | 2.49 | 87.8 (11.7) | 3.83 | — | — | — | Google ToS |
-| Jackrabbit TDT greedy + phrase boost | 7.61 | 7.18 | 3.12 | 92.2 (5.4) | 6.30 | 0.006 | 0.04 (0.04) | 0.39 s | CC-BY-NC-4.0 |
-| Jackrabbit TDT greedy | 7.73 | 7.28 | 3.10 | 90.7 (5.9) | 6.47 | 0.006 | 0.03 (0.04) | 0.39 s | CC-BY-NC-4.0 |
-| Jackrabbit CTC greedy | 8.29 | 8.13 | 3.50 | 91.2 (7.3) | 7.47 | — | — | — | CC-BY-NC-4.0 |
+| Google Chirp 3 (cloud, dev only) | **3.58** | 3.45 | 1.57 | 86.8 (13.2) | — | — | — | — | Google ToS |
+| Jackrabbit CTC + LM (beam 32) | 4.66 | 4.58 | 2.08 | 95.1 (3.9) | 4.23 | 0.088 | 0.51 (0.56) | 0.91 s | CC-BY-NC-4.0 |
+| Jackrabbit CTC + LM + phrase boost | 4.73 | 4.63 | 2.09 | **96.1** (3.4) | 4.26 | 0.129 | 0.78 (0.86) | 1.21 s | CC-BY-NC-4.0 |
+| **Jackrabbit CTC + LM, beam 8 (live)** | 4.84 | 4.76 | 2.14 | 95.1 (3.9) | 4.33 | 0.035 | 0.20 (0.21) | **0.56 s** | CC-BY-NC-4.0 |
+| Jackrabbit CTC + Bible LM (held-out) | 4.99 | 4.81 | 2.06 | 93.7 (5.4) | 4.85 | — | — | — | CC-BY-NC-4.0 |
+| Google Chirp 2 + phrase set (dev only) | 4.89 | 4.68 | 2.38 | 87.8 (11.7) | 3.83 | — | — | — | Google ToS |
+| Jackrabbit TDT greedy + phrase boost | 7.45 | 7.03 | 3.01 | 92.2 (5.4) | 6.30 | 0.006 | 0.04 (0.04) | 0.39 s | CC-BY-NC-4.0 |
+| Jackrabbit TDT greedy | 7.58 | 7.13 | 2.99 | 90.7 (5.9) | 6.47 | 0.006 | 0.03 (0.04) | 0.39 s | CC-BY-NC-4.0 |
+| Jackrabbit CTC greedy | 8.16 | 8.01 | 3.39 | 91.2 (7.3) | 7.47 | — | — | — | CC-BY-NC-4.0 |
 | Whisper large-v3 (MLX) | 8.01 | 7.61 | 2.86 | 84.4 (15.1) | 7.19 | 0.086 | 0.85 (0.93) | 1.28 s | MIT |
-| Jackrabbit 110M **streaming** (TDT, offline use) | 9.09 | 8.84 | 3.39 | 89.8 (6.3) | 8.54 | 0.007 | 0.03 (0.03) | 0.38 s | CC-BY-NC-4.0 |
+| Jackrabbit 110M **streaming** (TDT, offline use) | 8.96 | 8.71 | 3.29 | 89.8 (6.3) | 8.54 | 0.007 | 0.03 (0.03) | 0.38 s | CC-BY-NC-4.0 |
 | SpeD 110M TDT | 8.81 | 7.88 | 3.32 | 80.5 (13.7) | 8.26 | 0.006 | 0.03 (0.03) | 0.38 s | Apache-2.0 |
-| Canary-1B-v2 (ASR) | 10.85 | 10.30 | 3.86 | 83.4 (10.7) | 9.88 | 0.229 | 2.37 (2.46) | 2.81 s | CC-BY-4.0 |
+| Canary-1B-v2 (ASR) | 10.70 | 10.15 | 3.75 | 83.4 (10.7) | 9.88 | 0.229 | 2.37 (2.46) | 2.81 s | CC-BY-4.0 |
 | SpeD 110M CTC | 11.18 | 10.25 | 3.99 | 75.1 (17.6) | 10.50 | — | — | — | Apache-2.0 |
 | Parakeet-TDT-0.6B-v3 (MLX) | 14.61 | 13.98 | 4.64 | 73.2 (20.0) | 13.36 | 0.015 | 0.14 (0.14) | 0.49 s | CC-BY-4.0 |
-| Parakeet Redux (1.58-bit) | 15.36 | 14.63 | 5.06 | 75.1 (16.1) | 14.14 | 0.019 | 0.07 (0.07) | 0.42 s | CC-BY-4.0 |
-| whisper-large-v3-turbo_ro (TransferRapid) | 31.88 | 31.25 | 23.15 | 55.1 (13.7) | 32.23 | 0.072 | 0.82 (0.89) | 1.24 s | CC-BY-NC-4.0 |
+| Parakeet Redux (1.58-bit) | 15.21 | 14.48 | 4.94 | 75.1 (16.1) | 14.14 | 0.019 | 0.07 (0.07) | 0.42 s | CC-BY-4.0 |
+| whisper-large-v3-turbo_ro (TransferRapid) | 31.88 | 31.28 | 23.14 | 55.1 (13.7) | 32.23 | 0.072 | 0.82 (0.89) | 1.24 s | CC-BY-NC-4.0 |
 
 Term accuracy is measured on terms.txt, which is also the phrase-boost list: for the boosted rows
 (phrase boost, Chirp 2 phrase set) it is an in-sample figure, not held-out term recall.
 
 Notes
-- **Digits spelled out** (2026-10-23): 1–3 digit numbers are scored as Romanian words ("10
-  coarne" = "zece coarne"), so Google gains slightly (Chirp 3 3.78 → 3.73, Chirp 2 5.16 → 5.04).
-  The other side: hallucinated numbers now cost one error per spoken word (TDT's segment-edge
-  "301", "108" are 3 words), so TDT rose 0.35 pt and CER rose ~0.2 pt for models that write verse
-  numbers. Rankings are unchanged.
+- **Digits spelled out** (2026-10-23): numbers up to 6 digits are scored as Romanian words ("10
+  coarne" = "zece coarne", "1260" = "o mie două sute șaizeci"), and masculine/feminine number
+  forms count as the same word on both sides ("42 de luni" = "patruzeci și două"). Almost every
+  model wrote "1260" for the spoken number, so most rows gain ~0.13 pt (5 words); hallucinated
+  numbers now cost one error per spoken word (TDT's segment-edge "301", "108" are 3 words).
+  Chirp 2 (4.89) and the held-out Bible LM (4.99) swapped places; the rest of the order and the
+  model choice are unchanged. Before this: Chirp 3 3.78, live model 4.96.
 - **Same reference words for every model** (2026-10-23): each excerpt's place in the book is
   the median of all models' alignments, and every model is scored on exactly those 3,971 words.
   Before, each model was scored only on the words it reached, so missing words at the excerpt

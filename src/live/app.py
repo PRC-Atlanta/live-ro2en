@@ -41,7 +41,7 @@ ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 from captions import RollingCaptions                 # noqa: E402
-from langid import LangTracker                       # noqa: E402
+from langid import LangTracker, score as lang_score  # noqa: E402
 from propresenter import ProPresenter                # noqa: E402
 from segmenter import split_clauses                  # noqa: E402
 from translate import Glossary, make_translator      # noqa: E402
@@ -55,11 +55,24 @@ def is_echo(src: str, out: str, min_words: int = 4) -> bool:
     return len(s) >= min_words and s == o
 
 
+def pack_parts(parts: list[str], max_words: int) -> list[str]:
+    """Join consecutive clauses into calls of at most max_words (a clause longer than that
+    stays whole), so a backlog is translated in few calls without overrunning max_tokens."""
+    out: list[str] = []
+    for p in parts:
+        if out and len(out[-1].split()) + len(p.split()) <= max_words:
+            out[-1] = f"{out[-1]} {p}"
+        else:
+            out.append(p)
+    return out
+
+
 def merge_clauses(a: dict, b: dict) -> dict:
     """Clause `a` followed by clause `b` as one clause (text fields joined, a's start)."""
     return {**b, **{k: f"{a.get(k) or ''} {b.get(k) or ''}".strip() for k in ("ro", "multi", "en")},
             "t_start": a["t_start"], "t_speech": a.get("t_speech", a["t_start"]),
-            "stt_s": a["stt_s"] + b["stt_s"], "audio_s": a["audio_s"] + b["audio_s"]}
+            # stt_s stays b's (what delayed b's t_emit, so vad_wait_s stays right); total kept apart
+            "stt_s_total": a.get("stt_s_total", a["stt_s"]) + b["stt_s"], "audio_s": a["audio_s"] + b["audio_s"]}
 
 
 class Live:
@@ -98,6 +111,8 @@ class Live:
         self._work: queue.Queue = queue.Queue()
         self._worker: threading.Thread | None = None
         self._worker_lock = threading.Lock()
+        self._control = threading.RLock()              # start / stop / profile never overlap
+        self._hold_gen = 0                             # a hold timer from an older fragment is stale
 
     def _profile_cfg(self, name: str) -> dict:
         """config.yaml `live` settings with the chosen profile's overrides on top."""
@@ -105,31 +120,49 @@ class Live:
 
     def set_profile(self, name: str):
         """Switch fast <-> quality: restarts the engine and reloads the translator if needed."""
-        if name not in self.cfg.get("profiles", {}) or name == self.profile:
-            return
-        was_running = self.running
-        self.stop()
-        new = self._profile_cfg(name)
-        if new["translator"] != self.lc["translator"]:
-            self.tr = None
-        self.profile, self.lc = name, new
-        if was_running:
-            self.start()
-        self._broadcast()
+        with self._control:
+            if name not in self.cfg.get("profiles", {}) or name == self.profile:
+                return
+            was_running = self.running
+            self.stop()
+            new = self._profile_cfg(name)
+            if new["translator"] != self.lc["translator"]:
+                with self._proc_lock:                  # never pulled from under a translation
+                    self.tr = None
+            self.profile, self.lc = name, new
+            if was_running:
+                self.start()
+            self._broadcast()
 
     # --- control ---------------------------------------------------------------------
     def load_translator(self):
-        if self.tr is None:
-            self.status = "loading translator"
-            self.tr = make_translator(self.lc["translator"])
-            if hasattr(self.tr, "context_clauses"):
-                self.tr.context_clauses = int(self.lc.get("context_clauses", 2))
-            self.tr.translate("Bună dimineața.", "ro", "en", self.gloss)    # warm-up
+        with self._proc_lock:                          # the warm-up uses the model too
+            if self.tr is None:
+                self.status = "loading translator"
+                tr = make_translator(self.lc["translator"])
+                if hasattr(tr, "context_clauses"):
+                    tr.context_clauses = int(self.lc.get("context_clauses", 2))
+                tr.translate("Bună dimineața.", "ro", "en", self.gloss)    # warm-up
+                self.tr = tr
 
     def start(self, device=None):
-        if self.running:
-            return
-        self.load_translator()
+        with self._control:
+            if self.running:
+                return
+            self.running = True                        # Start is disabled while loading
+            self.status = "starting"
+            self._broadcast()
+            try:
+                self._drain()                          # a previous run's clauses finish first
+                self.load_translator()
+                self._start_engine(device)
+            except Exception as e:
+                self.running = False
+                self.status = f"start failed: {type(e).__name__}: {e}"
+                self._broadcast()
+                raise
+
+    def _start_engine(self, device=None):
         logdir = ROOT / self.lc["transcript_log_dir"]
         logdir.mkdir(parents=True, exist_ok=True)
         self.log_path = logdir / f"{dt.datetime.now():%Y-%m-%d_%H%M%S}.jsonl"
@@ -156,23 +189,24 @@ class Live:
         with open(ROOT / "logs" / "engine.log", "a") as err:     # the child keeps its own copy
             self.engine = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                            stderr=err, text=True, bufsize=1)
-        self.running = True
         self._reader_thread = threading.Thread(target=self._reader, args=(self.engine,), daemon=True)
         self._reader_thread.start()
 
     def stop(self):
-        self._stopping = True
-        if self.engine and self.engine.poll() is None:
-            try:
-                self.engine.stdin.write(json.dumps({"cmd": "stop"}) + "\n"); self.engine.stdin.flush()
-                self.engine.wait(20)         # it transcribes the speech it still holds, then emits eof
-            except Exception:
-                self.engine.kill()
-        if self._reader_thread and self._reader_thread is not threading.current_thread():
-            self._reader_thread.join(30)     # let the final clause be translated, shown and logged
-        self.running = False
-        self.status = "stopped"
-        self._broadcast()
+        with self._control:
+            self._stopping = True
+            if self.engine and self.engine.poll() is None:
+                try:
+                    self.engine.stdin.write(json.dumps({"cmd": "stop"}) + "\n"); self.engine.stdin.flush()
+                    self.engine.wait(20)     # it transcribes the speech it still holds, then emits eof
+                except Exception:
+                    self.engine.kill()
+            if self._reader_thread and self._reader_thread is not threading.current_thread():
+                self._reader_thread.join(30)  # let the final clause be translated, shown and logged
+            self._drain()                    # nothing from this run may land in the next one
+            self.running = False
+            self.status = "stopped"
+            self._broadcast()
 
     def set_mode(self, mode: str):
         self.lang.set_mode(mode)
@@ -239,6 +273,7 @@ class Live:
         with self.lock:
             if self._timer:
                 self._timer.cancel()
+            self._hold_gen += 1                        # a timer that already fired is now stale
             p = self._pending
             cap = self.lc.get("max_chunk_s", 0)
             if p and cap and ev["t_end"] - p.get("t_speech", p["t_start"]) > cap:
@@ -254,14 +289,18 @@ class Live:
             short = len(text.split()) < self.lc.get("hold_min_words", 4) and not text.rstrip().endswith(("?", "!"))
             if short and not (cap and ev["t_end"] - ev.get("t_speech", ev["t_start"]) > cap):
                 self._pending = ev
-                self._timer = threading.Timer(self.lc.get("hold_s", 1.2), self._flush)
+                self._timer = threading.Timer(self.lc.get("hold_s", 1.2), self._flush, args=(self._hold_gen,))
                 self._timer.daemon = True
                 self._timer.start()
                 return
             self._submit(ev)                 # under the lock: a timer flush cannot slip in between
 
-    def _flush(self):
+    def _flush(self, gen: int | None = None):
+        """Send the held fragment. A hold timer passes its generation: if a newer clause has
+        arrived since (and merged or re-held the fragment), the timer is stale and does nothing."""
         with self.lock:
+            if gen is not None and gen != self._hold_gen:
+                return
             ev, self._pending = self._pending, None
             if ev:
                 self._submit(ev)
@@ -365,8 +404,8 @@ class Live:
         tgt = "en" if lang == "ro" else "ro"
         clauses, tail = split_clauses(src_text)
         parts = clauses + ([tail] if tail else [])        # at a pause everything is committed
-        if ev.get("caught_up"):
-            parts = [src_text]                            # catching up: one call for the backlog
+        if ev.get("caught_up"):                           # catching up: few calls, each bounded
+            parts = pack_parts(parts, int(self.lc.get("catchup_max_words", 60)))
         t0 = time.time()
         out, truncated = [], False
         for p in parts:
@@ -378,10 +417,17 @@ class Live:
         if not translation.strip():                     # nothing new to show: not a success
             self._log_failure(ev, "empty_mt", lang=lang, source=src_text, mt_s=round(t_tr, 3))
             return
-        if is_echo(src_text, translation):              # untranslated source is not a caption
-            self._log_failure(ev, "mt_echo", lang=lang, source=src_text, translation=translation,
-                              mt_s=round(t_tr, 3))
-            return
+        passthrough = False
+        if is_echo(src_text, translation):
+            s = lang_score(src_text)
+            if (tgt == "en" and s < -0.15) or (tgt == "ro" and s > 0.15):
+                passthrough = True                      # e.g. an English quote in RO→EN: show it
+                with self.lock:
+                    self.counts["passthrough"] += 1
+            else:                                       # untranslated source is not a caption
+                self._log_failure(ev, "mt_echo", lang=lang, source=src_text, translation=translation,
+                                  mt_s=round(t_tr, 3))
+                return
         if truncated:                                   # shown (better than nothing), but counted
             with self.lock:
                 self.counts["mt_truncated"] += 1
@@ -400,7 +446,7 @@ class Live:
                "first_word_s": round(t_disp - ev.get("t_speech", ev["t_start"]), 3),  # what a bilingual listener notices
                "stt_s": ev["stt_s"], "vad_wait_s": round(ev["t_emit"] - ev["t_end"] - ev["stt_s"], 3),
                "mt_s": round(t_tr, 3), "pp_s": round(t_disp - t1, 4), "pp_ok": ok,
-               "caught_up": ev.get("caught_up", 1), "mt_truncated": truncated,
+               "caught_up": ev.get("caught_up", 1), "mt_truncated": truncated, "passthrough": passthrough,
                "pp_error": self.pp.last_error, "audio_s": ev["audio_s"], "glossary": [n_g, ok_g],
                "time": dt.datetime.now().isoformat(timespec="milliseconds")}
         warn_s = float(self.lc.get("lag_warn_s", 6.0))
@@ -456,6 +502,9 @@ class Live:
 PAGE = (HERE / "control.html").read_text()
 
 
+LOOPBACK = {"127.0.0.1", "localhost", "::1"}
+
+
 def allowed_hosts(lc: dict) -> set[str]:
     """Host names the control page may be reached by (loopback + web_host + extras)."""
     return {"127.0.0.1", "localhost", "::1", str(lc.get("web_host", "127.0.0.1"))} | \
@@ -476,7 +525,10 @@ def request_allowed(headers, method: str, hosts: set[str], port: int) -> bool:
     if origin is None:                   # non-browser client (curl, scripts): Host check is enough
         return method == "WS" or "application/json" in (headers.get("content-type") or "")
     o = urlsplit(origin)
-    return o.scheme == "http" and o.hostname in hosts and (o.port or 80) == port
+    if o.hostname not in hosts or o.scheme not in ("http", "https"):
+        return False
+    # the page itself, or the same host behind a proxy listed in web_allowed_hosts
+    return (o.port or {"http": 80, "https": 443}[o.scheme]) == port or o.hostname not in LOOPBACK
 
 
 def build_app(live: Live):
@@ -488,7 +540,9 @@ def build_app(live: Live):
     @app.middleware("http")
     async def same_origin_only(request: Request, call_next):
         if not request_allowed(request.headers, request.method, hosts, port):
-            return JSONResponse({"error": "forbidden: control page only"}, status_code=403)
+            return JSONResponse({"error": "forbidden: only the control page may use this API. Opening it "
+                                          "from another machine? Add that host name to live.web_allowed_hosts "
+                                          "in config.yaml."}, status_code=403)
         return await call_next(request)
 
     @app.get("/")

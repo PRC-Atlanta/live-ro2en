@@ -114,7 +114,7 @@ def main() -> None:
             s = corpus_score(silver_items)
             row.update({"silver_wer": round(100 * s["wer"], 2), "silver_cer": round(100 * s["cer"], 2)})
         rows.append(row)
-    sort_rows(rows)
+    sort_rows(rows, a.silver)
     out = ROOT / "results"
     out.mkdir(exist_ok=True)
     keys = sorted({k for r in rows for k in r}, key=lambda k: (k != "model", k))
@@ -124,11 +124,12 @@ def main() -> None:
     side_by_side(a.set, man, hyps, [r["model"] for r in rows][:4], a.silver)
 
 
-def sort_rows(rows: list[dict]) -> None:
-    """One metric for the whole table: silver WER if every row has it, else consensus WER
-    (blank consensus last)."""
-    if rows and all("silver_wer" in r for r in rows):
-        rows.sort(key=lambda r: r["silver_wer"])
+def sort_rows(rows: list[dict], silver: str | None = None) -> None:
+    """One metric for the whole table: silver WER if every row but the silver reference's
+    own has it (that row goes last), else consensus WER (blank consensus last)."""
+    others = [r for r in rows if r["model"] != silver]
+    if others and all("silver_wer" in r for r in others):
+        rows.sort(key=lambda r: (r["model"] == silver, r.get("silver_wer", 0)))
     else:
         rows.sort(key=lambda r: (r["consensus_wer"] is None, r["consensus_wer"] or 0))
 

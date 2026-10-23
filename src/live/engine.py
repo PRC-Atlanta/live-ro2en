@@ -139,19 +139,35 @@ def file_source(path: str, realtime: bool, q: queue.Queue, stop: threading.Event
     q.put(None)
 
 
-def mic_source(device, q: queue.Queue, stop: threading.Event) -> None:
+def mic_source(device, q: queue.Queue, stop: threading.Event, stall_s: float = 2.0,
+               retry_s: tuple[float, ...] = (1, 2, 5)) -> None:
+    """Capture until stop. A device that fails to open, errors, or stops delivering audio
+    (USB glitch, unplugged and replugged) is reported and reopened with backoff, so the
+    service recovers on its own instead of waiting for the operator to restart it."""
     import sounddevice as sd
+    last = {"t": time.time()}
 
     def cb(indata, frames, t, status):
-        q.put((time.time(), indata[:, 0].copy()))
+        last["t"] = time.time()
+        q.put((last["t"], indata[:, 0].copy()))
     dev = int(device) if isinstance(device, str) and device.isdigit() else device
-    try:
-        with sd.InputStream(samplerate=SR, channels=1, dtype="float32", blocksize=FRAME,
-                            device=dev, callback=cb):
-            while not stop.is_set():
-                time.sleep(0.1)
-    except Exception as e:                       # wrong index, device busy, unplugged mid-run
-        emit({"type": "error", "where": "audio input", "msg": f"{type(e).__name__}: {e}"})
+    failures = 0
+    while not stop.is_set():
+        try:
+            with sd.InputStream(samplerate=SR, channels=1, dtype="float32", blocksize=FRAME,
+                                device=dev, callback=cb):
+                last["t"] = time.time()
+                if failures:
+                    emit({"type": "warn", "msg": "audio input reopened"})
+                failures = 0
+                while not stop.is_set():
+                    time.sleep(0.1)
+                    if time.time() - last["t"] > stall_s:
+                        raise RuntimeError(f"no audio callbacks for {stall_s:.0f} s")
+        except Exception as e:                   # wrong index, device busy, unplugged mid-run
+            emit({"type": "error", "where": "audio input", "msg": f"{type(e).__name__}: {e} (reopening)"})
+            stop.wait(retry_s[min(failures, len(retry_s) - 1)])
+            failures += 1
 
 
 # --- main loop ----------------------------------------------------------------------------
@@ -179,6 +195,7 @@ class Engine:
         self.min_commit = int(cfg.get("min_commit_s", 0) * SR / FRAME)
         self.max_commit = int(cfg.get("max_commit_s", 0) * SR / FRAME)
         self.n = 0
+        self._id_lock = threading.Lock()                 # the stream thread numbers clauses too
         # audio watchdog: no frames at all (device gone) or exact digital silence (muted/dead
         # interface) for this long is reported; a real quiet room still has a noise floor
         self.no_audio_s = float(cfg.get("audio_watchdog_s", 2.0))
@@ -216,6 +233,11 @@ class Engine:
         if not self.english_ok and self.mode != "ro-en":
             self._refuse(self.mode)
             self.mode = "ro-en"
+
+    def _next_id(self) -> int:
+        with self._id_lock:
+            self.n += 1
+            return self.n
 
     def _refuse(self, mode: str) -> None:
         emit({"type": "mode", "mode": "ro-en",
@@ -264,8 +286,7 @@ class Engine:
             en = self.whistle(audio)                                         # English text
         if self.mode == "en-ro" and not ro:
             ro = en or multi
-        self.n += 1
-        emit({"type": "clause", "id": self.n, "ro": ro.strip(), "multi": (multi or en).strip(), "en": en.strip(),
+        emit({"type": "clause", "id": self._next_id(), "ro": ro.strip(), "multi": (multi or en).strip(), "en": en.strip(),
               "t_start": t_start, "t_speech": t_first, "t_end": t_end, "t_emit": time.time(), "stt_s": round(time.time() - t, 4),
               "audio_s": round(len(audio) / SR, 3)})
 
@@ -284,8 +305,7 @@ class Engine:
             wall_t0 = ts - FRAME / SR
 
             def on_clause(text, start, end, pass_ms):
-                self.n += 1
-                emit({"type": "clause", "id": self.n, "ro": "", "multi": text, "en": text, "source": f"{self.en_rec}",
+                emit({"type": "clause", "id": self._next_id(), "ro": "", "multi": text, "en": text, "source": f"{self.en_rec}",
                       "t_start": wall_t0 + start, "t_speech": wall_t0 + start, "t_end": wall_t0 + end,
                       "t_emit": time.time(), "stt_s": round(pass_ms / 1000, 4), "audio_s": round(end - start, 3)})
             asm = ClauseAssembler(on_clause, pause_s=self.wcfg.get("pause_s", 0.35),
@@ -401,6 +421,8 @@ class Engine:
             if p >= self.pt.threshold:
                 last_voiced = ts
             ev = self.pt.push(p)
+            if ev == "force" and behind and not q.empty() and len(frames) < self.catchup_max:
+                ev = None                                 # catching up: bounded by catchup_max_s
             if self.max_commit and len(frames) >= self.max_commit:
                 ev = "force"
             # keep accumulating across a pause: quality profile (min_commit) or a backlog

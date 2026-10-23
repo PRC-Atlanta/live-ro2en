@@ -18,10 +18,14 @@ scripts/run_stt_queue.sh .venv-nemo "$M" "$S" sermon jackrabbit-tdt jackrabbit-t
 scripts/run_stt_queue.sh .venv-mlx "$M" "$S" sermon parakeet-mlx whisper-large-v3-mlx || FAIL=1
 scripts/run_stt_queue.sh .venv-moondream "$M" "$S" sermon parakeet-redux || FAIL=1
 SILVER=(); [ -n "${GOOGLE:-}" ] && SILVER=(--silver "google-$GOOGLE")   # ${a[@]+...} below: bash 3.2 + set -u rejects empty arrays
-[ -n "${GOOGLE:-}" ] && .venv/bin/python src/google_stt.py poll    # waits for Google (Dynamic Batch: minutes to hours)
-[ -n "${GOOGLE:-}" ] && .venv/bin/python src/google_excerpts.py --set sermon --model "$GOOGLE"
-.venv/bin/python src/score_sermons.py --set sermon ${SILVER[@]+"${SILVER[@]}"} --exclude jackrabbit-tdt,jackrabbit-tdt-boost,jackrabbit-ctc-lm-boost,parakeet-redux   # one voter per model family
+if [ -n "${GOOGLE:-}" ]; then
+  .venv/bin/python src/google_stt.py poll || FAIL=1    # waits for Google (Dynamic Batch: minutes to hours)
+  .venv/bin/python src/google_excerpts.py --set sermon --model "$GOOGLE" || FAIL=1
+fi
+.venv/bin/python src/score_sermons.py --set sermon ${SILVER[@]+"${SILVER[@]}"} --exclude jackrabbit-tdt,jackrabbit-tdt-boost,jackrabbit-ctc-lm-boost,parakeet-redux || FAIL=1   # one voter per model family
 REF=${GOOGLE:+google-$GOOGLE}; REF=${REF:-jackrabbit-ctc-lm-boost}
-.venv/bin/python src/review_packet.py --set sermon --ref "$REF" --local jackrabbit-tdt-boost --minutes 10
+.venv/bin/python src/review_packet.py --set sermon --ref "$REF" --local jackrabbit-tdt-boost --minutes 10 || FAIL=1
+if [ "$FAIL" -ne 0 ]; then
+  echo "SERMON PIPELINE INCOMPLETE: a step failed (see above); results may be missing or stale"; exit 1
+fi
 echo "Sermon pipeline done: results/sermon_noref_scores.csv, results/sermon_side_by_side.md, review_packet/"
-[ "$FAIL" -eq 0 ] || { echo "WARNING: some STT models failed (QUEUE-FAILED above); their rows are missing or incomplete"; exit 1; }

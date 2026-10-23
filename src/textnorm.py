@@ -119,10 +119,15 @@ _TENS = {2: "douăzeci", 3: "treizeci", 4: "patruzeci", 5: "cincizeci", 6: "șai
 
 
 def num_words(n: int) -> str:
-    """0-999 as spoken Romanian, masculine/counting forms (12 -> doisprezece, 21 -> douăzeci
-    și unu, 200 -> două sute). Feminine agreement (douăsprezece, una) is not guessed."""
-    if not 0 <= n <= 999:
+    """0-999999 as spoken Romanian, masculine/counting forms (12 -> doisprezece, 21 -> douăzeci
+    și unu, 200 -> două sute, 1260 -> o mie două sute șaizeci). Feminine agreement is not
+    guessed here; key_tokens(numbers=True) folds both genders to one form instead."""
+    if not 0 <= n <= 999999:
         raise ValueError(n)
+    if n >= 1000:
+        th, r = divmod(n, 1000)
+        head = "o mie" if th == 1 else ("două" if th == 2 else num_words(th)) + (" de mii" if th % 100 >= 20 or th >= 100 and th % 100 == 0 else " mii")
+        return head + (" " + num_words(r) if r else "")
     h, r = divmod(n, 100)
     if h:
         head = "o sută" if h == 1 else ("două" if h == 2 else _UNITS[h]) + " sute"
@@ -135,16 +140,21 @@ def num_words(n: int) -> str:
     return _TENS[t] + (f" și {_UNITS[u]}" if u else "")
 
 
+# one form per number word, applied to both sides: '42 de luni' is spoken 'patruzeci și două'
+_GENDER = {"două": "doi", "douăsprezece": "doisprezece", "una": "unu"}
+
+
 def expand_numbers(toks: list[str]) -> list[str]:
-    """Spell out standalone 1-3 digit tokens (no leading zero) so '12' and 'doisprezece'
-    compare equal. Longer numbers, years and mixed tokens ('2a') are left alone."""
+    """Spell out standalone numbers up to 6 digits (no leading zero) so '12' and 'doisprezece'
+    compare equal, and fold feminine number forms (două -> doi) on both sides.
+    Mixed tokens ('2a') are left alone."""
     out: list[str] = []
     for t in toks:
-        if t.isdigit() and len(t) <= 3 and (t == "0" or t[0] != "0"):
+        if t.isdigit() and len(t) <= 6 and (t == "0" or t[0] != "0"):
             out += num_words(int(t)).split()
         else:
             out.append(t)
-    return out
+    return [_GENDER.get(t, t) for t in out]
 
 
 def key_tokens(text: str, fold: bool = False, numbers: bool = False) -> list[str]:

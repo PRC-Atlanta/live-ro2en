@@ -194,13 +194,16 @@ def main() -> None:
     terms = load_terms()
     boosted = boost_terms()
     hyps = load_hyps(man)
-    hk_of = {(m, ex): strip_headers(key_tokens(t, numbers=True)) for m, exs in hyps.items() for ex, t in exs.items()}
+    # an excerpt a model has no transcript for counts as empty output (all deletions), so a
+    # partial run is scored on the same reference words as the others, not on fewer
+    hk_of = {(m, ex): strip_headers(key_tokens(exs.get(ex, ""), numbers=True)) for m, exs in hyps.items() for ex in ex_book}
     span = excerpt_spans(hk_of, ex_book, ref_key)
     per_ex, summary, term_rows = [], [], []
     n_ex = len(ex_book)
     for m, exs in sorted(hyps.items()):
         strict, folded, tagg = [], [], defaultdict(lambda: [0, 0, 0])
-        for ex, text in exs.items():
+        for ex in sorted(ex_book):
+            text = exs.get(ex, "")
             b = ex_book[ex]
             lo, hi = span[ex]
             hk = hk_of[(m, ex)]
@@ -231,7 +234,7 @@ def main() -> None:
     for name, rows in [("bible_scores.csv", summary), ("bible_by_excerpt.csv", per_ex), ("bible_terms.csv", term_rows)]:
         if rows:
             with open(RES / name, "w", newline="") as f:
-                w = csv.DictWriter(f, fieldnames=list(rows[0]))
+                w = csv.DictWriter(f, fieldnames=list(dict.fromkeys(k for r in rows for k in r)))
                 w.writeheader(); w.writerows(rows)
     print(pd.DataFrame(summary).to_string(index=False))
     if summary and summary[0].get("term_set") == "boost list":

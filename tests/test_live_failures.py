@@ -110,6 +110,7 @@ def _bare_engine(mode="auto", streamer=None):
     e.min_commit = e.max_commit = 0
     e.no_audio_s = e.silent_s = 0                # watchdog off unless a test turns it on
     e.realtime, e.backlog_s, e.catchup_max, e.english_ok = False, 0, 0, True
+    e.n, e._id_lock = 0, threading.Lock()
     e.vad = lambda fr: float(fr[0])
     e.streamer, e.wcfg, e._wstream = streamer, {"chunk_s": 0.064}, None
     e.calls = []
@@ -458,3 +459,125 @@ def test_setup_downloads_are_pinned():
     assert all(len(l[2]) in (40, 64) for l in lock if l[0] in ("hf", "dataset", "sha256"))
     setup = (root / "setup.sh").read_text()
     assert "/master/" not in setup and "check models/whistle/libneedle.dylib" in setup
+
+
+def test_double_start_loads_and_spawns_once(tmp_path):
+    live = _live(tmp_path)
+    calls = {"load": 0, "engine": 0}
+    def slow_load():
+        calls["load"] += 1; time.sleep(0.3)
+    live.load_translator = slow_load
+    live._start_engine = lambda device=None: calls.__setitem__("engine", calls["engine"] + 1)
+    ts = [threading.Thread(target=live.start) for _ in range(2)]
+    [t.start() for t in ts]; [t.join() for t in ts]
+    assert calls == {"load": 1, "engine": 1} and live.running
+
+
+def test_profile_switch_waits_for_the_clause_being_translated(tmp_path):
+    live = _live(tmp_path, translate=lambda t, *a, **k: time.sleep(0.4) or "Brothers and sisters, we read.")
+    live.lang.set_mode("ro-en")
+    live.lc["translator"] = "nllb:other"                  # the quality profile uses another translator
+    t = threading.Thread(target=live._handle, args=(_clause(1, ro="Frați și surori, astăzi citim."),))
+    t.start(); time.sleep(0.1)
+    other = next(p for p in live.cfg["profiles"] if p != live.profile)
+    live.set_profile(other)                              # not running: swaps settings, drops tr
+    t.join()
+    assert _log(live)[0]["outcome"] == "ok" and live.tr is None
+
+
+def test_stale_hold_timer_does_not_flush_the_next_fragment(tmp_path):
+    seen = []
+    live = _live(tmp_path, translate=lambda t, *a, **k: seen.append(t) or "x y z w")
+    live.lang.set_mode("ro-en")
+    live._on_clause(_clause(1, ro="Dar acum"))              # held, timer generation g
+    stale = live._hold_gen
+    live._on_clause(_clause(2, ro="vom"))                   # merged, still short: re-held, newer generation
+    live._flush(stale)                                      # the old timer fires late
+    live._drain()
+    assert seen == [] and live._pending["ro"] == "Dar acum vom"
+    live._timer.cancel()
+
+
+def test_backlog_parts_and_merged_timing():
+    from live.app import merge_clauses, pack_parts
+    parts = ["unu doi trei.", "patru cinci.", "șase șapte opt nouă zece.", "unsprezece."]
+    assert pack_parts(parts, 5) == ["unu doi trei. patru cinci.", "șase șapte opt nouă zece.", "unsprezece."]
+    a, b = _clause(1, ago=4), _clause(2, ago=1)
+    m = merge_clauses({**a, "stt_s": 0.5}, {**b, "stt_s": 0.3})
+    assert m["stt_s"] == 0.3 and m["stt_s_total"] == 0.8 and m["t_emit"] - m["t_end"] - m["stt_s"] >= -0.25
+
+
+def test_english_quote_in_ro_en_is_shown_not_dropped(tmp_path):
+    live = _live(tmp_path, translate=lambda t, *a, **k: t)       # the model leaves English as it is
+    live.lang.set_mode("ro-en")
+    live._handle(_clause(1, ro="For God so loved the world, that he gave his only Son"))
+    rec = _log(live)[0]
+    assert rec["outcome"] == "ok" and rec["passthrough"] is True and live.counts["passthrough"] == 1
+
+
+def test_catch_up_is_not_cut_by_the_short_phrase_force(monkeypatch):
+    e = _bare_engine()
+    e.pt = PauseTracker(frame_ms=32, max_clause_s=0.5)          # would force-cut every 0.5 s
+    e.realtime, e.backlog_s, e.catchup_max = True, 1.0, 400
+    q = queue.Queue()
+    _frames(q, 60, speech=True, t0=time.time() - 10)           # 1.9 s of unbroken, late speech
+    _frames(q, 15, speech=False, t0=time.time() - 8)
+    q.put(None)
+    _run(e, q, monkeypatch)
+    assert len(e.calls) == 1                                    # one call, not four 0.5 s pieces
+
+
+def test_mic_is_reopened_after_a_failure(monkeypatch):
+    opens = []
+
+    class Stream:
+        def __init__(self, callback, **k):
+            self.cb = callback
+            opens.append(1)
+            if len(opens) == 1:
+                raise RuntimeError("device unavailable")
+        def __enter__(self):
+            def feed():
+                for _ in range(5):
+                    self.cb(np.zeros((engmod.FRAME, 1), dtype=np.float32), engmod.FRAME, None, None)
+                    time.sleep(0.01)
+            threading.Thread(target=feed, daemon=True).start()
+            return self
+        def __exit__(self, *a):
+            return False
+    monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace(InputStream=Stream))
+    out = []
+    monkeypatch.setattr(engmod, "emit", out.append)
+    q, stop = queue.Queue(), threading.Event()
+    th = threading.Thread(target=engmod.mic_source, args=(None, q, stop), kwargs={"retry_s": (0.05,)}, daemon=True)
+    th.start(); time.sleep(0.4); stop.set(); th.join(2)
+    assert out[0]["type"] == "error" and "reopening" in out[0]["msg"]
+    assert {"type": "warn", "msg": "audio input reopened"} in out and q.qsize() >= 5
+
+
+def test_pinned_refs_let_offline_loading_find_the_model(tmp_path):
+    from huggingface_hub import try_to_load_from_cache
+    sys.path.insert(0, str(CFG.parent / "src"))
+    import model_lock
+    lock = tmp_path / "lock.txt"
+    lock.write_text("hf org/model " + "a" * 40 + "\n")
+    snap = tmp_path / "models--org--model" / "snapshots" / ("a" * 40)
+    snap.mkdir(parents=True); (snap / "config.json").write_text("{}")
+    # downloaded by commit hash: no refs/main, so a revision-less (offline runtime) lookup misses
+    assert try_to_load_from_cache("org/model", "config.json", cache_dir=tmp_path) is None
+    monkeypatch_lock = model_lock.LOCK
+    model_lock.LOCK = lock
+    try:
+        assert model_lock.pin_all(tmp_path) == ["org/model"]
+    finally:
+        model_lock.LOCK = monkeypatch_lock
+    assert try_to_load_from_cache("org/model", "config.json", cache_dir=tmp_path) == str(snap / "config.json")
+
+
+def test_control_api_https_proxy_and_lan_host():
+    from live.app import request_allowed
+    hosts, port = {"127.0.0.1", "localhost", "::1", "church-mac.local"}, 8765
+    lan = {"host": "church-mac.local", "origin": "https://church-mac.local", "content-type": "application/json"}
+    assert request_allowed(lan, "POST", hosts, port)                         # listed host behind a proxy
+    assert not request_allowed({**lan, "origin": "https://evil.example"}, "POST", hosts, port)
+    assert not request_allowed({"host": "127.0.0.1:8765", "origin": "https://127.0.0.1"}, "POST", hosts, port)

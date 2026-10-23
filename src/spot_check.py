@@ -77,15 +77,45 @@ def find_spots(ref_text: str, google_text: str, local_text: str, alt_text: str) 
             if j is not None:
                 runs[-1][1].append(j)
         prev_bad = bad
-    spots = []
+    pairs = list(_walk(ref, alt))
+    r2a = {i: j for i, j in pairs if i is not None and j is not None}
+    a2r = {j: i for i, j in pairs if i is not None and j is not None}
+    rtoks = {w: [i for i, x in enumerate(rmap) if x == w] for w in set(rmap)}
+    atoks = {w: [j for j, x in enumerate(amap) if x == w] for w in set(amap)}
+
+    def close(rws: set[int], aws: set[int]) -> tuple[set[int], set[int]]:
+        """Grow both word sets until neither side has a token aligned outside the other:
+        then replacing ref words [min, max] by alt words [min, max] keeps the text whole
+        ('să-l iau' vs 'sa l iau': both options cover 'să-l' / 'sa l')."""
+        while True:
+            rws = set(range(min(rws), max(rws) + 1)) if rws else rws
+            aws = set(range(min(aws), max(aws) + 1)) if aws else aws
+            n = (len(rws), len(aws))
+            aws |= {amap[r2a[i]] for w in rws for i in rtoks.get(w, []) if i in r2a}
+            rws |= {rmap[a2r[j]] for w in aws for j in atoks.get(w, []) if j in a2r}
+            # a neighbouring word with no counterpart on the other side belongs to this
+            # dispute ('motivați să' vs 'motivațe': the deleted 'motivați' goes with it)
+            for ws, toks, pair in ((rws, rtoks, r2a), (aws, atoks, a2r)):
+                if ws:
+                    for w in (min(ws) - 1, max(ws) + 1):
+                        if w in toks and not any(t in pair for t in toks[w]):
+                            ws.add(w)
+            if (len(rws), len(aws)) == n:
+                return rws, aws
+
+    closed: list[list] = []                                  # [ref words, alt words, insert point]
     for rt, at, at_ref in runs:
-        rws = sorted({rmap[i] for i in rt})
-        if rws:
-            w0, w1 = rws[0], rws[-1] + 1
-        else:                                                # pure insertion: before the next word
-            w0 = w1 = rmap[at_ref] if at_ref < len(rmap) else len(rw)
-        aws = sorted({amap[j] for j in at})
-        alt_words = " ".join(aw[aws[0]:aws[-1] + 1]) if aws else ""
+        rws, aws = close({rmap[i] for i in rt}, {amap[j] for j in at})
+        at_w = rmap[at_ref] if at_ref < len(rmap) else len(rw)
+        if closed and (rws & closed[-1][0] or aws & closed[-1][1]):
+            rws, aws = close(closed[-1][0] | rws, closed[-1][1] | aws)     # overlapping spots: one spot
+            closed[-1] = [rws, aws, closed[-1][2]]
+        else:
+            closed.append([rws, aws, at_w])
+    spots = []
+    for rws, aws, at_w in closed:
+        w0, w1 = (min(rws), max(rws) + 1) if rws else (at_w, at_w)
+        alt_words = " ".join(aw[min(aws):max(aws) + 1]) if aws else ""
         if key_tokens(" ".join(rw[w0:w1])) == key_tokens(alt_words):
             continue                                         # same after word mapping: no real dispute
         spots.append({"w0": w0, "w1": w1, "ref": " ".join(rw[w0:w1]), "alt": alt_words,
@@ -122,6 +152,8 @@ def spot_time(ref_text: str, google_text: str, times: list[float], w0: int) -> f
 
 def build() -> list[dict]:
     pk = json.loads((PACKET / "packet.json").read_text())
+    if pk.get("editable") == "all":                 # reviewer could already fix every word
+        sys.exit("this packet was fully editable: there are no locked words to spot-check")
     corr = json.loads((PACKET / "corrections.json").read_text())
     _, hyps = load_set(pk.get("set", "sermon"))
     rng = random.Random(20261023)
@@ -205,7 +237,8 @@ function answers(){
   const out = {};
   document.querySelectorAll('section').forEach(s => {
     const c = s.querySelector('input[type=radio]:checked');
-    if (c) out[s.dataset.id] = {choice: c.value, text: c.value === 'other' ? s.querySelector('.other').value.trim() : null};
+    const text = c && c.value === 'other' ? s.querySelector('.other').value.trim() : null;
+    if (c && (c.value !== 'other' || text)) out[s.dataset.id] = {choice: c.value, text};   // empty Other: unanswered
   });
   return out;
 }
@@ -227,8 +260,8 @@ def apply_answers(corr: dict[str, str], spots: list[dict], answers: dict) -> tup
     edits: dict[str, list] = {}
     for s in spots:
         a = answers.get(s["id"])
-        if not a:
-            tally["unanswered"] += 1; continue
+        if not a or (a["choice"] == "other" and not (a.get("text") or "").strip()):
+            tally["unanswered"] += 1; continue          # 'Other' with nothing typed: not an answer
         if a["choice"] == "other":
             new, kind = a.get("text") or "", "other"
         else:

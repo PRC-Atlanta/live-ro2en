@@ -90,6 +90,8 @@ document.querySelectorAll('.t').forEach(t=>{
   t.addEventListener('keydown',e=>{if(e.key==='Enter')e.preventDefault();});   // one line per clip
   t.addEventListener('paste',e=>{e.preventDefault();
     document.execCommand('insertText',false,e.clipboardData.getData('text/plain').replace(/\\s+/g,' '));});
+  t.addEventListener('drop',e=>{e.preventDefault();           // dropped rich text: plain words only
+    document.execCommand('insertText',false,' '+e.dataTransfer.getData('text/plain').replace(/\\s+/g,' ')+' ');});
   t.addEventListener('input',()=>{const n=getSelection().anchorNode;
     const m=n&&(n.nodeType===1?n:n.parentElement).closest('mark');if(m)m.dataset.edited=1;});});
 document.getElementById('save').onclick=()=>{
@@ -133,7 +135,8 @@ def build(set_name: str, ref: str, local: str, minutes: float, out: pathlib.Path
         meta.append({"excerpt": ex, "reference_model": refm, "local_model": local,
                      "disagreements": sum(l is not None for _, l in spans), "seconds": exdur[ex]})
     (out / "index.html").write_text(PAGE.replace("__BODY__", "\n".join(body)))
-    (out / "packet.json").write_text(json.dumps({"set": set_name, "clips": meta}, indent=1))
+    # editable: "all" -> every word could be corrected (src/spot_check.py has nothing to add)
+    (out / "packet.json").write_text(json.dumps({"set": set_name, "editable": "all", "clips": meta}, indent=1))
     (out / "README.md").write_text(f"""# Review packet
 
 {len(meta)} clips, {total / 60:.1f} min. Reference text: **{refm}**; highlighted where it disagrees with **{local}**.

@@ -10,3 +10,7 @@ rapidfuzz==3.14.1
 soundfile==0.13.1
 huggingface_hub==0.35.3
 pytest==8.4.2
+# control-page API test (tests/test_live_failures.py); same pins as requirements/mt.txt
+fastapi==0.159.1
+starlette==1.9.0
+httpx2==2.16.0

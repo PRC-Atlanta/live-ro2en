@@ -30,10 +30,14 @@ def parse_args(argv=None) -> argparse.Namespace:
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--model", help=".nemo file (fine-tuned)")
     g.add_argument("--registry", help="name from src/stt_run.py, e.g. jackrabbit-ctc-lm-b8")
-    ap.add_argument("--decoder", choices=sorted(DECODERS), default=LIVE_DECODER,
+    ap.add_argument("--decoder", choices=sorted(DECODERS), default=None,
                     help="decoding for --model; compare against the --registry entry that decodes the same way")
     ap.add_argument("--manifest", default=str(ROOT / "data/finetune/holdout.jsonl"))
-    return ap.parse_args(argv)
+    a = ap.parse_args(argv)
+    if a.registry and a.decoder:              # a registry entry already fixes its decoding
+        ap.error("--decoder applies to --model only; pick the --registry entry that decodes that way")
+    a.decoder = a.decoder or LIVE_DECODER
+    return a
 
 
 def main() -> None:

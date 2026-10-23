@@ -10,6 +10,7 @@ hf facebook/nllb-200-distilled-1.3B 7be3e24664b38ce1cac29b8aeed6911aa0cf0576
 hf facebook/nllb-200-3.3B 1a07f7d195896b2114afcb79b7b57ab512e7b43e
 hf mlx-community/gemma-4-12B-it-qat-4bit e70c6b3ba0979b3357dcd2f223ad8bde7787a6b6
 hf mlx-community/EuroLLM-22B-Instruct-2512-mlx-4bit dcb329c32383c834402db9c0dc569593a6bc529c
+hf Cactus-Compute/whistle 741118687e1f008f06d1351a402a731274789790
 dataset k-mktr/romanian_cornilescu_ro 62a67a985458a9e0df4165ce721fe83d3609ff70
 url models/vad/silero_vad.onnx https://raw.githubusercontent.com/snakers4/silero-vad/v6.2/src/silero_vad/data/silero_vad.onnx
 sha256 models/vad/silero_vad.onnx 1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3

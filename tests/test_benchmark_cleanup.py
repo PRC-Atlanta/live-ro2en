@@ -77,6 +77,11 @@ def test_rover_needs_three_voters_and_sort_is_one_metric():
     rows.append({"model": "few", "consensus_wer": None})
     sort_rows(rows)
     assert [r["model"] for r in rows] == ["m1", "g", "m2", "few"]   # else consensus, blank last
+    rows = [{"model": "google-chirp_3", "consensus_wer": 1.0},       # the silver model's own row
+            {"model": "m1", "consensus_wer": 2.0, "silver_wer": 9.0},
+            {"model": "m2", "consensus_wer": 5.0, "silver_wer": 3.0}]
+    sort_rows(rows, "google-chirp_3")
+    assert [r["model"] for r in rows] == ["m2", "m1", "google-chirp_3"]   # silver order, reference last
 
 
 def test_article_o_is_not_a_chapter_number():
@@ -94,7 +99,12 @@ def test_digits_spelled_out_for_scoring():
         "două sute", "nouă sute nouăzeci și nouă"]
     assert key_tokens("cei 12 apostoli", numbers=True) == key_tokens("cei doisprezece apostoli")
     assert key_tokens("cei 12 apostoli") != key_tokens("cei doisprezece apostoli")   # opt-in
-    assert key_tokens("anul 2026, 07 și 3a", numbers=True) == key_tokens("anul 2026 07 și 3a")
+    assert key_tokens("07 și 3a", numbers=True) == key_tokens("07 și 3a")    # leading zero, mixed: kept
+    assert num_words(1260) == "o mie două sute șaizeci" and num_words(2026) == "două mii douăzeci și șase"
+    assert num_words(20000) == "douăzeci de mii" and num_words(144000).endswith("patru de mii")
+    # both genders fold to one form, on either side: '42 de luni' is spoken 'patruzeci și două'
+    assert key_tokens("42 de luni", numbers=True) == key_tokens("patruzeci și două de luni", numbers=True)
+    assert key_tokens("1260 de zile", numbers=True) == key_tokens("o mie două sute șaizeci de zile", numbers=True)
 
 
 def test_review_page_edits_whole_clip_text():
@@ -110,3 +120,64 @@ def test_bible_lm_holds_out_excerpt_chapters_with_margin():
     excl = lm.held_out({"ps": (19, 54, 56), "gen": (1, 1, 1)})
     assert excl == {(19, c) for c in range(53, 58)} | {(1, 0), (1, 1), (1, 2)}
     assert "bible_verses.jsonl" not in (ROOT / "src" / "build_bible_lm.py").read_text().split('"""')[2]
+
+
+def test_spot_options_cover_the_same_words():
+    from spot_check import apply_answers, find_spots
+    for ref, alt, want_ref, want_alt in [
+            ("acum să-l iau acum", "acum sa l iau acum", "să-l", "sa l"),          # hyphen split
+            ("el a zis bine", "e-a zis bine", "el a", "e-a"),                      # hyphen join
+            ("la motivați să ne rugăm", "la motivațe ne rugăm", "motivați să", "motivațe")]:   # merged words
+        sp = find_spots(ref, ref, ref, alt)
+        assert [(s["ref"], s["alt"]) for s in sp] == [(want_ref, want_alt)]
+        picked = apply_answers({"x": ref}, [{**sp[0], "id": "x#0", "excerpt": "x", "swap": False}],
+                               {"x#0": {"choice": "B"}})[0]["x"]
+        assert picked == alt                                    # Whisper's version, whole
+
+
+def test_empty_other_answer_is_unanswered():
+    from spot_check import apply_answers
+    spot = {"id": "x#0", "excerpt": "x", "w0": 1, "w1": 2, "ref": "b", "alt": "c", "swap": False}
+    new, tally = apply_answers({"x": "a b d"}, [spot], {"x#0": {"choice": "other", "text": "  "}})
+    assert new["x"] == "a b d" and tally["unanswered"] == 1
+
+
+def test_spot_check_refuses_fully_editable_packet(tmp_path, monkeypatch):
+    import json, pytest, spot_check
+    (tmp_path / "packet.json").write_text(json.dumps({"set": "sermon", "editable": "all", "clips": []}))
+    monkeypatch.setattr(spot_check, "PACKET", tmp_path)
+    with pytest.raises(SystemExit, match="fully editable"):
+        spot_check.build()
+
+
+def test_no_training_data_is_an_error(tmp_path, monkeypatch):
+    import json, pytest, sys
+    import build_manifests as bm
+    (tmp_path / "manifest_clean.jsonl").write_text(json.dumps(
+        {"audio_filepath": "work/archive/ev-a/0001.wav", "duration": 3.0, "text": "amin", "sermon": "ev-a"}) + "\n")
+    monkeypatch.setattr(bm, "D", tmp_path)
+    monkeypatch.setattr(bm, "eval_sermons", lambda root=None: {"ev-a"})
+    monkeypatch.setattr(sys, "argv", ["build_manifests.py"])
+    with pytest.raises(SystemExit, match="no training data"):
+        bm.main()
+
+
+def test_eval_holdout_decoder_with_registry_is_rejected():
+    import pytest
+    import eval_holdout as eh
+    with pytest.raises(SystemExit):
+        eh.parse_args(["--registry", "jackrabbit-ctc-lm-b8", "--decoder", "tdt-greedy"])
+
+
+def test_sermon_pipeline_fails_when_scoring_fails(tmp_path):
+    import shutil, subprocess
+    root = pathlib.Path(__file__).resolve().parents[1]
+    shutil.copytree(root / "scripts", tmp_path / "scripts")
+    (tmp_path / "Audio").mkdir(); (tmp_path / "Audio" / "a sermon.wav").write_text("")
+    (tmp_path / "logs").mkdir()
+    for v in (".venv", ".venv-nemo", ".venv-mlx", ".venv-moondream"):
+        b = tmp_path / v / "bin"; b.mkdir(parents=True)
+        (b / "python").write_text('#!/bin/sh\ncase "$*" in *score_sermons*) exit 1;; esac\nexit 0\n')
+        (b / "python").chmod(0o755)
+    r = subprocess.run(["bash", str(tmp_path / "scripts" / "run_sermon_pipeline.sh")], capture_output=True, text=True)
+    assert r.returncode == 1 and "INCOMPLETE" in r.stdout and "pipeline done" not in r.stdout
