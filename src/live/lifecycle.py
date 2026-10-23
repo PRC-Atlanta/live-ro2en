@@ -24,18 +24,32 @@ class LifecycleMixin:
         return {**self.cfg["live"], **(self.cfg.get("profiles", {}).get(name) or {})}
 
     def set_profile(self, name: str):
-        """Switch fast <-> quality: restarts the engine and reloads the translator if needed."""
+        """Switch fast <-> quality with no gap (S4): the engine keeps running and gets the
+        profile's pause settings with {"cmd":"cfg"}; the translator is swapped between two
+        clauses (PipelineMixin._swap_profile: kept loaded side by side when RAM allows, else a
+        warm reload). Only a different speech model needs an engine restart."""
         with self._control:
             if name not in self.cfg.get("profiles", {}) or name == self.profile:
                 return
-            was_running = self.running
-            self.stop()
-            new = self._profile_cfg(name)
-            if new["translator"] != self.lc["translator"]:
-                with self._proc_lock:                  # never pulled from under a translation
-                    self.tr = None
-            self.profile, self.lc = name, new
-            if was_running:
+            new, old = self._profile_cfg(name), self.profile
+            engine_up = self.engine is not None and self.engine.poll() is None   # also in hold mode
+            keys = self.RESTART_KEYS + tuple(k for k in {*new, *self.lc} if k.startswith("whistle_"))
+            restart = self.running and engine_up and any(new.get(k) != self.lc.get(k) for k in keys)
+            if restart:
+                self.stop()
+            info = self._swap_profile(name, new)
+            sent = False
+            if engine_up and not restart:
+                cfg = {k: new[k] for k in ENGINE_CFG_KEYS if k in new and k not in self.RESTART_KEYS}
+                try:
+                    self.engine.stdin.write(json.dumps({"cmd": "cfg", "cfg": cfg}) + "\n")
+                    self.engine.stdin.flush()
+                    sent = True
+                except Exception as e:                 # noqa: BLE001 - the engine reader reports a death
+                    self._warn(f"could not send the new pause settings to the engine: {e}")
+            self._log_event({"event": "profile", "from": old, "to": name,
+                             "hot": self.running and not restart, "engine_cfg": sent, **info})
+            if restart:
                 self.start()
             self._broadcast()
 
