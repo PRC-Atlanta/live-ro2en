@@ -18,6 +18,8 @@ import time
 import soundfile as sf
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src" / "live"))
+import paths  # noqa: E402  (stdlib only: safe in every venv)
 MODELS: dict[str, callable] = {}
 
 
@@ -77,7 +79,7 @@ def _jackrabbit(decoder: str, lm_path: str | None = None, beam: int = 32):
 
 
 def _terms() -> list[str]:
-    return [l.strip() for l in (ROOT / "terms.txt").read_text().splitlines()
+    return [l.strip() for l in paths.resource("terms.txt", ROOT).read_text().splitlines()
             if l.strip() and not l.startswith("#")]
 
 
@@ -119,7 +121,7 @@ MODELS["jackrabbit-tdt"] = _jackrabbit("rnnt")
 MODELS["jackrabbit-ctc"] = _jackrabbit("ctc")
 MODELS["jackrabbit-ctc-lm"] = _jackrabbit("ctc", "lm-4gram-ro.nemo")
 MODELS["jackrabbit-ctc-lm-b8"] = _jackrabbit("ctc", "lm-4gram-ro.nemo", beam=8)   # live default
-MODELS["jackrabbit-ctc-biblelm"] = _jackrabbit("ctc", str(ROOT / "models" / "lm" / "lm-4gram-ro-bible.arpa"))
+MODELS["jackrabbit-ctc-biblelm"] = _jackrabbit("ctc", str(paths.resource("models/lm/lm-4gram-ro-bible.arpa", ROOT)))
 
 
 def _canary(target: str):
@@ -178,7 +180,7 @@ def _mlx_whisper(repo: str):
 
 
 MODELS["whisper-large-v3-mlx"] = _mlx_whisper("mlx-community/whisper-large-v3-mlx")
-MODELS["whisper-turbo-ro-mlx"] = _mlx_whisper(str(ROOT / "models" / "whisper-turbo-ro-mlx"))
+MODELS["whisper-turbo-ro-mlx"] = _mlx_whisper(str(paths.resource("models/whisper-turbo-ro-mlx", ROOT)))
 
 
 @model("whisper-turbo-ro-hf")

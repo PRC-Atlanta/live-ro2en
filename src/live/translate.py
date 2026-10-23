@@ -38,11 +38,49 @@ def _en_alts(en: str) -> list[list[str]]:
     return [tokens(re.sub(r"^\s*the\s+", "", alt, flags=re.I)) for alt in en.split("/") if alt.strip()]
 
 
+def read_glossary(path: pathlib.Path | str | None) -> list[dict]:
+    """Rows of a glossary csv (ro,en,note); [] when there is no file."""
+    if not path or not pathlib.Path(path).exists():
+        return []
+    with open(path, newline="", encoding="utf-8") as f:
+        return [{"ro": r["ro"].strip(), "en": r["en"].strip(), "note": (r.get("note") or "").strip()}
+                for r in csv.DictReader(f) if (r.get("ro") or "").strip() and (r.get("en") or "").strip()]
+
+
 class Glossary:
-    def __init__(self, path: pathlib.Path | str = ROOT / "glossary.csv"):
-        self.rows = [r for r in csv.DictReader(open(path)) if r.get("ro") and r.get("en")]
-        self._ro = [(_fk(r["ro"]), r) for r in self.rows]
-        self._en = [(alt, r) for r in self.rows for alt in _en_alts(r["en"])]
+    """Three layers, the later winning for the same Romanian term: the bundled glossary.csv,
+    the user's additions file, and today's names (session terms, set live with set_session).
+    Readers never see a half-built index: each change swaps the whole index at once."""
+
+    def __init__(self, path: pathlib.Path | str = ROOT / "glossary.csv", user: pathlib.Path | str | None = None):
+        self.base = read_glossary(path)
+        self.user = read_glossary(user)
+        self.session: list[dict] = []
+        self._index()
+
+    def _index(self):
+        merged: dict[tuple, dict] = {}
+        for later, layer in ((False, self.base), (True, self.user), (True, self.session)):
+            for r in layer:
+                k = tuple(_fk(r["ro"]))
+                if later and k in merged and r["ro"].casefold() == r["en"].casefold():
+                    continue        # a bare name ('Pavel', today's speaker) never undoes 'Pavel = Paul'
+                merged.pop(k, None)                      # re-inserted last: a later layer wins
+                merged[k] = r
+        rows = list(merged.values())
+        self.rows, self._ro, self._en = (rows, [(_fk(r["ro"]), r) for r in rows],
+                                         [(alt, r) for r in rows for alt in _en_alts(r["en"])])
+
+    def load_user(self, path: pathlib.Path | str | None):
+        """(Re)read the user's additions file."""
+        self.user = read_glossary(path)
+        self._index()
+
+    def set_session(self, rows: list[dict]):
+        """Today's names and terms ({ro, en}); replaces the previous session terms, live."""
+        self.session = [{"ro": r["ro"].strip(), "en": r["en"].strip(), "note": r.get("note") or "session"}
+                        for r in rows if r.get("ro", "").strip() and r.get("en", "").strip()]
+        self._index()
 
     @staticmethod
     def _contains(seq: list[str], pat: list[str]) -> bool:
