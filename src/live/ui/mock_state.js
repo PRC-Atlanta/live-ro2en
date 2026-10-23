@@ -264,3 +264,40 @@ SCENARIOS.after = fromBackend(() => ({
 }));
 SCENARIOS.unbuilt = SCENARIOS.after;
 scenarios.push(...Object.keys(SCENARIOS).filter(k => !scenarios.includes(k)));
+
+// ---- S5a: Live-screen scenarios (appended) -------------------------------------------------
+// remaining phases, the five sound-meter cases from docs/ui_mockup/compare.html, pace, and
+// problem scenarios whose pills agree with their banner
+const level = (t, lvl, { music = false } = {}) => {
+  if (lvl == null) return { rms_db: null, peak_db: null, speech: false, last_voice_s: 30, ok: true };
+  const talking = !music && t % 20 < 16;
+  const rms = music ? lvl + 3 * Math.sin(t / 2) : talking ? lvl + 5 * Math.sin(t / 2) : Math.min(lvl - 20, -56);
+  return { rms_db: rms, peak_db: Math.min(0, rms + 8), speech: talking, last_voice_s: talking ? 0 : 9 };
+};
+const withLevel = (t, lvl, opts) => {
+  const s = SCENARIOS.live(t);
+  return { ...s, audio: { ...s.audio, ...level(t, lvl, opts) } };
+};
+Object.assign(SCENARIOS, {
+  starting: () => ({ phase: "starting", status: "starting" }),
+  listening: t => ({ ...SCENARIOS.live(t), phase: "listening", lines: [], screen: "" }),
+  stopped: () => ({ phase: "stopped", status: "stopped", elapsed_s: 1520, counts: { ok: 212 } }),
+  unloading: () => ({ phase: "unloading", status: "freeing memory" }),
+  level_good: t => withLevel(t, -22),
+  too_quiet: t => withLevel(t, -46),
+  clipping: t => { const s = withLevel(t, -6); return { ...s, audio: { ...s.audio, peak_db: 0 } }; },
+  silence: t => withLevel(t, null),
+  music: t => withLevel(t, -20, { music: true }),
+  slow: t => ({ ...SCENARIOS.live(t), latency_last: 6.8, pace: { state: "slow", behind_s: 6.8 } }),
+  behind: t => ({ ...SCENARIOS.live(t), latency_last: 9.5, pace: { state: "behind", behind_s: 9.5 },
+                  problem: { code: "captions_behind", severity: "warn", action: { id: "quickest", label: "Switch to Quickest" } } }),
+  pp_unreachable: t => ({ ...SCENARIOS.live(t), pp: { connected: false, since: null, last_ms: null, error_code: "unreachable" },
+                          pp_error: "ProPresenter: connection refused",
+                          problem: { code: "pp_unreachable", severity: "error", action: { id: "reconnect", label: "Try again" } } }),
+  pp_message_missing: t => ({ ...SCENARIOS.live(t), pp: { connected: true, since: null, last_ms: 4, error_code: "message_missing" },
+                              problem: { code: "pp_message_missing", severity: "error", action: { id: "settings", label: "Open Settings" } } }),
+  no_sound: t => { const s = withLevel(t, null);
+                   return { ...s, audio: { ...s.audio, ok: false },
+                            problem: { code: "no_sound", severity: "warn", action: { id: "help", label: "What to check" } } }; },
+});
+for (const k of Object.keys(SCENARIOS)) if (!scenarios.includes(k)) scenarios.push(k);
