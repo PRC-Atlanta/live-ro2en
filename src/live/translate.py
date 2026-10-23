@@ -1,6 +1,6 @@
 """Offline translators (RO<->EN) shared by the Phase 2 benchmark and the live app.
 
-  NLLBTranslator   CTranslate2 int8 NLLB-200 (models/ct2/<name>), CPU
+  NLLBTranslator   CTranslate2 int8 NLLB-200 (models/ct2/<name> or the HF cache), CPU
   MLXLLMTranslator local LLM via mlx-lm, glossary injected per sentence
 Glossary: glossary.csv (ro,en,note). `Glossary.relevant(src, src_lang)` returns only the
 entries whose source term occurs in the sentence, so prompts stay short."""
@@ -109,17 +109,30 @@ class Glossary:
         return len(rel), ok
 
 
+def ct2_dir(name: str) -> pathlib.Path:
+    """Where the CTranslate2 build of NLLB `name` is: the dev conversion in models/ct2/<name>,
+    else the pinned church build in the Hugging Face cache (model_setup, S6)."""
+    here = str(pathlib.Path(__file__).resolve().parent)
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import model_setup
+    return model_setup.ct2_dir(name, ROOT)
+
+
 class NLLBTranslator:
     def __init__(self, name: str = "nllb-200-distilled-1.3B", device: str = "cpu",
                  compute_type: str = "int8", beam: int = 2, threads: int = 8):
         import ctranslate2
         import transformers
         self.name = name
-        self.tr = ctranslate2.Translator(str(ROOT / "models" / "ct2" / name), device=device,
+        self.tr = ctranslate2.Translator(str(ct2_dir(name)), device=device,
                                          compute_type=compute_type, intra_threads=threads)
         self.tok = transformers.AutoTokenizer.from_pretrained(f"facebook/{name}")
         self.beam = beam
         self.last_truncated = False               # the last output hit the decoding limit
+
+    def reset_context(self):
+        """NLLB translates each clause on its own: there is no context to forget."""
 
     def translate(self, text: str, src: str = "ro", tgt: str = "en", glossary=None) -> str:
         self.tok.src_lang = NLLB_CODES[src]
@@ -153,6 +166,10 @@ class MLXLLMTranslator:
         self.context: list[tuple[str, str, str]] = []    # (source, translation, source language)
         self.context_clauses = context_clauses
         self.last_truncated = False               # the last output hit max_tokens (cut off)
+
+    def reset_context(self):
+        """Forget the previous sentences (after Show, a profile switch or a new service)."""
+        self.context = []
 
     def _prompt(self, text, src, tgt, glossary):
         lines = []
