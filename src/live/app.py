@@ -46,8 +46,9 @@ from captions import RollingCaptions                 # noqa: E402
 from langid import LangTracker                       # noqa: E402
 from lifecycle import LifecycleMixin                 # noqa: E402
 from output import OutputMixin                       # noqa: E402
+from display import DisplayMixin                     # noqa: E402
 from pipeline import PipelineMixin                   # noqa: E402
-from propresenter import ProPresenter                # noqa: E402
+from propresenter import ProPresenter, make as make_pp   # noqa: E402,F401
 import settings                                      # noqa: E402
 from settings import SettingsMixin                   # noqa: E402
 from report import SessionMixin                      # noqa: E402
@@ -58,7 +59,7 @@ from pipeline import is_echo, merge_clauses, pack_parts            # noqa: E402,
 from security import LOOPBACK, allowed_hosts, request_allowed      # noqa: E402,F401
 
 
-class Live(LifecycleMixin, PipelineMixin, OutputMixin, SessionMixin, StateMixin, SettingsMixin):
+class Live(LifecycleMixin, PipelineMixin, OutputMixin, DisplayMixin, SessionMixin, StateMixin, SettingsMixin):
     """One service: the engine child, the translator, ProPresenter and the control state.
     The behaviour lives in the mixins (lifecycle, pipeline, output, state); this is the data."""
 
@@ -67,7 +68,7 @@ class Live(LifecycleMixin, PipelineMixin, OutputMixin, SessionMixin, StateMixin,
         self.profile = cfg["live"].get("profile", "fast")
         self.lc = self._profile_cfg(self.profile)
         self.args = args
-        self.pp = ProPresenter(**cfg["propresenter"])
+        self.pp = make_pp(cfg["propresenter"])          # ProPresenterOff when propresenter.enabled is false
         self.caps = RollingCaptions(cfg["propresenter"]["max_chars_per_line"], cfg["propresenter"]["max_lines"])
         self.lang = LangTracker(self.lc.get("language_mode", "auto"))
         self.gloss = Glossary(paths.resource(cfg["paths"]["glossary"], ROOT))
@@ -156,6 +157,8 @@ def main():
     live = Live(cfg, a)
     live.claim_pidfiles()      # end an engine a crashed earlier launch left behind
     live.start_pp_monitor()
+    if not a.headless:
+        live.start_display_server()   # the view-only captions page, if display.network is on
     if a.headless:             # SIGTERM: stop the service and the engine, then exit
         signal.signal(signal.SIGTERM, lambda *_: threading.Thread(
             target=lambda: (live.shutdown(), os._exit(0)), daemon=True).start())

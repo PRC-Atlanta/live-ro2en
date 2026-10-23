@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Captions · Live RO2EN</title>
+<!-- The captions display (src/live/display.py): only the caption box, for a second screen,
+     a projector, or (display.network) another device on the local network. Self-contained:
+     the view-only network server serves this one file and its /ws feed. Follows the
+     operator like ProPresenter would: Hide and Blank clear it, Hold keeps the held caption. -->
+<style>
+  :root { --fg: #ffffff; --bg: #000000; --size: 5.2vw; color-scheme: dark; }
+  :root[data-colors="yellow_on_black"] { --fg: #ffe14d; --bg: #000000; }
+  :root[data-colors="black_on_white"] { --fg: #000000; --bg: #ffffff; color-scheme: light; }
+  :root[data-size="medium"] { --size: 4.2vw; }
+  :root[data-size="x-large"] { --size: 6.6vw; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden; }
+  body { font: 600 var(--size)/1.25 -apple-system, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
+         display: flex; align-items: flex-end; justify-content: center; cursor: default; }
+  body.idle { cursor: none; }
+  #text { box-sizing: border-box; width: 100%; padding: 0 6vw 8vh; text-align: center; white-space: pre-line;
+          text-wrap: balance; }
+  #hint { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); padding: 8px 16px; border-radius: 18px;
+          font: 500 14px -apple-system, system-ui, sans-serif; color: rgba(255,255,255,.8); background: rgba(128,128,128,.28);
+          transition: opacity .6s; white-space: nowrap; }
+  #hint.gone { opacity: 0; }
+  #dot { position: fixed; right: 14px; bottom: 12px; width: 10px; height: 10px; border-radius: 50%; background: #f5b83d; }
+  #dot[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div id="text" aria-live="off"></div>
+<div id="hint">Double-click for full screen · Esc to leave it</div>
+<div id="dot" hidden title="Lost contact with the app; trying again"></div>
+<script>
+(() => {
+  const root = document.documentElement, text = document.getElementById("text");
+  const hint = document.getElementById("hint"), dot = document.getElementById("dot");
+  let shown = "", heldText = null, lostTimer = 0;
+
+  // newest N lines of the caption box (the operator's box can hold more than the room needs)
+  const lastLines = (s, n) => s.split("\n").filter(Boolean).slice(-n).join("\n");
+
+  function render(s) {
+    const d = s.display || {};
+    root.dataset.size = d.size || "large";
+    root.dataset.colors = d.colors || "white_on_black";
+    let want = s.paused ? "" : lastLines(s.screen || "", Math.max(1, Math.min(3, d.lines || 2)));
+    if (s.held && !s.paused) {               // Hold: the screen keeps what it had
+      if (heldText === null) heldText = shown;
+      want = heldText;
+    } else {
+      heldText = null;
+    }
+    if (want !== shown) { shown = want; text.textContent = want; }
+  }
+
+  function connect() {
+    const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
+    ws.onopen = () => { clearTimeout(lostTimer); lostTimer = 0; dot.hidden = true; };
+    ws.onmessage = e => { try { render(JSON.parse(e.data)); } catch { /* not for us */ } };
+    ws.onclose = () => {
+      dot.hidden = false;
+      // a stale caption must not stay up for long: 5 s from the first drop, whatever the
+      // retries (each failed one closes again; they must not restart the countdown)
+      if (!lostTimer) lostTimer = setTimeout(() => { shown = ""; heldText = null; text.textContent = ""; }, 5000);
+      setTimeout(connect, 1000);
+    };
+  }
+  connect();
+
+  // full screen: the Mac app's window (webkit message) or the browser's own
+  const app = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.display;
+  function toggleFull() {
+    if (app) return app.postMessage("toggleFullScreen");
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else document.documentElement.requestFullscreen().catch(() => {});
+  }
+  document.addEventListener("dblclick", toggleFull);
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Escape") return;
+    if (app) app.postMessage("exitFullScreen");
+    else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  });
+
+  // the hint and the pointer fade after 3 s of no mouse movement
+  let idle = 0;
+  function wake() {
+    hint.classList.remove("gone"); document.body.classList.remove("idle");
+    clearTimeout(idle);
+    idle = setTimeout(() => { hint.classList.add("gone"); document.body.classList.add("idle"); }, 3000);
+  }
+  document.addEventListener("mousemove", wake);
+  wake();
+})();
+</script>
+</body>
+</html>

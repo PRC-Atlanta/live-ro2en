@@ -94,6 +94,7 @@ profiles:
     context_clauses: 4        # Gemma sees the previous 4 chunks, so short chunks still read as sentences
 
 propresenter:
+  enabled: true               # false: captions stay in the app and the captions display (nothing is sent)
   host: 127.0.0.1
   port: 50001
   message_id: "Live Translation"
@@ -103,6 +104,16 @@ propresenter:
   stage_message: false
   timeout_s: 1.5
   health_every_s: 5           # check ProPresenter this often and put the caption back after an outage (0 = off)
+
+# The captions display: a captions-only window for a second screen or projector (toolbar →
+# Captions display); with `network: true` also a view-only page for other devices on the
+# local network at http://<this Mac>.local:<port>/ (no controls there).
+display:
+  size: large                 # medium | large | x-large
+  lines: 2                    # the newest lines of the caption box shown (1-3)
+  colors: white_on_black      # white_on_black | yellow_on_black | black_on_white
+  network: false
+  port: 8766
 
 # Words or phrases that never reach the screen (any case, diacritics optional)
 safety:

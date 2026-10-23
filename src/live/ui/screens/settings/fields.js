@@ -33,6 +33,16 @@ export const FIELDS = {
     { key: "propresenter.health_every_s", label: "Check the connection every (seconds)", kind: "number", min: 0, max: 60,
       hint: "Puts the caption back after ProPresenter restarts. 0 turns the check off. Applies when the app next opens." },
   ],
+  // the captions display (Settings → ProPresenter, under the connection)
+  display: [
+    { key: "display.size", label: "Text size", kind: "choice",
+      options: [["medium", "Medium"], ["large", "Large"], ["x-large", "Extra large"]] },
+    { key: "display.lines", label: "Lines", kind: "choice", options: [[1, "1 line"], [2, "2 lines"], [3, "3 lines"]] },
+    { key: "display.colors", label: "Colours", kind: "choice",
+      options: [["white_on_black", "White on black"], ["yellow_on_black", "Yellow on black"], ["black_on_white", "Black on white"]] },
+    { key: "display.network", label: "Also show on other devices on this network", kind: "toggle",
+      hint: "View only: a phone, tablet or TV browser on the church Wi-Fi can show the captions. It has no controls." },
+  ],
   advanced: [
     { key: "live.en_recognizer", label: "English listener", kind: "choice",
       options: [["parakeet", "Standard", "Most accurate"], ["parakeet-stream", "Streaming", "Words appear sooner"],

@@ -182,3 +182,25 @@
   .fx-mark { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .fx-progress i { transition: none; } }
+
+/* Settings → ProPresenter: the on/off switch, impossible to miss when off */
+.fx-ppbox { display: flex; align-items: center; gap: 18px; padding: 16px 18px; border-radius: 10px;
+            border: 1px solid var(--edge); background: var(--bg-1); }
+.fx-ppbox.off { border: 2px solid var(--amber); background: #1a1406; }
+.fx-ppbox-t { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.fx-ppbox-t strong { font-size: 18px; color: #fff; }
+.fx-ppbox-t span { font-size: 14px; color: var(--label); }
+.fx-ppbox.off .fx-ppbox-t span { color: var(--amber); font-weight: 600; }
+.fx-ppsw { display: flex; align-items: center; gap: 8px; width: 120px; height: 52px; padding: 4px; border-radius: 26px;
+           border: 2px solid var(--lime); background: #16260a; cursor: pointer; flex-direction: row-reverse;
+           font: 800 16px var(--font); letter-spacing: .08em; color: var(--lime); }
+.fx-ppsw b { width: 40px; height: 40px; border-radius: 50%; background: var(--lime); }
+.fx-ppsw span { flex: 1; text-align: center; }
+.fx-ppsw[aria-checked="false"] { flex-direction: row; border-color: var(--amber); background: var(--btn); color: var(--amber); }
+.fx-ppsw[aria-checked="false"] b { background: var(--amber); }
+.fx-ppsw:focus-visible { outline: 2px solid var(--cyan-hi); outline-offset: 3px; }
+.fx-conn.off { opacity: .38; }
+.fx-ppnone { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: 8px;
+             border: 1px solid var(--amber); background: #1a1406; color: var(--ink); font-size: 14px; }
+.fx-ppnone[hidden] { display: none; }
+.fx-ppnone strong { color: var(--amber); }

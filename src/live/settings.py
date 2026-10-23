@@ -42,6 +42,7 @@ FIELDS: dict[str, dict] = {
     "live.profile":            {"group": "basic", "type": "enum", "choices": "@profiles", "apply": "launch"},
     "live.autostart":          {"group": "basic", "type": "bool", "apply": "launch", "default": False},
     # ProPresenter
+    "propresenter.enabled":    {"group": "propresenter", "type": "bool", "apply": "now"},
     "propresenter.host":       {"group": "propresenter", "type": "str", "pattern": _HOST, "apply": "now"},
     "propresenter.port":       {"group": "propresenter", "type": "int", "min": 1, "max": 65535, "apply": "now"},
     "propresenter.message_id": {"group": "propresenter", "type": "str", "apply": "now"},
@@ -50,6 +51,11 @@ FIELDS: dict[str, dict] = {
     "propresenter.max_chars_per_line": {"group": "propresenter", "type": "int", "min": 20, "max": 80, "apply": "now"},
     "propresenter.stage_message": {"group": "propresenter", "type": "bool", "apply": "now"},
     "propresenter.health_every_s": {"group": "propresenter", "type": "int", "min": 0, "max": 60, "apply": "launch"},
+    # the captions display (a window, and optionally a view-only page on the local network)
+    "display.size":            {"group": "propresenter", "type": "enum", "choices": ["medium", "large", "x-large"], "apply": "now"},
+    "display.lines":           {"group": "propresenter", "type": "int", "min": 1, "max": 3, "apply": "now"},
+    "display.colors":          {"group": "propresenter", "type": "enum", "choices": ["white_on_black", "yellow_on_black", "black_on_white"], "apply": "now"},
+    "display.network":         {"group": "propresenter", "type": "bool", "apply": "now"},
     # Advanced
     "live.en_recognizer":      {"group": "advanced", "type": "enum", "choices": ["parakeet", "parakeet-stream", "whistle"], "apply": "start"},
     "live.vad_threshold":      {"group": "advanced", "type": "num", "min": 0.1, "max": 0.95, "apply": "start"},
@@ -393,6 +399,10 @@ class SettingsMixin:
                 self.lc[sub] = prof[sub] if sub in prof else get(eff, k)
         if "live.language_mode" in changed and not self.running:
             self.lang.set_mode(get(self.cfg, "live.language_mode"))
+        if any(k.startswith("display.") for k in changed) and hasattr(self, "_display_changed"):
+            self._display_changed(changed)
+        if "propresenter.enabled" in changed and hasattr(self, "_set_pp_enabled"):
+            self._set_pp_enabled(bool(self.cfg["propresenter"].get("enabled", True)))
         if any(k.startswith("propresenter.") for k in changed):
             pc = self.cfg["propresenter"]
             for attr, val in (("base", f"http://{pc['host']}:{pc['port']}"), ("message_id", pc["message_id"]),

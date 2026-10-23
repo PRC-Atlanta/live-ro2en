@@ -31,6 +31,7 @@ export function frame(el, opts = {}) {
         <button class="tb" data-tb="live" title="${S.toolbar.liveHint}">${S.toolbar.live}</button>
         <button class="tb" data-tb="rehearsal" title="${S.toolbar.rehearsalHint}">${S.toolbar.rehearsal}</button>
         <button class="tb wide" data-tb="setup" title="${S.toolbar.setupHint}"></button>
+        <button class="tb tdisp" data-tb="display" title="${S.toolbar.displayHint}" aria-label="${S.toolbar.display}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>${S.toolbar.display}</span></button>
         <button class="tb" data-tb="names">${S.toolbar.names}</button>
         <button class="tb" data-tb="settings">${S.toolbar.settings}</button>
         <button class="tb" data-tb="after" title="${S.toolbar.afterHint}" hidden>${S.toolbar.after}</button>
@@ -51,6 +52,8 @@ export function frame(el, opts = {}) {
     const res = await send("rehearsal", {});            // no sample: the first recording in samples/
     toast(messageFor(res) || S.toast.rehearsal, res.ok ? "ok" : "info");
   });
+  // its own window (the Mac app opens a separate captions window; a browser a new one)
+  tb("display").onclick = () => window.open(new URL("display.html", location.href).href, "lt-captions");
   for (const [n, screen] of Object.entries(GOES)) if (!tb(n).onclick) tb(n).onclick = go(screen);
   if (opts.onNames) tb("names").onclick = opts.onNames;
   // only the Live button stands for Live; Settings and Help for themselves
@@ -61,7 +64,8 @@ export function frame(el, opts = {}) {
     // the parts of the toolbar that follow the state: the setup name, and After once a service ran
     update(s) {
       s ||= {};
-      api.setSetupName(S.toolbar.setupName(s.audio?.device, !(s.pp ? !s.pp.connected : s.pp_error)));
+      api.setSetupName(S.toolbar.setupName(s.audio?.device,
+        s.pp?.enabled === false ? "off" : !(s.pp ? !s.pp.connected : s.pp_error)));
       const ran = s.elapsed_s != null || Object.keys(s.counts || {}).length > 0;
       tb("after").hidden = !(here === "after" || (ran && !isLive(s)));
     },

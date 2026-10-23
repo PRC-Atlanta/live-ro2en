@@ -85,6 +85,23 @@ export function render(el, store) {
     basic() { pane.append(h("div.fx-sec", ...FIELDS.basic.map(control))); },
 
     propresenter() {
+      // the switch first, big: off means captions never reach the big screen
+      const on = getPath(settings, "propresenter.enabled") !== false;
+      const swMsg = note();
+      const sw = h("button.fx-ppsw", { type: "button", role: "switch", "aria-checked": String(on),
+        "aria-label": "Send captions to ProPresenter",
+        onclick: async () => {
+          swMsg.say("Saving…");
+          const r = await call("PUT", "settings", patch("propresenter.enabled", !on));
+          if (r.ok) { const s = settingsOf(r.data); if (Object.keys(s).length) settings = s; show("propresenter", true); }
+          else { const n = saveNote(r); swMsg.say(n.text, n.tone); }
+        } }, h("b"), h("span", on ? "ON" : "OFF"));
+      pane.append(h(`div.fx-sec.fx-ppbox${on ? "" : ".off"}`,
+        h("div.fx-ppbox-t", h("strong", "Send captions to ProPresenter"),
+          h("span", on ? "On: captions go to the ProPresenter message on the big screen."
+                       : "Off: captions show only in this app and on the captions display.")),
+        sw), swMsg);
+
       const status = note();
       const fix = h("div.fx-fix", { role: "alert", hidden: true });
       const test = button("Test connection", async () => {
@@ -100,8 +117,24 @@ export function render(el, store) {
         fix.textContent = ppFixText(res.code, settings.propresenter || {});
         status.say(res.ok ? "Test caption sent. Check the big screen." : "Test caption not shown", res.ok ? "good" : "bad");
       });
-      pane.append(h("div.fx-sec", h("div.fx-grid", ...FIELDS.propresenter.map(control))),
-                  h("div.fx-sec", h("div.fx-row", test, caption), status, fix));
+      const conn = h(`div.fx-conn${on ? "" : ".off"}`,
+        on ? null : h("span.fx-label", "Connection (not used while off)"),
+        h("div.fx-sec", h("div.fx-grid", ...FIELDS.propresenter.map(control))),
+        h("div.fx-sec", h("div.fx-row", test, caption), status, fix));
+      if (!on) conn.inert = true;                       // greyed out and out of the Tab order
+      pane.append(conn);
+
+      // the captions display: a captions-only window, optionally on the local network
+      const where = h("span.fx-hint");
+      pane.append(h("div.fx-sec", h("span.fx-label", "Captions display"),
+        h("div.fx-row", h("p.fx-text", "A full-screen window with only the captions, for a second screen or projector."),
+          button("Open captions display", () => window.open("display.html", "lt-captions"))),
+        h("div.fx-grid", ...FIELDS.display.map(control)), where));
+      onState = s => {
+        const d = s.display || {};
+        where.textContent = d.network_error ? `Other devices can't connect: ${d.network_error}.`
+          : d.url ? `On another device on this network, open ${d.url}` : "";
+      };
     },
 
     names() {

@@ -150,7 +150,13 @@ def state_checks(st: dict) -> list[dict]:
 
 def run(live) -> dict:
     """The checklist; also stored as the `preflight` state field."""
-    checks = local_checks(live) + propresenter_checks(live.cfg.get("propresenter") or {})
+    pc = live.cfg.get("propresenter") or {}
+    if pc.get("enabled", True):
+        pp = propresenter_checks(pc)
+    else:                                      # off on purpose: nothing to check, but say so
+        pp = [_check("propresenter", True, "ProPresenter is turned off: captions show in this app and on the "
+                     "captions display only")]
+    checks = local_checks(live) + pp
     try:
         checks += state_checks(live.state())
     except Exception as e:                    # noqa: BLE001

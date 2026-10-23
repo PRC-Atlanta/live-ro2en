@@ -79,13 +79,14 @@ def _node(script):
 def test_every_mock_phase_and_problem_renders_the_right_labels_and_colours():
     res = _node("""
       import { startMock, scenarios } from "./mock_state.js";
-      import { dialFor, stateLine, pillsFor, bannerFor } from "./components/status.js";
+      import { dialFor, stateLine, pillsFor, bannerFor, ppStrip } from "./components/status.js";
       import { S } from "./i18n/strings.en.js";
       const out = {};
       for (const n of scenarios) {
         let st; const id = startMock({ set: s => { st ??= s; } }, n); clearInterval(id);
         out[n] = { phase: st.phase, dial: dialFor(st), line: stateLine(st), pills: pillsFor(st, "good"),
-                   banner: bannerFor(st), want: st.problem ? S.problems[st.problem.code] : null };
+                   banner: bannerFor(st), strip: ppStrip(st), code: st.problem?.code ?? null,
+                   want: st.problem ? S.problems[st.problem.code] : null };
       }
       console.log(JSON.stringify(out));""")
     ring = {"needs_setup": "setup", "loading": "busy", "ready": "ready", "starting": "busy", "listening": "live",
@@ -97,7 +98,9 @@ def test_every_mock_phase_and_problem_renders_the_right_labels_and_colours():
         assert r["dial"]["ring"] == want_ring, (name, r["dial"])
         assert r["dial"]["big"] and r["dial"]["small"], name
         assert "{" not in r["dial"]["big"], name
-        if r["want"]:
+        if r["code"] and r["code"].startswith("pp_"):            # ProPresenter shows on the meter
+            assert r["banner"] is None and r["strip"] and r["strip"]["code"] in ("down", "missing"), name
+        elif r["want"]:
             assert r["banner"]["msg"].startswith(r["want"]["msg"]), name
             assert r["banner"]["action"] == r["want"]["action"], name
         else:
@@ -265,3 +268,23 @@ def test_practice_mode_keeps_the_speaker_and_stops_the_captions():
       const stopped = (await mockApi("POST", "stop", {})).data;
       console.log(JSON.stringify({ mode, running: stopped.running, screen: stopped.screen, busy: B.running() }));""")
     assert res == {"mode": "en-ro", "running": False, "screen": "", "busy": False}
+
+
+def test_propresenter_off_glows_on_the_meter_with_a_turn_on_link():
+    res = _node("""
+      import { ppStrip, pillsFor, bannerFor } from "./components/status.js";
+      import { S } from "./i18n/strings.en.js";
+      const off = { phase: "captioning", running: true, problem: null, audio: { device: "Behringer" },
+                    pp: { connected: false, error_code: null, enabled: false } };
+      const down = { ...off, pp: { connected: false, error_code: "unreachable", enabled: true },
+                     problem: { code: "pp_unreachable", severity: "error" } };
+      const ok = { ...off, pp: { connected: true, error_code: null, enabled: true } };
+      console.log(JSON.stringify({ off: ppStrip(off), down: ppStrip(down), ok: ppStrip(ok), offline: ppStrip({ ...off, offline: true }),
+        pill: pillsFor(off, "good").pp, banner: bannerFor(down),
+        name: [S.toolbar.setupName("Behringer", "off"), S.toolbar.setupName("Behringer", true)] }));""")
+    assert res["off"]["code"] == "off" and res["off"]["title"] == "PROPRESENTER OFF" and res["off"]["action"]["id"] == "pp_on"
+    assert res["down"]["code"] == "down" and res["down"]["action"]["id"] == "reconnect"
+    assert res["ok"] is None and res["offline"] is None and res["banner"] is None
+    assert res["pill"] == ["err", "ProPresenter off"]
+    assert res["name"] == ["Behringer → this Mac only", "Behringer → ProPresenter"]
+

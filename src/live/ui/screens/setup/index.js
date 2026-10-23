@@ -77,7 +77,7 @@ export function render(el, store) {
   }
   const STEP_TITLES = {
     check: "Check this Mac", download: "Download the translator", mic: "Allow the microphone",
-    sound: "Pick the sound input", pp: "Connect to ProPresenter", lang: "Usual language",
+    sound: "Pick the sound input", pp: "Where should the captions go?", lang: "Usual language",
   };
 
   async function onNext() {
@@ -279,13 +279,29 @@ export function render(el, store) {
       const caption = button("Send test caption", () => sendCaption());
       const later = button("Set up later", () => { ctx.ppSkipped = true; refreshNav(); onNext(); }, ".quiet");
       caption.disabled = true;
-      const where = choice("Where is ProPresenter?", [
-        ["here", "On this Mac", "Same computer"], ["other", "Another computer", "On the church network"],
-      ], ctx.ppWhere, v => { ctx.ppWhere = v; keep(); hostField.hidden = v !== "other"; reset(); });
-      body.append(h("p.fx-text", "Captions appear in a ProPresenter message. In ProPresenter, turn on " +
-                                 "Settings → Network → Enable Network first."),
-                  where, h("div.fx-grid", hostField, field("Port", port, "Shown next to Enable Network.")),
-                  h("div.fx-row", test, caption), status, fix, okBox, h("div.fx-row.end", later));
+      const offNote = h("div.fx-ppnone", { hidden: true }, h("strong", "ProPresenter will be off."),
+        h("span", "While it is off, the Live screen's sound panel glows red with a note saying so. " +
+                  "You can turn it on any time in Settings → ProPresenter."));
+      const setUp = h("div.fx-sec",
+        h("p.fx-text", "Captions appear in a ProPresenter message. In ProPresenter, turn on " +
+                       "Settings → Network → Enable Network first."),
+        h("div.fx-grid", hostField, field("Port", port, "Shown next to Enable Network.")),
+        h("div.fx-row", test, caption), status, fix, okBox, h("div.fx-row.end", later));
+      const where = choice("Captions go to", [
+        ["here", "ProPresenter on this Mac", "Captions go to a ProPresenter message on the big screen"],
+        ["other", "ProPresenter on another computer", "You enter that computer's address next"],
+        ["none", "No ProPresenter", "Captions show in this app and on the captions display window"],
+      ], ctx.ppWhere, async v => {
+        const was = ctx.ppWhere;
+        ctx.ppWhere = v; keep(); place(); reset();
+        if ((v === "none") !== (was === "none"))        // turning ProPresenter off or back on
+          await call("PUT", "settings", settingsBody({ "propresenter.enabled": v !== "none" }));
+      });
+      const place = () => {
+        setUp.hidden = ctx.ppWhere === "none"; offNote.hidden = ctx.ppWhere !== "none";
+        hostField.hidden = ctx.ppWhere !== "other";
+      };
+      body.append(where, setUp, offNote);
       const reset = () => { ctx.ppOk = false; caption.disabled = true; fix.hidden = okBox.hidden = true; status.say(""); refreshNav(); };
       host.addEventListener("input", reset); port.addEventListener("input", reset);
       call("GET", "settings").then(r => {
@@ -293,9 +309,9 @@ export function render(el, store) {
         const p = ctx.settings.propresenter || {};
         ctx.pp = { ...ctx.pp, ...p };
         const local = !p.host || ["127.0.0.1", "localhost"].includes(p.host);
-        if (!saved.ppWhere) { ctx.ppWhere = local ? "here" : "other"; where.set(ctx.ppWhere); }
+        if (!saved.ppWhere) { ctx.ppWhere = p.enabled === false ? "none" : local ? "here" : "other"; where.set(ctx.ppWhere); }
         host.value = local ? "" : p.host; port.value = p.port || 50001;
-        hostField.hidden = ctx.ppWhere !== "other";
+        place(); refreshNav();
       });
       const cfg = () => ({ host: ctx.ppWhere === "here" ? "127.0.0.1" : host.value.trim(), port: Number(port.value) || 50001 });
       async function runTest() {

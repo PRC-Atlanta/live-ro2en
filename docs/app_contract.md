@@ -54,6 +54,18 @@ a second. See `contract.json` → `state` for every field and its type.
 Every field in `contract.json` → `state` is built. `audio.engine` is false when no speech
 engine runs, so a missing level means "not listening", not "no sound".
 
+ProPresenter can be switched off (`propresenter.enabled: false`, Settings → ProPresenter):
+`pp.enabled` is then false, nothing is sent or checked, and the Live screen's sound meter glows
+red with a strip saying so. ProPresenter problems (`pp_unreachable`, `pp_message_missing`)
+show in that same strip, not in the banner. Turning it off clears the big screen first.
+
+The captions display (`ui/display.html`, `display.py`): a captions-only page, opened from the
+toolbar in its own window (the Mac app's `DisplayWindowController`). `display` in the state
+carries its settings (`size`, `lines`, `colors`) and, with `display.network: true`, the `url`
+of a second, view-only server (`display.port`, 8766) for other devices on the local network.
+That server answers only `GET /` (the page) and `WS /ws` (`{screen, paused, held, running,
+display}`); it has no controls.
+
 `phase`: `needs_setup → loading → ready → starting → listening | captioning → stopping →
 stopped/ready … → unloading`, plus `error`.
 

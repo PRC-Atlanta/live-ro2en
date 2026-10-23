@@ -6,11 +6,12 @@ import { frame } from "../components/frame.js";
 import { mountMeter } from "../components/meter.js";
 import { knob } from "../components/knob.js";
 import { intentFor, callFor, spaceGate, isLive } from "../components/keys.js";
-import { dialFor, stateLine, delayOf, pillsFor, bannerFor, heardLines } from "../components/status.js";
+import { dialFor, stateLine, delayOf, pillsFor, bannerFor, heardLines, ppStrip } from "../components/status.js";
 import { send, messageFor, routeFor } from "../components/actions.js";
 import { toast } from "../components/toast.js";
 import { ask } from "../components/dialog.js";
 import { get } from "../core/api.js";
+import { call as settingsCall } from "./setup/kit.js";
 
 const VIEWS = ["heard", "screen", "both"];
 const HOLD_MS = 600;
@@ -76,7 +77,9 @@ export function render(el, store) {
   let s = store.get() || {};
   const unbind = [];
   const f = frame(el, { onNames: () => run("terms") });
-  f.panel.innerHTML = `<div data-meterbox></div>${DECK}`;
+  f.panel.innerHTML = `<div class="meterwrap" data-meterwrap><div data-meterbox></div>
+    <div class="ppstrip" data-ppstrip role="status" hidden><i></i><span class="t"><strong></strong> · <span></span></span><button type="button"></button></div>
+  </div>${DECK}`;
   const q = sel => f.panel.querySelector(sel);
   const meter = mountMeter(q("[data-meterbox]"));
 
@@ -125,6 +128,11 @@ export function render(el, store) {
   }
   async function run(intent) {
     if (intent === "view") return setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]);
+    if (intent === "pp_on") {                            // the strip's "Turn on": Settings → ProPresenter on
+      const r = await settingsCall("PUT", "settings", { values: { "propresenter.enabled": true } });
+      toast(r.ok ? S.toast.ppOn : S.toast.failed, r.ok ? "ok" : "warn");
+      return;
+    }
     if (intent === "fix") {
       const last = [...(s.lines || [])].reverse().find(l => l.dst);
       if (!last) return toast(S.toast.nothingToFix, "info");
@@ -205,6 +213,7 @@ export function render(el, store) {
 
   q("[data-hide]").onclick = () => run("pause");
   q("[data-banner] .bbtn").onclick = () => { const b = bannerFor(s); if (b) run(b.action.id); };
+  q("[data-ppstrip] button").onclick = () => { const p = ppStrip(s); if (p) run(p.action.id); };
 
   // ---- paint ------------------------------------------------------------------------------
   let lastPhase = null;
@@ -271,6 +280,16 @@ export function render(el, store) {
       p.className = `pill ${cls}`;
       p.dataset.state = cls || "ok";
       if (p.lastChild.textContent !== txt) p.lastChild.textContent = txt;
+    }
+
+    const ps = ppStrip(s), strip = q("[data-ppstrip]");
+    q("[data-meterwrap]").classList.toggle("pp-alert", !!ps);
+    strip.hidden = !ps;
+    if (ps) {
+      strip.dataset.code = ps.code;
+      strip.querySelector("strong").textContent = ps.title;
+      strip.querySelector(".t > span").textContent = ps.msg;
+      strip.querySelector("button").textContent = ps.action.label;
     }
 
     const b = bannerFor(s), bn = q("[data-banner]");

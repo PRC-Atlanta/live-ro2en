@@ -11,6 +11,7 @@ import collections
 import threading
 
 TEST_CAPTION = "Test caption from Live RO2EN\nIf you can read this, captions will work."
+OFF_DETAIL = "ProPresenter is turned off in Settings: captions stay in this app and the captions display."
 LAYOUT_LIMITS = {"lines": (1, 6), "chars": (10, 120)}
 
 
@@ -29,7 +30,7 @@ class OutputMixin:
         pp = self.pp
         st = pp.status() if hasattr(pp, "status") else {
             "connected": getattr(pp, "last_error", None) is None, "since": None,
-            "last_ms": getattr(pp, "last_ms", None), "error_code": None}
+            "last_ms": getattr(pp, "last_ms", None), "error_code": None, "enabled": True}
         return {"paused": self.paused, "held": self.held, "pp": st,
                 "corrections_n": self._corrections[str(self.log_path)]}
 
@@ -153,6 +154,27 @@ class OutputMixin:
         self._log_event({"event": "layout", "lines": self.caps.max_lines, "chars": self.caps.max_chars})
         self._broadcast()
 
+    def _set_pp_enabled(self, on: bool):
+        """Settings → Send captions to ProPresenter. Off: the big screen is cleared first (the
+        last caption must not stay up), then nothing is sent or checked. On: the current
+        captions go up at once."""
+        import propresenter
+        with self._out_lock:
+            if on == bool(self.pp.status().get("enabled", True)):
+                return
+            if not on:
+                try:
+                    self.pp.clear()
+                except Exception:              # noqa: BLE001 - unreachable: nothing to clear
+                    pass
+            self.pp = propresenter.make({**self.cfg["propresenter"], "enabled": on})
+            if on and not (self.paused or self.held):
+                self._push()
+        if on:
+            self.start_pp_monitor()
+        self._log_event({"event": "pp_enabled", "on": on})
+        self._broadcast()
+
     # --- ProPresenter health, tests, reconnect ---------------------------------------------
     def start_pp_monitor(self):
         """Ping ProPresenter every `propresenter.health_every_s` (default 5 s; 0 = off),
@@ -190,8 +212,8 @@ class OutputMixin:
         """Settings/preflight check: reachable, the message exists, the message list."""
         pp = self.pp
         if not hasattr(pp, "health"):
-            return {"ok": False, "detail": "no ProPresenter adapter", "messages": [], "message_found": False,
-                    "pp": self._output_state()["pp"]}
+            return {"ok": False, "detail": OFF_DETAIL if pp.status().get("enabled") is False else "no ProPresenter adapter",
+                    "messages": [], "message_found": False, "pp": self._output_state()["pp"]}
         with self._out_lock:
             st = pp.health(resend=False)
             msgs = (pp.list_messages() if st["connected"] else None)
@@ -222,7 +244,8 @@ class OutputMixin:
             self._test_timer.start()
         self._log_event({"event": "pp_test_caption", "ok": ok})
         self._broadcast()
-        return {"ok": bool(ok), "detail": "ok" if ok else (self.pp.last_error or "not sent"),
+        off = self.pp.status().get("enabled") is False
+        return {"ok": bool(ok), "detail": "ok" if ok else OFF_DETAIL if off else (self.pp.last_error or "not sent"),
                 "pp": self._output_state()["pp"]}
 
     def _restore_after_test(self):

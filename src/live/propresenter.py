@@ -214,4 +214,29 @@ class ProPresenter:
     def status(self) -> dict:
         return {"connected": bool(self.connected), "since": self.since,
                 "last_ms": round(self.last_ms, 1) if self.last_ms is not None else None,
-                "error_code": self.error_code}
+                "error_code": self.error_code, "enabled": True}
+
+
+class ProPresenterOff:
+    """`propresenter.enabled: false`: captions stay in the app and the captions display.
+    Nothing is sent and nothing is checked; show/clear answer None (not sent, not failed)."""
+    base = message_id = token_name = None
+    last_error = None
+    last_ms = None
+    _want = None
+
+    def show(self, text: str):
+        self._want = text
+        return None
+
+    def clear(self):
+        self._want = ""
+        return None
+
+    def status(self) -> dict:
+        return {"connected": False, "since": None, "last_ms": None, "error_code": None, "enabled": False}
+
+
+def make(cfg: dict):
+    """The adapter `propresenter:` settings ask for."""
+    return ProPresenter(**cfg) if cfg.get("enabled", True) else ProPresenterOff()

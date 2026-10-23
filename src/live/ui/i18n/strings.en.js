@@ -10,7 +10,8 @@ export const S = {
     names: "Names & words", settings: "Settings", help: "?", helpHint: "Help",
     navLabel: "Screens", live: "Live", liveHint: "The Live screen", setupHint: "Sound input and ProPresenter (Settings)",
     after: "After", afterHint: "Summary, rating and transcript of the last service",
-    setupName: (device, pp) => `${device || "No sound input"} → ${pp ? "ProPresenter" : "ProPresenter (not connected)"}`,
+    setupName: (device, pp) => `${device || "No sound input"} → ${pp === "off" ? "this Mac only" : pp ? "ProPresenter" : "ProPresenter (not connected)"}`,
+    display: "Captions display", displayHint: "A captions-only window for a second screen or projector",
   },
 
   // big dial face per phase: [big text, small text]; "{pct}" and "{t}" are filled in
@@ -70,8 +71,15 @@ export const S = {
   pills: {
     sound: { ok: "Sound OK", none: "No sound", unknown: "Sound" },
     pp: { ok: "ProPresenter connected", down: "ProPresenter not connected", missing: "ProPresenter message not found",
-          unknown: "ProPresenter" },
+          unknown: "ProPresenter", off: "ProPresenter off" },
     pace: { unknown: "Pace", ok: "Keeping up", slow: "A bit slow", behind: "Falling behind", behindBy: s => `About ${Math.round(s)} s behind` },
+  },
+
+  // the strip under the sound meter (the panel glows red while one shows)
+  ppStrip: {
+    off: { title: "PROPRESENTER OFF", msg: "captions are not going to the big screen", action: { id: "pp_on", label: "Turn on" } },
+    down: { title: "PROPRESENTER NOT CONNECTED", msg: "captions are not reaching the big screen", action: { id: "reconnect", label: "Try again" } },
+    missing: { title: "PROPRESENTER MESSAGE NOT FOUND", msg: "check the message name in Settings", action: { id: "settings", label: "Open Settings" } },
   },
 
   meter: {
@@ -134,6 +142,7 @@ export const S = {
     mode: m => `Speaker: ${m}`, quality: q => `Quality: ${q}`,
     nothingToFix: "There is no caption to fix yet.",
     nothingToRemove: "There is no caption to remove.",
+    ppOn: "Captions go to ProPresenter again",
     rehearsal: "Rehearsal started", diagnostics: "Saved a diagnostics file to the Desktop",
     savedAt: path => `Saved a diagnostics file in ${path}`,
   },

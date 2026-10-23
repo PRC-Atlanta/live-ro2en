@@ -44,7 +44,8 @@ export function pillsFor(s, meterKey) {
   out.sound = vk === "idle" ? ["", S.pills.sound.unknown] : vk === "good" ? ["", S.pills.sound.ok] : [vk === "none" || vk === "clip" ? "err" : "warn", vword];
 
   const pp = s.pp;
-  if (pp ? pp.error_code === "message_missing" : false) out.pp = ["err", S.pills.pp.missing];
+  if (pp && pp.enabled === false) out.pp = ["err", S.pills.pp.off];
+  else if (pp ? pp.error_code === "message_missing" : false) out.pp = ["err", S.pills.pp.missing];
   else if (pp ? !pp.connected || pp.error_code : !!s.pp_error) out.pp = ["err", S.pills.pp.down];
   else out.pp = ["", S.pills.pp.ok];
 
@@ -59,6 +60,7 @@ export function pillsFor(s, meterKey) {
 export function bannerFor(s) {
   const p = s.problem;
   if (!p || s.offline) return null;
+  if (p.code.startsWith("pp_")) return null;            // ProPresenter shows on the meter (ppStrip)
   const str = S.problems[p.code];
   // the strings file decides the words and the action; the backend's action is only used for
   // a code this file does not know yet
@@ -66,6 +68,16 @@ export function bannerFor(s) {
   if (!str) return { code: p.code, severity: p.severity || "error", msg: S.problemFallback.msg, action };
   let msg = str.msg;  if ((p.code === "captions_behind" || p.code === "recognition_behind") && s.pace?.behind_s) msg += S.behindBy(s.pace.behind_s);
   return { code: p.code, severity: p.severity || "error", msg, action };
+}
+
+// ProPresenter off, not connected or without our message: the meter panel glows red and a
+// strip under it says so (instead of a banner). -> null or {code, title, msg, action:{id,label}}
+export function ppStrip(s) {
+  const pp = s.pp;
+  if (s.offline || !pp) return null;
+  const key = pp.enabled === false ? "off" : pp.error_code === "message_missing" ? "missing"
+            : !pp.connected || pp.error_code ? "down" : null;
+  return key ? { code: key, ...S.ppStrip[key] } : null;
 }
 
 // Heard: last 4 source phrases (failed ones too: dst null) and the words still coming in

@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var window: NSWindow!
     private let supervisor = ProcessSupervisor()
     private let web = WebViewController()
+    private let captions = DisplayWindowController()   // the captions display window
     private let live = LiveActivity()
     private let updater: Updater = StubUpdater()
     private let launch = LaunchModel()
@@ -50,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             NSWorkspace.shared.activateFileViewerSelecting([self.supervisor.logURL])
         }
         web.onLoaded = { [weak self] in self?.setOverlay(visible: false) }
+        web.onOpenDisplay = { [weak self] url in self?.captions.show(url) }
         supervisor.onStatus = { [weak self] in self?.statusChanged($0) }
         supervisor.onState = { [weak self] in self?.live.update($0) }
         live.onChange = { [weak self] isLive in
@@ -125,6 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             web.reload(); return
         }
         loadedOrigin = base
+        captions.retarget(origin: base)          // an open captions display follows a new port
         if pageChoice == "classic" {
             web.load(base); return
         }
@@ -159,6 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             if answer != .alertSecondButtonReturn && !skipQuitConfirmation { return .terminateCancel }
         }
         quitting = true
+        captions.close()
         launch.failure = nil
         launch.message = "Stopping…"
         setOverlay(visible: true)

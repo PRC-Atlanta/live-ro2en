@@ -196,7 +196,7 @@ export function canNext(step, ctx) {
     case "download": return !!ctx.modelsReady;
     case "mic": return ctx.mic === "granted" || ctx.mic === "unknown";
     case "sound": return !!ctx.heard || !!ctx.noMeter;
-    case "pp": return !!ctx.ppOk || !!ctx.ppSkipped;
+    case "pp": return !!ctx.ppOk || !!ctx.ppSkipped || ctx.ppWhere === "none";
     case "lang": return !!ctx.mode;
     default: return false;
   }

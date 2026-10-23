@@ -23,7 +23,8 @@ export function baseState() {
     translator: "nllb:nllb-200-distilled-1.3B", stt: "jackrabbit-ctc-lm-b8",
     phase: "ready", progress: null,
     audio: { device: "Behringer UMC204HD", rms_db: -60, peak_db: -60, speech: false, last_voice_s: null, ok: true, engine: true },
-    pp: { connected: true, since: Date.now() / 1000 - 600, last_ms: 3, error_code: null },
+    pp: { connected: true, since: Date.now() / 1000 - 600, last_ms: 3, error_code: null, enabled: true },
+    display: { size: "large", lines: 2, colors: "white_on_black", network: false, url: null, network_error: null },
     pace: { state: "ok", behind_s: null }, backlog: { n: 0, oldest_s: null },
     paused: false, held: false, problem: null, auto_actions: [],
     elapsed_s: null, first_word_ok_pct: null, session_terms_n: 0, corrections_n: 0, preflight: null,
@@ -93,6 +94,7 @@ const MOCK_FIELDS = {
   "live.language_mode": { group: "basic", type: "enum", choices: ["auto", "ro-en", "en-ro"], apply: "launch" },
   "live.profile": { group: "basic", type: "enum", choices: ["fast", "quality"], apply: "launch" },
   "live.autostart": { group: "basic", type: "bool", apply: "launch", default: false },
+  "propresenter.enabled": { group: "propresenter", type: "bool", apply: "now" },
   "propresenter.host": { group: "propresenter", type: "str", apply: "now" },
   "propresenter.port": { group: "propresenter", type: "int", min: 1, max: 65535, apply: "now" },
   "propresenter.message_id": { group: "propresenter", type: "str", apply: "now" },
@@ -109,6 +111,10 @@ const MOCK_FIELDS = {
   "live.lag_warn_s": { group: "advanced", type: "num", min: 2, max: 30, apply: "now" },
   "live.keep_both_translators": { group: "advanced", type: "enum", choices: ["auto", true, false], apply: "now" },
   "live.engine_restarts": { group: "advanced", type: "int", min: 0, max: 5, apply: "now" },
+  "display.size": { group: "propresenter", type: "enum", choices: ["medium", "large", "x-large"], apply: "now" },
+  "display.lines": { group: "propresenter", type: "int", min: 1, max: 3, apply: "now" },
+  "display.colors": { group: "propresenter", type: "enum", choices: ["white_on_black", "yellow_on_black", "black_on_white"], apply: "now" },
+  "display.network": { group: "propresenter", type: "bool", apply: "now" },
   "ui.show_latency": { group: "advanced", type: "bool", apply: "now", default: false },
   "ui.show_counts": { group: "advanced", type: "bool", apply: "now", default: false },
 };
@@ -119,6 +125,8 @@ const MOCK_DEFAULTS = {
   "propresenter.stage_message": false, "live.en_recognizer": "parakeet", "live.vad_threshold": 0.5,
   "live.hold_min_words": 4, "live.hold_s": 1.2, "live.partial_every_s": 0, "live.lag_warn_s": 6.0,
   "propresenter.health_every_s": 5, "live.keep_both_translators": "auto", "live.engine_restarts": 2,
+  "propresenter.enabled": true, "display.size": "large", "display.lines": 2, "display.colors": "white_on_black",
+  "display.network": false,
   "ui.show_latency": false, "ui.show_counts": false,
 };
 // model_lock.py items: each profile includes the ones before it
@@ -238,9 +246,11 @@ export const mockBackend = {
     };
   },
   ppStatus(ok, code = null) {
+    if (this.value("propresenter.enabled") === false)
+      return { connected: false, since: null, last_ms: null, error_code: null, enabled: false };
     return ok || code === "message_missing"
-      ? { connected: true, since: this.now() / 1000 - 600, last_ms: 3, error_code: code }
-      : { connected: false, since: null, last_ms: null, error_code: code };
+      ? { connected: true, since: this.now() / 1000 - 600, last_ms: 3, error_code: code, enabled: true }
+      : { connected: false, since: null, last_ms: null, error_code: code, enabled: true };
   },
   // what the chosen sound input hears right now
   audio() {
@@ -511,10 +521,11 @@ Object.assign(SCENARIOS, {
   slow: t => ({ ...SCENARIOS.live(t), latency_last: 6.8, pace: { state: "slow", behind_s: 6.8 } }),
   behind: t => ({ ...SCENARIOS.live(t), latency_last: 9.5, pace: { state: "behind", behind_s: 9.5 },
                   problem: { code: "captions_behind", severity: "warn", action: { id: "quickest", label: "Switch to Quickest" } } }),
-  pp_unreachable: t => ({ ...SCENARIOS.live(t), pp: { connected: false, since: null, last_ms: null, error_code: "unreachable" },
+  pp_off: t => ({ ...SCENARIOS.live(t), pp: { connected: false, since: null, last_ms: null, error_code: null, enabled: false } }),
+  pp_unreachable: t => ({ ...SCENARIOS.live(t), pp: { connected: false, since: null, last_ms: null, error_code: "unreachable", enabled: true },
                           pp_error: "ProPresenter: connection refused",
                           problem: { code: "pp_unreachable", severity: "error", action: { id: "reconnect", label: "Try again" } } }),
-  pp_message_missing: t => ({ ...SCENARIOS.live(t), pp: { connected: true, since: null, last_ms: 4, error_code: "message_missing" },
+  pp_message_missing: t => ({ ...SCENARIOS.live(t), pp: { connected: true, since: null, last_ms: 4, error_code: "message_missing", enabled: true },
                               problem: { code: "pp_message_missing", severity: "error", action: { id: "settings", label: "Open Settings" } } }),
   no_sound: t => { const s = withLevel(t, null);
                    return { ...s, audio: { ...s.audio, ok: false },

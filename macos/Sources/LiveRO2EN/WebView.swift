@@ -7,6 +7,8 @@ import WebKit
 final class WebViewController: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
     let webView: WKWebView
     var onLoaded: (() -> Void)?
+    /// The page asked for the captions display (window.open of ui/display.html).
+    var onOpenDisplay: ((URL) -> Void)?
     private var origin: URL?
     private var retryURL: URL?
 
@@ -135,7 +137,8 @@ final class WebViewController: NSObject, WKNavigationDelegate, WKUIDelegate, WKD
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let url = action.request.url {
             // same rule as decidePolicyFor: only web and mail links leave the app (no file://, no app schemes)
-            if isOurs(url) { webView.load(action.request) }
+            if isOurs(url) && url.path.hasSuffix("/display.html") { onOpenDisplay?(url) }   // its own window
+            else if isOurs(url) { webView.load(action.request) }
             else if ["http", "https", "mailto"].contains(url.scheme ?? "") { NSWorkspace.shared.open(url) }
         }
         return nil

@@ -730,7 +730,7 @@ class PP:
     def __init__(self, code=None):
         self.code, self.last_error = code, None
     def status(self):
-        return {"connected": self.code is None, "since": None, "last_ms": None, "error_code": self.code}
+        return {"connected": self.code is None, "since": None, "last_ms": None, "error_code": self.code, "enabled": True}
     def show(self, text):
         return True
     def clear(self):
