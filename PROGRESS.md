@@ -1,6 +1,7 @@
 # Progress
 
 Resume: open this folder in Claude Code and say "resume from PROGRESS.md".
+Repo: https://github.com/PRC-Atlanta/live-ro2en (private). Audio, models, .env, correction data and transcripts are not tracked (see .gitignore).
 Venvs (uv, Python 3.12): `.venv` (core/scoring/Google), `.venv-nemo` (Jackrabbit/SpeD/Canary, live engine),
 `.venv-mlx` (Parakeet/Whisper), `.venv-moondream` (Parakeet Redux), `.venv-mt` (NLLB, MLX LLMs, live orchestrator).
 
