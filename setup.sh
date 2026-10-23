@@ -33,21 +33,9 @@ for m in $NLLB; do
   [ -f models/ct2/$m/model.bin ] || .venv-mt/bin/ct2-transformers-converter --model facebook/$m \
       --revision "$(lock hf facebook/$m)" --output_dir models/ct2/$m --quantization int8_float16 --force
 done
-.venv-mt/bin/python - <<'PY'
-import sys, yaml
-sys.path.insert(0, "src")
-from model_lock import fetch, revision   # pinned commits
-cfg = yaml.safe_load(open("config.yaml"))
-specs = {cfg["live"].get("translator", "")} | {p.get("translator", "") for p in (cfg.get("profiles") or {}).values()}
-for spec in specs:                       # every translator a profile can switch to
-    if spec.startswith("mlx:"):
-        fetch(spec.split(":", 1)[1])
-# speech models (+ NLLB tokenizer, needed offline at runtime)
-fetch("surogate/jackrabbit-110m-ro", ["jackrabbit-110m-ro.nemo", "lm-4gram-ro.nemo"])
-fetch("mlx-community/parakeet-tdt-0.6b-v3")
-from transformers import AutoTokenizer
-AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-1.3B", revision=revision("facebook/nllb-200-distilled-1.3B"))
-PY
+# speech models, NLLB tokenizer and every profile's translator: the app's own downloader
+# (pinned files, resumable, checksummed; profile tags in models.lock.txt)
+LIVE_ALLOW_NETWORK=1 .venv-mt/bin/python src/live/model_setup.py download --profile quality
 # Whistle (English STT): fetch the engine + weights ONCE, vendored in models/whistle so the
 # runtime never downloads anything (telemetry off for this step too).
 mkdir -p models/whistle

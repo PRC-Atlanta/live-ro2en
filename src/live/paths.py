@@ -69,3 +69,19 @@ def desktop() -> pathlib.Path:
 def samples_dir(root: pathlib.Path = REPO) -> pathlib.Path:
     """Rehearsal recordings shipped with the app."""
     return resource("data/samples", root)
+
+
+# --- models (S6) ---------------------------------------------------------------------------
+def hf_home(root: pathlib.Path = REPO) -> pathlib.Path:
+    """Model cache root: HF_HOME if set, <LIVE_HOME>/hf in the app, else the user's HF cache.
+    The app must export HF_HOME=hf_home() so the model loaders and the downloader agree."""
+    if _env("HF_HOME"):
+        return _env("HF_HOME")
+    if _env("LIVE_HOME"):
+        return _env("LIVE_HOME") / "hf"
+    return pathlib.Path("~/.cache/huggingface").expanduser()
+
+
+def hf_cache(root: pathlib.Path = REPO) -> pathlib.Path:
+    """Where Hugging Face snapshots live (HF_HUB_CACHE, default <hf_home>/hub)."""
+    return _env("HF_HUB_CACHE") or hf_home(root) / "hub"
