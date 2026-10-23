@@ -35,3 +35,6 @@ data/propresenter/
 # Dev user data (settings.yaml, saved names) and agent worktrees
 user/
 .claude/worktrees/
+
+# packaging/build_runtime.sh output
+build/
