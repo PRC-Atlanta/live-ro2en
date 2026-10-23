@@ -5,7 +5,9 @@ Writes results/bible_scores.csv, results/bible_by_excerpt.csv, results/bible_ter
 WER: phonetic-key tokens (script variants neutral), diacritics kept ('wer') and folded
 ('wer_nodiac'). Term accuracy: per terms.txt occurrence inside the aligned reference span,
 'hit' = exact spelling (case-insensitive, diacritics required), 'near' = same word with
-wrong/missing diacritics or a close misspelling, else 'miss'.
+wrong/missing diacritics or a close misspelling, else 'miss'. terms.txt is also the phrase-boost
+list (stt_run boost models, Google chirp_2 phrase set), so term_set/term_acc_boosted say how
+much of the term figure is measured on boosted terms. Digits are spelled out before scoring.
 """
 from __future__ import annotations
 
@@ -65,12 +67,35 @@ def book_texts(book_numbers: set[int]) -> dict[int, str]:
     return {b: " ".join(t for _, _, t in vs) for b, vs in book_verses(book_numbers).items()}
 
 
-def load_terms() -> list[list[str]]:
+def load_terms(path: pathlib.Path | None = None) -> list[list[str]]:
     out = []
-    for l in (ROOT / "terms.txt").read_text().splitlines():
+    for l in (path or ROOT / "terms.txt").read_text().splitlines():
         if l.strip() and not l.startswith("#"):
             out.append(tokens(l))
     return out
+
+
+def boost_terms() -> set[str]:
+    """The phrase-boost list as decoders see it (stt_run._terms, GoogleSTT.phrases: terms.txt)."""
+    return {" ".join(t) for t in load_terms(ROOT / "terms.txt")}
+
+
+def uses_boost(model: str) -> bool:
+    """Decodes with the boost list: stt_run *-boost entries and Google chirp_2's phrase set
+    (chirp_3 runs without biasing, see DECISIONS.md)."""
+    return model.endswith("-boost") or model == "google-chirp_2"
+
+
+def split_terms(tagg: dict[str, list[int]], boosted: set[str]) -> dict:
+    """Term accuracy split by boost-list membership. If every scored term is on the boost
+    list there is nothing to split: say so instead (term_set = 'boost list')."""
+    pct = lambda vs: round(100 * sum(v[1] for v in vs) / max(sum(v[0] for v in vs), 1), 1)
+    on = [v for k, v in tagg.items() if k in boosted]
+    off = [v for k, v in tagg.items() if k not in boosted]
+    if not off:
+        return {"term_set": "boost list"}
+    return {"term_set": "mixed", "term_acc_boosted": pct(on), "term_acc_unboosted": pct(off),
+            "term_n_unboosted": sum(v[0] for v in off)}
 
 
 def _count(seq: list[str], pat: list[str]) -> int:
@@ -140,17 +165,36 @@ def excerpt_spans(hk_of: dict[tuple[str, str], list[str]], ex_book: dict[str, in
             for ex in starts}
 
 
+def excerpt_chapters(man: pd.DataFrame | None = None) -> dict[str, tuple[int, int, int]]:
+    """excerpt -> (book, first chapter, last chapter) of the passage it reads, located the
+    way main() scores it (median alignment span of every model's transcript)."""
+    man = pd.read_csv(ROOT / "work" / "bible" / "manifest.csv") if man is None else man
+    ex_book = man.groupby("excerpt")["book_number"].first().to_dict()
+    ref_key, key_ch = {}, {}
+    for b, vs in book_verses(set(ex_book.values())).items():
+        ks = [(c, key_tokens(t, numbers=True)) for c, _, t in vs]
+        ref_key[b] = [k for _, kk in ks for k in kk]
+        key_ch[b] = [c for c, kk in ks for _ in kk]
+    hk_of = {(m, ex): strip_headers(key_tokens(t, numbers=True))
+             for m, exs in load_hyps(man).items() for ex, t in exs.items()}
+    span = excerpt_spans(hk_of, ex_book, ref_key)
+    if set(ex_book) - set(span):
+        raise SystemExit(f"no transcripts to locate excerpts {sorted(set(ex_book) - set(span))}")
+    return {ex: (ex_book[ex], key_ch[ex_book[ex]][lo], key_ch[ex_book[ex]][hi - 1]) for ex, (lo, hi) in span.items()}
+
+
 def main() -> None:
     RES.mkdir(exist_ok=True)
     man = pd.read_csv(ROOT / "work" / "bible" / "manifest.csv")
     ex_book = man.groupby("excerpt")["book_number"].first().to_dict()
     books = book_texts(set(ex_book.values()))
     ref_tok = {b: tokens(t) for b, t in books.items()}
-    ref_key = {b: key_tokens(t) for b, t in books.items()}
+    ref_key = {b: key_tokens(t, numbers=True) for b, t in books.items()}
     ref_keyf = {b: [fold_diacritics(k) for k in ks] for b, ks in ref_key.items()}
     terms = load_terms()
+    boosted = boost_terms()
     hyps = load_hyps(man)
-    hk_of = {(m, ex): strip_headers(key_tokens(t)) for m, exs in hyps.items() for ex, t in exs.items()}
+    hk_of = {(m, ex): strip_headers(key_tokens(t, numbers=True)) for m, exs in hyps.items() for ex, t in exs.items()}
     span = excerpt_spans(hk_of, ex_book, ref_key)
     per_ex, summary, term_rows = [], [], []
     n_ex = len(ex_book)
@@ -178,7 +222,8 @@ def main() -> None:
                         "wer_nodiac": round(cf["wer"] * 100, 2), "cer": round(cs["cer"] * 100, 2),
                         "term_acc": round(100 * sum(v[1] for v in tagg.values()) / max(n_t, 1), 1),
                         "term_near": round(100 * sum(v[2] for v in tagg.values()) / max(n_t, 1), 1),
-                        "term_n": n_t, "rtf": round(rtf, 4) if rtf is not None else "",
+                        "term_n": n_t, "boost_decoding": "yes" if uses_boost(m) else "no",
+                        **split_terms(tagg, boosted), "rtf": round(rtf, 4) if rtf is not None else "",
                         "n_ref_words": cs["n_ref"]})
         for k, (n, h, nr) in sorted(tagg.items()):
             term_rows.append({"model": m, "term": k, "n_ref": n, "hit": h, "near": nr, "miss": n - h - nr})
@@ -189,6 +234,9 @@ def main() -> None:
                 w = csv.DictWriter(f, fieldnames=list(rows[0]))
                 w.writeheader(); w.writerows(rows)
     print(pd.DataFrame(summary).to_string(index=False))
+    if summary and summary[0].get("term_set") == "boost list":
+        print("NOTE: term accuracy is measured on terms.txt, which is also the phrase-boost list; "
+              "for boost_decoding=yes models it is in-sample.")
 
 
 if __name__ == "__main__":

@@ -91,6 +91,7 @@ class Live:
         self.warnings: list[str] = []                  # engine degradations, shown until restart
         self.counts: collections.Counter = collections.Counter()   # clause outcomes this run
         self.audio_fault: str | None = None            # engine watchdog: dead/unplugged/muted input
+        self.stt_behind: str | None = None             # engine: recognition lags the audio
         self.behind_s: float | None = None             # set while captions lag more than lag_warn_s
         # clauses are translated and shown by ONE worker in arrival order (a held fragment and
         # the clause after it can never overtake each other)
@@ -137,7 +138,9 @@ class Live:
                "--cfg", json.dumps({**{k: self.lc[k] for k in ("vad_threshold", "min_pause_ms", "max_clause_s",
                                                                 "partial_every_s", "min_commit_s", "max_commit_s",
                                                                 "en_recognizer", "context_s", "lookahead_words",
-                                                                "audio_watchdog_s", "digital_silence_s") if k in self.lc},
+                                                                "audio_watchdog_s", "digital_silence_s",
+                                                                "stt_backlog_s", "catchup_max_s") if k in self.lc},
+                                   "parakeet_stream": self.cfg.get("parakeet_stream") or {},
                                    "whistle": {**(self.cfg.get("whistle") or {}),   # whistle_<key> in live/profile overrides
                                                **{k[len("whistle_"):]: v for k, v in self.lc.items()
                                                   if k.startswith("whistle_")}}})]
@@ -147,7 +150,7 @@ class Live:
             cmd += ["--device", str(device or self.lc["input_device"])]
         self.status = "starting engine"
         self.warnings, self.counts = [], collections.Counter()
-        self.audio_fault = self.behind_s = None
+        self.audio_fault = self.behind_s = self.stt_behind = None
         self.eof.clear()
         self._stopping = False
         with open(ROOT / "logs" / "engine.log", "a") as err:     # the child keeps its own copy
@@ -197,6 +200,15 @@ class Live:
                 self._log_event({"event": "warn", "msg": ev["msg"]})
             elif ev["type"] == "error":
                 self._on_engine_error(ev)
+            elif ev["type"] == "mode":
+                # the engine could not run the requested mode (no multilingual model)
+                self.lang.set_mode(ev["mode"])
+                if ev["msg"] not in self.warnings:
+                    self.warnings.append(ev["msg"])
+                self._log_event({"event": "mode", "mode": ev["mode"], "msg": ev["msg"]})
+            elif ev["type"] == "backlog":
+                self.stt_behind = None if ev["ok"] else ev["msg"]
+                self._log_event({"event": "backlog", "ok": ev["ok"], "s": ev["s"]})
             elif ev["type"] == "audio":
                 self.audio_fault = None if ev["ok"] else ev["msg"]
                 self._log_event({"event": "audio", "ok": ev["ok"], "msg": ev["msg"]})
@@ -426,6 +438,8 @@ class Live:
         out = []
         if self.audio_fault and self.running:
             out.append(f"NO AUDIO: {self.audio_fault}")
+        if self.stt_behind and self.running:
+            out.append(f"RECOGNITION BEHIND: {self.stt_behind}; catching up in longer chunks")
         if self.behind_s:
             out.append(f"CAPTIONS BEHIND: last one {self.behind_s} s after the speech "
                        f"(> {self.lc.get('lag_warn_s', 6.0)} s); the computer cannot keep up")

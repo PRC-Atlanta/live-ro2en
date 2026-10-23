@@ -121,6 +121,7 @@ def test_poll_downloads_results(env):
     client = env.clients["us-central1-speech.googleapis.com"]
     op = MagicMock(done=True)
     op.HasField.return_value = False
+    op.response.value = cs.BatchRecognizeResponse.serialize(cs.BatchRecognizeResponse())
     client.transport.operations_client.get_operation.return_value = op
     blob = MagicMock()
     blob.name = g.load_ops()[name]["output"].split("gs://bkt/")[1] + "a_transcript_123.json"

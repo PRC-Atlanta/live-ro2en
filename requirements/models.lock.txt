@@ -1,0 +1,17 @@
+# Exact model versions setup.sh downloads (recorded 2026-10-23 from the working install).
+# hf <repo> <commit>              Hugging Face snapshot, pinned to that commit
+# dataset <repo> <commit>         Hugging Face dataset, pinned
+# url <path> <url>                plain download (pinned tag, never a branch)
+# sha256 <path> <hash>            setup refuses to continue if the file differs
+# To update a model: change its line here, rerun ./setup.sh, and re-run the benchmarks.
+hf surogate/jackrabbit-110m-ro ad5437c325ed7cec485bd478e3de2dfc91df719e
+hf mlx-community/parakeet-tdt-0.6b-v3 ed2b7e8c15f9aaa0b5772e2efb986255eaef7e15
+hf facebook/nllb-200-distilled-1.3B 7be3e24664b38ce1cac29b8aeed6911aa0cf0576
+hf facebook/nllb-200-3.3B 1a07f7d195896b2114afcb79b7b57ab512e7b43e
+hf mlx-community/gemma-4-12B-it-qat-4bit e70c6b3ba0979b3357dcd2f223ad8bde7787a6b6
+hf mlx-community/EuroLLM-22B-Instruct-2512-mlx-4bit dcb329c32383c834402db9c0dc569593a6bc529c
+dataset k-mktr/romanian_cornilescu_ro 62a67a985458a9e0df4165ce721fe83d3609ff70
+url models/vad/silero_vad.onnx https://raw.githubusercontent.com/snakers4/silero-vad/v6.2/src/silero_vad/data/silero_vad.onnx
+sha256 models/vad/silero_vad.onnx 1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3
+sha256 models/whistle/whistle.cact b6e02f048568ac5d01a2042556c658061e699acbc0aa2a1439f52f3d461dffeb
+sha256 models/whistle/libneedle.dylib 0137354250a85fa52d100de948ccff9d9f7d8dd73ced0eea19c38f6e351aef55

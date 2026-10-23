@@ -109,6 +109,7 @@ def _bare_engine(mode="auto", streamer=None):
     e.mode, e.pt, e.pre_roll, e.partial_every = mode, PauseTracker(frame_ms=32), 8, 0
     e.min_commit = e.max_commit = 0
     e.no_audio_s = e.silent_s = 0                # watchdog off unless a test turns it on
+    e.realtime, e.backlog_s, e.catchup_max, e.english_ok = False, 0, 0, True
     e.vad = lambda fr: float(fr[0])
     e.streamer, e.wcfg, e._wstream = streamer, {"chunk_s": 0.064}, None
     e.calls = []
@@ -362,3 +363,98 @@ def test_mode_switch_does_not_wait_for_stream_tail():
     w._thread.join(3)                    # (waits for the old stream's lock)
     assert w._q is new_q and {"text": "tail"} in events
     w.end_stream(wait=2)
+
+
+def test_skipped_pause_commits_once_long_enough(monkeypatch):
+    e = _bare_engine()
+    e.min_commit = 40                               # quality profile: at least 40 frames per commit
+    q = queue.Queue()
+    _frames(q, 20, speech=True)                     # a short sentence...
+    _frames(q, 60, speech=False, t0=1.0)            # ...then a long silence, no more speech
+    q.put("CHECK")                                  # marker: what was committed before eof?
+    q.put(None)
+    seen = []
+    real_get = q.get
+    def get(*a, **k):
+        item = real_get(*a, **k)
+        if item == "CHECK":
+            seen.append(list(e.calls)); item = real_get(*a, **k)
+        return item
+    q.get = get
+    _run(e, q, monkeypatch)
+    assert len(seen[0]) == 1                        # committed in the silence, not held until eof
+
+
+def test_backlog_is_reported_and_recognised_in_fewer_calls(monkeypatch):
+    e = _bare_engine()
+    e.realtime, e.backlog_s, e.catchup_max = True, 1.0, 400
+    q = queue.Queue()
+    old = time.time() - 10                          # everything queued was captured 10 s ago
+    for k in range(3):                              # three sentences with pauses between them
+        _frames(q, 20, speech=True, t0=old + k)
+        _frames(q, 15, speech=False, t0=old + k + 0.6)
+    q.put(None)
+    out = _run(e, q, monkeypatch)
+    assert {"type": "backlog", "ok": False} .items() <= next(x for x in out if x["type"] == "backlog").items()
+    assert len(e.calls) == 1                        # one longer call instead of three
+
+
+def test_whistle_skipped_on_clearly_romanian_clauses(monkeypatch):
+    e = _bare_engine("auto")
+    e.multi = e.stt = object()
+    e.multi_ctx, e._held_t, e.n = None, None, 0
+    text = {"t": ""}
+    e.stt_ctx = lambda audio, final: text["t"]
+    runs = []
+    e.whistle = lambda audio: runs.append(1) or "english"
+    del e.transcribe
+    out = []
+    monkeypatch.setattr(engmod, "emit", out.append)
+    text["t"] = "Și Dumnezeu a zis să fie lumină și a fost lumină"
+    e.transcribe(np.zeros(1600, dtype=np.float32), 0, 1)
+    text["t"] = "And God said let there be light and there was light"
+    e.transcribe(np.zeros(1600, dtype=np.float32), 1, 2)
+    assert runs == [1] and out[0]["en"] == "" and out[1]["en"] == "english"
+
+
+def test_no_multilingual_model_means_romanian_only(monkeypatch, tmp_path):
+    e = _bare_engine("ro-en")
+    e.english_ok = False
+    q = queue.Queue()
+    q.put({"mode": "auto"}); q.put(None)
+    out = _run(e, q, monkeypatch)
+    assert e.mode == "ro-en" and out[0]["type"] == "mode" and out[0]["mode"] == "ro-en"
+    live = _live(tmp_path)
+    live.lang.set_mode("auto")
+    live.engine = FakeEngine([out[0], {"type": "backlog", "ok": False, "s": 5.0,
+                                       "msg": "speech recognition is 5 s behind the audio"}], rc=0)
+    live._stopping = True
+    live._reader(live.engine)
+    live.running = True
+    assert live.lang.mode == "ro-en" and "RO→EN only" in live.warnings[0]
+    assert live.alerts()[0].startswith("RECOGNITION BEHIND")
+
+
+def test_e2e_gate():
+    from live.e2e import gate
+    a = types.SimpleNamespace(max_failed_frac=0.15, min_first_word_6s=0.8, ref_text=None, max_wer=0.15)
+    good = {"eof_reached": True, "engine_exit": 0, "clauses": 19, "failed_chunks": 1, "frac_first_word_le_6s": 0.9}
+    assert gate(good, [], a) == {"pass": True, "fail_reasons": []}
+    bad = {**good, "eof_reached": False, "failed_chunks": 9, "frac_first_word_le_6s": 0.5}
+    r = gate(bad, [], a)
+    assert not r["pass"] and len(r["fail_reasons"]) == 3
+
+
+def test_setup_downloads_are_pinned():
+    root = CFG.parent
+    lock = [l.split() for l in open(root / "requirements" / "models.lock.txt") if l.strip() and not l.startswith("#")]
+    hf = {l[1] for l in lock if l[0] == "hf"}
+    cfg = yaml.safe_load(open(CFG))
+    specs = {cfg["live"]["translator"]} | {p.get("translator", "") for p in cfg["profiles"].values()}
+    needed = {s.split(":", 1)[1] for s in specs if s.startswith("mlx:")} | \
+        {"facebook/" + s.split(":", 1)[1] for s in specs if s.startswith("nllb:")} | \
+        {"surogate/jackrabbit-110m-ro", "mlx-community/parakeet-tdt-0.6b-v3"}
+    assert needed <= hf
+    assert all(len(l[2]) in (40, 64) for l in lock if l[0] in ("hf", "dataset", "sha256"))
+    setup = (root / "setup.sh").read_text()
+    assert "/master/" not in setup and "check models/whistle/libneedle.dylib" in setup

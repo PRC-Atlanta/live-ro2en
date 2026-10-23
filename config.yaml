@@ -41,7 +41,6 @@ bible_testset:
   min_silence_s: 0.25
 
 live:
-  sample_rate: 16000
   input_device: null          # null = system default; name or index
   language_mode: auto         # auto | ro-en | en-ro
   vad_threshold: 0.5
@@ -62,6 +61,8 @@ live:
   digital_silence_s: 10.0     # exact zeros this long (muted/dead interface) -> NO AUDIO alert
   lag_warn_s: 6.0             # a caption later than this after the speech -> CAPTIONS BEHIND alert
   catchup_max_words: 60       # when behind, waiting clauses are merged (up to this) into one translation
+  stt_backlog_s: 3.0          # audio recognised this long after capture -> RECOGNITION BEHIND alert + catch-up
+  catchup_max_s: 20.0         # while catching up, pauses are bridged into calls of up to this much audio
   web_host: 127.0.0.1
   web_port: 8765
   web_allowed_hosts: []       # extra host names for the control page (only if web_host is not loopback)
@@ -83,6 +84,11 @@ whistle:
   vad_threshold: 0.6          # frames below this VAD score (music, choir) are sent as silence
   pause_s: 0.35               # gap between committed words that closes a clause
   max_chunk_s: 2.5            # longest clause (keeps the first word within the 6 s ceiling)
+
+# Parakeet streaming English recognizer (live.en_recognizer: parakeet-stream)
+parakeet_stream:
+  context_size: [256, 256]    # left/right attention context (frames)
+  depth: 1
 
 # Preferred spellings applied to every transcript the system shows or translates
 # (live captions, translator input, correction-tool starting text). variant: preferred
@@ -116,7 +122,6 @@ profiles:
 propresenter:
   host: 127.0.0.1
   port: 50001
-  password: ""                # optional; set in .env as PROPRESENTER_PASSWORD to override
   message_id: "Live Translation"
   token_name: "Text"
   max_chars_per_line: 42

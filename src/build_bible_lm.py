@@ -3,13 +3,13 @@
 
   .venv-nemo/bin/python src/build_bible_lm.py
 Held-out: every (book, chapter) touched by the Bible test excerpts, +/-1 chapter, is
-excluded, so the Bible WER of jackrabbit-ctc-biblelm is not inflated by memorised text.
+excluded (chapters located from work/bible/manifest.csv + the excerpt transcripts, as
+score_bible.py scores them), so the Bible WER of jackrabbit-ctc-biblelm is not inflated by memorised text.
 Estimator: interpolated absolute discounting (D = 0.75) written as a backoff ARPA, so
 seen n-grams carry the interpolated probability and gamma(h) = D * N1+(h.) / c(h.) is
 the backoff weight. Output: models/lm/lm-4gram-ro-bible.arpa"""
 from __future__ import annotations
 
-import json
 import math
 import pathlib
 import sys
@@ -19,18 +19,16 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 OFFSET, ORDER, D = 100, 4, 0.75
 BOS, EOS, UNK = "<s>", "</s>", "<unk>"
-KJV2NUM = {"Genesis": 1, "Psalms": 19, "Matthew": 40, "John": 43, "Ephesians": 49, "James": 59,
-           "I Peter": 60, "Revelation of John": 66}
+MARGIN = 1          # chapters either side of a test passage
 
 
-def held_out() -> set[tuple[int, int]]:
-    out = set()
-    for l in (ROOT / "data/mt/bible_verses.jsonl").read_text().splitlines():
-        r = json.loads(l)
-        book, cv = r["ref"].rsplit(" ", 1)
-        b, c = KJV2NUM[book], int(cv.split(":")[0])
-        out |= {(b, c - 1), (b, c), (b, c + 1)}
-    return out
+def held_out(chapters: dict[str, tuple[int, int, int]] | None = None) -> set[tuple[int, int]]:
+    """(book, chapter) pairs to leave out: every chapter a test excerpt reads, +/- MARGIN.
+    Not data/mt/bible_verses.jsonl: that drops partial edge verses and verses without KJV."""
+    if chapters is None:
+        from score_bible import excerpt_chapters
+        chapters = excerpt_chapters()
+    return {(b, c) for b, c0, c1 in chapters.values() for c in range(c0 - MARGIN, c1 + MARGIN + 1)}
 
 
 def main() -> None:
@@ -40,6 +38,7 @@ def main() -> None:
     tok = m.tokenizer
     V = tok.vocab_size
     excl = held_out()
+    print("held out:", sorted(excl), flush=True)
     verses = book_verses(set(range(1, 67)))
     sents, n_ex = [], 0
     for b, vs in verses.items():

@@ -109,8 +109,48 @@ def phon_key(word: str) -> str:
     return w
 
 
-def key_tokens(text: str, fold: bool = False) -> list[str]:
-    out = [phon_key(t) for t in tokens(text)]
+# --- digits -> Romanian words (scoring only) --------------------------------------
+
+_UNITS = "zero unu doi trei patru cinci șase șapte opt nouă".split()
+_TEENS = ("zece unsprezece doisprezece treisprezece paisprezece cincisprezece șaisprezece "
+          "șaptesprezece optsprezece nouăsprezece").split()
+_TENS = {2: "douăzeci", 3: "treizeci", 4: "patruzeci", 5: "cincizeci", 6: "șaizeci",
+         7: "șaptezeci", 8: "optzeci", 9: "nouăzeci"}
+
+
+def num_words(n: int) -> str:
+    """0-999 as spoken Romanian, masculine/counting forms (12 -> doisprezece, 21 -> douăzeci
+    și unu, 200 -> două sute). Feminine agreement (douăsprezece, una) is not guessed."""
+    if not 0 <= n <= 999:
+        raise ValueError(n)
+    h, r = divmod(n, 100)
+    if h:
+        head = "o sută" if h == 1 else ("două" if h == 2 else _UNITS[h]) + " sute"
+        return head + (" " + num_words(r) if r else "")
+    if r < 10:
+        return _UNITS[r]
+    if r < 20:
+        return _TEENS[r - 10]
+    t, u = divmod(r, 10)
+    return _TENS[t] + (f" și {_UNITS[u]}" if u else "")
+
+
+def expand_numbers(toks: list[str]) -> list[str]:
+    """Spell out standalone 1-3 digit tokens (no leading zero) so '12' and 'doisprezece'
+    compare equal. Longer numbers, years and mixed tokens ('2a') are left alone."""
+    out: list[str] = []
+    for t in toks:
+        if t.isdigit() and len(t) <= 3 and (t == "0" or t[0] != "0"):
+            out += num_words(int(t)).split()
+        else:
+            out.append(t)
+    return out
+
+
+def key_tokens(text: str, fold: bool = False, numbers: bool = False) -> list[str]:
+    """Phonetic-key tokens. numbers=True spells out digits first (see expand_numbers)."""
+    toks = tokens(text)
+    out = [phon_key(t) for t in (expand_numbers(toks) if numbers else toks)]
     if fold:
         out = [fold_diacritics(t) for t in out]
     return out
@@ -125,9 +165,13 @@ cincizeci șaizeci șaptezeci optzeci nouăzeci o sută suta sute zecea întâi"
 _NUM_KEYS = {phon_key(w) for w in _NUM_WORDS} | {fold_diacritics(phon_key(w)) for w in _NUM_WORDS}
 _HEADER_KEYS = {phon_key(w) for w in ("capitolul", "psalmul", "capitol")}
 _SI = {phon_key("și"), "si"}
+# also articles ('o femeie', 'un om'): a number only when another number word follows ('o sută')
+_AMBIG_KEYS = {phon_key(w) for w in ("o", "un", "una")}
 
 
-def _is_num(k: str) -> bool:
+def _is_num(k: str, nxt: str | None = None) -> bool:
+    if k in _AMBIG_KEYS:
+        return nxt is not None and nxt not in _AMBIG_KEYS and _is_num(nxt)
     return k.isdigit() or k in _NUM_KEYS
 
 
@@ -149,9 +193,10 @@ def strip_headers_idx(keys: list[str]) -> list[int]:
             j = i + 1
             while j < n and j - i <= 6:
                 kj = keys[j]
-                if _is_num(kj):
+                nxt = keys[j + 1] if j + 1 < n else None
+                if _is_num(kj, nxt):
                     j += 1
-                elif kj in _SI and j + 1 < n and _is_num(keys[j + 1]):
+                elif kj in _SI and nxt is not None and _is_num(nxt, keys[j + 2] if j + 2 < n else None):
                     j += 1
                 else:
                     break

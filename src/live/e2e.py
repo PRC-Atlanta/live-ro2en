@@ -4,6 +4,8 @@ mock ProPresenter, then report latency.
   .venv-mt/bin/python src/live/e2e.py --audio work/bible/excerpts/49-Efes_00.flac [--mode auto]
   .venv-mt/bin/python src/live/e2e.py --mixed      # RO excerpt + English TTS + RO (auto-detect test)
 Writes results/e2e_<name>.json and appends a row to results/e2e_latency.csv.
+The summary carries a pass/fail verdict (`pass`, `fail_reasons`); --strict exits 1 on a fail.
+--ref-text <file> also scores the source transcript (WER) and gates it with --max-wer.
 Latency = time the caption reached ProPresenter minus the end of the last voiced frame of
 the clause (audio is paced in real time, so this is what a congregation would see)."""
 from __future__ import annotations
@@ -68,6 +70,11 @@ def main() -> None:
     ap.add_argument("--stt")
     ap.add_argument("--name")
     ap.add_argument("--profile", default=None, help="fast | quality")
+    ap.add_argument("--strict", action="store_true", help="exit 1 when the run fails the gate")
+    ap.add_argument("--max-failed-frac", type=float, default=0.15)
+    ap.add_argument("--min-first-word-6s", type=float, default=0.8)
+    ap.add_argument("--ref-text", help="reference transcript of the audio, to score the source text")
+    ap.add_argument("--max-wer", type=float, default=0.15)
     ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                     help="override a profile setting, e.g. --set max_chunk_s=3.5 (numbers parsed)")
     a = ap.parse_args()
@@ -132,18 +139,49 @@ def main() -> None:
                "avg_words": round(statistics.mean(len(r["source"].split()) for r in recs), 1) if recs else None, "frac_under_2s": round(sum(x <= 2 for x in lat) / max(len(lat), 1), 3),
                **{f"med_{k}": v for k, v in comp.items()}, "lang_sequence": "".join(l[0] for l in langs),
                "wall_s": round(time.time() - t0, 1), "log": str(live.log_path.relative_to(ROOT))}
+    summary.update(gate(summary, recs, a))
     out = ROOT / "results"
     out.mkdir(exist_ok=True)
     (out / f"e2e_{name}.json").write_text(json.dumps({"summary": summary, "samples": recs[:12]},
                                                      ensure_ascii=False, indent=1))
-    f = out / "e2e_latency_v3.csv"            # v3 adds first-word delay columns
+    f = out / "e2e_latency_v4.csv"            # v4 adds outcome counts, eof/exit and the pass/fail gate
     new = not f.exists()
+    row = {k: json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else v for k, v in summary.items()}
     with open(f, "a", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(summary))
+        w = csv.DictWriter(fh, fieldnames=list(row))
         if new:
             w.writeheader()
-        w.writerow(summary)
+        w.writerow(row)
     print(json.dumps(summary, ensure_ascii=False))
+    if a.strict and not summary["pass"]:
+        sys.exit(1)
+
+
+def gate(summary: dict, recs: list[dict], a) -> dict:
+    """Pass/fail for a run: it must reach the end of the audio cleanly, caption nearly every
+    chunk, keep the first word within 6 s, and (with a reference) transcribe accurately."""
+    reasons = []
+    if not summary["eof_reached"]:
+        reasons.append("did not reach the end of the audio")
+    if summary["engine_exit"] not in (0, None):
+        reasons.append(f"engine exited with {summary['engine_exit']}")
+    total = summary["clauses"] + summary["failed_chunks"]
+    if total == 0:
+        reasons.append("no captions at all")
+    elif summary["failed_chunks"] / total > a.max_failed_frac:
+        reasons.append(f"{summary['failed_chunks']}/{total} chunks without a caption")
+    if summary["frac_first_word_le_6s"] < a.min_first_word_6s:
+        reasons.append(f"first word within 6 s only {summary['frac_first_word_le_6s']:.0%}")
+    out = {}
+    if a.ref_text:
+        from scoring import score
+        from textnorm import key_tokens
+        hyp = " ".join(r["source"] for r in sorted(recs, key=lambda r: r["t_start"]))
+        s = score(key_tokens(pathlib.Path(a.ref_text).read_text()), key_tokens(hyp), free_ends=False)
+        out["source_wer"] = round(s["wer"], 4)
+        if s["wer"] > a.max_wer:
+            reasons.append(f"source WER {s['wer']:.1%} > {a.max_wer:.0%}")
+    return {**out, "pass": not reasons, "fail_reasons": reasons}
 
 
 if __name__ == "__main__":

@@ -50,22 +50,28 @@ def _nemo_text(out):
     return h if isinstance(h, str) else h.text
 
 
+def set_decoding(m, decoder: str, lm_path: str | None = None, beam: int = 32) -> None:
+    """TDT/RNNT greedy, CTC greedy, or CTC + n-gram LM beam on a hybrid TDT-CTC model
+    (also used by src/finetune/eval_holdout.py, so fine-tuned and baseline decode alike)."""
+    if decoder == "rnnt":
+        m.change_decoding_strategy(decoder_type="rnnt")
+    elif lm_path is None:
+        from omegaconf import OmegaConf
+        m.change_decoding_strategy(OmegaConf.create({"strategy": "greedy_batch"}), decoder_type="ctc")
+    else:
+        from huggingface_hub import hf_hub_download
+        from omegaconf import OmegaConf
+        lm = lm_path if pathlib.Path(lm_path).exists() else hf_hub_download("surogate/jackrabbit-110m-ro", lm_path)
+        m.change_decoding_strategy(OmegaConf.create({
+            "strategy": "beam_batch",
+            "beam": {"beam_size": beam, "ngram_lm_model": lm, "ngram_lm_alpha": 0.5, "beam_beta": 2.0,
+                     "return_best_hypothesis": True, "allow_cuda_graphs": False}}), decoder_type="ctc")
+
+
 def _jackrabbit(decoder: str, lm_path: str | None = None, beam: int = 32):
     def load():
         m = _nemo_restore("surogate/jackrabbit-110m-ro", "jackrabbit-110m-ro.nemo")
-        if decoder == "rnnt":
-            m.change_decoding_strategy(decoder_type="rnnt")
-        elif lm_path is None:
-            from omegaconf import OmegaConf
-            m.change_decoding_strategy(OmegaConf.create({"strategy": "greedy_batch"}), decoder_type="ctc")
-        else:
-            from huggingface_hub import hf_hub_download
-            from omegaconf import OmegaConf
-            lm = lm_path if pathlib.Path(lm_path).exists() else hf_hub_download("surogate/jackrabbit-110m-ro", lm_path)
-            m.change_decoding_strategy(OmegaConf.create({
-                "strategy": "beam_batch",
-                "beam": {"beam_size": beam, "ngram_lm_model": lm, "ngram_lm_alpha": 0.5, "beam_beta": 2.0,
-                         "return_best_hypothesis": True, "allow_cuda_graphs": False}}), decoder_type="ctc")
+        set_decoding(m, decoder, lm_path, beam)
         return _with_model(lambda path: _nemo_text(m.transcribe([path], batch_size=1, verbose=False)), m)
     return load
 

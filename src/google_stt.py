@@ -331,15 +331,17 @@ class GoogleSTT:
             ops[name]["status"] = f"error {op.error.code}: {op.error.message[:200]}"
             save_ops(ops)
             return True
-        errors = {}
+        errors, unknown = {}, None
         try:
             from google.cloud.speech_v2.types import cloud_speech as cs
             resp = cs.BatchRecognizeResponse.deserialize(op.response.value)
             errors = {pathlib.Path(uri).stem: r.error.message[:300] for uri, r in resp.results.items() if r.error.code}
-        except Exception:
-            pass
+        except Exception as e:       # per-file errors unreadable: say so, don't claim success
+            unknown = type(e).__name__
+            print(f"could not parse BatchRecognize response for {name}: {unknown}: {e}", file=sys.stderr, flush=True)
         self.download(info)
-        ops[name]["status"] = "done" if not errors else f"done, {len(errors)} file(s) failed"
+        ops[name]["status"] = (f"done, errors unknown ({unknown})" if unknown
+                               else f"done, {len(errors)} file(s) failed" if errors else "done")
         if errors:
             ops[name]["file_errors"] = errors
             for f, msg in errors.items():

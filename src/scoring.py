@@ -122,10 +122,14 @@ def corpus_score(items: list[dict]) -> dict:
     return {"wer": e / max(n, 1), "cer": c / max(n, 1), "n_ref": n}
 
 
+MIN_VOTERS = 3     # rover() of 1-2 hypotheses is just the first one, not a consensus
+
+
 def rover(hyps: list[list[str]]) -> list[str]:
     """ROVER-style consensus: the hypothesis with the lowest mean WER to the others is the
     backbone; every other hypothesis is aligned to it and each backbone slot (plus the gap
-    before it) takes the majority token. Ties keep the backbone."""
+    before it) takes the majority token. Ties keep the backbone. Fewer than MIN_VOTERS
+    non-empty hypotheses: returns the first one unchanged."""
     hyps = [h for h in hyps if h]
     if not hyps:
         return []

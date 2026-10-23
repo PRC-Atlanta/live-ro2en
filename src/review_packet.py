@@ -4,7 +4,8 @@ disagrees with the best local model highlighted for a Romanian speaker to fix.
 
   .venv/bin/python src/review_packet.py --set sermon --ref google-chirp_2 --local jackrabbit-tdt-boost
   (after review)  .venv/bin/python src/review_packet.py rescore review_packet/corrections.json
-Output: review_packet/index.html (works offline: audio players + editable highlights +
+Output: review_packet/index.html (works offline: audio players + editable clip text with
+highlighted disagreements +
 "Save corrections" button), review_packet/clips/*.mp3, review_packet/clips/*.txt
 (plain-text fallback: disagreements marked as [[reference || local]]), README.md."""
 from __future__ import annotations
@@ -63,6 +64,8 @@ body{font:17px/1.6 -apple-system,system-ui,sans-serif;max-width:860px;margin:0 a
 mark{background:#ffe08a;padding:1px 3px;border-radius:3px;outline:none}
 mark:focus{background:#ffd04d;box-shadow:0 0 0 2px #c58b00}
 mark[data-edited]{background:#b9e6c3}
+.t{outline:none;border-radius:4px;padding:2px 4px}
+.t:focus{box-shadow:0 0 0 1px #bbb}
 .alt{color:#6b6b66;font-size:14px}
 section{border-top:1px solid #ddd;padding:12px 0}
 button{font:inherit;padding:8px 16px;border-radius:8px;border:1px solid #888;background:#1f7a4d;color:#fff;cursor:pointer}
@@ -70,20 +73,29 @@ audio{width:100%}
 @media (prefers-color-scheme: dark){body{background:#141413;color:#ecece8}mark{background:#6b5300;color:#fff}mark[data-edited]{background:#24603a}.alt{color:#9b9b94}}
 </style></head><body>
 <h1>Verificare transcriere predici</h1>
-<p><b>Instrucțiuni:</b> Ascultați fiecare fragment. Corectați <b>doar textul evidențiat cu galben</b>
-(click pe el și scrieți textul corect, cu diacritice ă â î ș ț). Sub fiecare fragment, rândul gri arată ce a
-auzit celălalt sistem — poate fi corect sau nu. Dacă textul galben este deja corect, lăsați-l așa.
+<p><b>Instrucțiuni:</b> Ascultați fiecare fragment. Verificați mai ales <b>textul evidențiat cu galben</b>
+(click pe el și scrieți textul corect, cu diacritice ă â î ș ț). Puteți corecta și alte cuvinte greșite:
+tot textul fragmentului se poate edita. Sub fiecare fragment, rândul gri arată ce a auzit celălalt
+sistem — poate fi corect sau nu. Dacă textul este deja corect, lăsați-l așa.
 Când terminați, apăsați <b>Salvează corecturile</b> și trimiteți fișierul <code>corrections.json</code>.</p>
-<p class="alt">Instructions: listen to each clip and correct only the yellow text. Grey lines show the other
-system's version. Save with the button and send back corrections.json.</p>
+<p class="alt">Instructions: listen to each clip and check the yellow text first; you may also correct
+other words (the whole clip text is editable). Grey lines show the other system's version. Save with
+the button and send back corrections.json.</p>
 __BODY__
 <p><button id="save">Salvează corecturile / Save corrections</button></p>
 <script>
-document.querySelectorAll('mark').forEach(m=>{m.contentEditable=true;m.addEventListener('input',()=>m.dataset.edited=1)});
+// the whole clip text is editable; highlights stay as cues and turn green once touched
+document.querySelectorAll('.t').forEach(t=>{
+  t.contentEditable=true;
+  t.addEventListener('keydown',e=>{if(e.key==='Enter')e.preventDefault();});   // one line per clip
+  t.addEventListener('paste',e=>{e.preventDefault();
+    document.execCommand('insertText',false,e.clipboardData.getData('text/plain').replace(/\\s+/g,' '));});
+  t.addEventListener('input',()=>{const n=getSelection().anchorNode;
+    const m=n&&(n.nodeType===1?n:n.parentElement).closest('mark');if(m)m.dataset.edited=1;});});
 document.getElementById('save').onclick=()=>{
   const out={};
-  document.querySelectorAll('section').forEach(s=>{out[s.dataset.id]=[...s.querySelector('.t').childNodes]
-    .map(n=>n.textContent).join('').replace(/\\s+/g,' ').trim();});
+  document.querySelectorAll('section').forEach(s=>{out[s.dataset.id]=s.querySelector('.t').textContent
+    .replace(/\\s+/g,' ').trim();});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([JSON.stringify(out,null,1)],{type:'application/json'}));
   a.download='corrections.json';a.click();};
@@ -126,7 +138,8 @@ def build(set_name: str, ref: str, local: str, minutes: float, out: pathlib.Path
 
 {len(meta)} clips, {total / 60:.1f} min. Reference text: **{refm}**; highlighted where it disagrees with **{local}**.
 
-1. Open `index.html` in a browser (works offline). Listen, fix only the yellow words, click **Save corrections**.
+1. Open `index.html` in a browser (works offline). Listen, fix the yellow words (any other word can be
+   corrected too), click **Save corrections**.
 2. Put the downloaded `corrections.json` in this folder.
 3. Rescore every model against the corrected text:
    `.venv/bin/python src/review_packet.py rescore review_packet/corrections.json`

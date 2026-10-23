@@ -35,6 +35,7 @@ netaudit.install()                 # no-op unless NET_AUDIT_LOG is set (offline 
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from langid import score as lang_score      # noqa: E402
 from segmenter import PauseTracker          # noqa: E402
 from vad import FRAME, SileroVAD            # noqa: E402
 
@@ -182,6 +183,12 @@ class Engine:
         # interface) for this long is reported; a real quiet room still has a noise floor
         self.no_audio_s = float(cfg.get("audio_watchdog_s", 2.0))
         self.silent_s = float(cfg.get("digital_silence_s", 10.0))
+        # speech-recognition backlog (live input only): when frames are dequeued more than
+        # backlog_s after capture, short pauses are skipped while queued audio remains, so the
+        # backlog is recognised in fewer, longer calls (up to catchup_max_s of audio each)
+        self.realtime = True
+        self.backlog_s = float(cfg.get("stt_backlog_s", 3.0))
+        self.catchup_max = int(cfg.get("catchup_max_s", 20.0) * SR / FRAME)
         # English recognizer: Whistle (streaming, offline) or the previous Parakeet path (A/B)
         self.whistle = None
         self.wcfg = cfg.get("whistle") or {}
@@ -204,6 +211,15 @@ class Engine:
             from parakeet_stream import ParakeetStreamSTT
             self.streamer = ParakeetStreamSTT(cfg.get("parakeet_stream") or {})
         self._wstream = None                             # (assembler, wall_t0, chunk buffer)
+        # English needs a recognizer that hears it: auto needs one to detect the language
+        self.english_ok = self.multi is not None or self.whistle is not None or self.streamer is not None
+        if not self.english_ok and self.mode != "ro-en":
+            self._refuse(self.mode)
+            self.mode = "ro-en"
+
+    def _refuse(self, mode: str) -> None:
+        emit({"type": "mode", "mode": "ro-en",
+              "msg": f"{mode} needs the multilingual model, which is unavailable: running RO→EN only"})
 
     def transcribe(self, audio: np.ndarray, t_start: float, t_end: float, t_speech: float | None = None,
                    final: bool = True) -> None:
@@ -242,7 +258,9 @@ class Engine:
         held = getattr(self.stt_ctx if need_ro else (self.multi_ctx or self.stt_ctx), "held", 0)
         self._held_t = (t_end - 0.4 * held) if (held and not final) else None
         en = ""
-        if self.whistle is not None and self.mode != "ro-en":
+        # auto: Whistle only when the clause is not clearly Romanian (it would be discarded)
+        clearly_ro = self.mode == "auto" and bool(multi) and lang_score(multi) > 0.15
+        if self.whistle is not None and self.mode != "ro-en" and not clearly_ro:
             en = self.whistle(audio)                                         # English text
         if self.mode == "en-ro" and not ro:
             ro = en or multi
@@ -320,6 +338,7 @@ class Engine:
             self.pt.reset()
 
         last_frame = last_sound = time.time()
+        behind = pause_pending = False
         alarm = None                                     # current audio fault, reported once
 
         def audio_state(kind: str | None, msg: str = "") -> None:
@@ -341,12 +360,24 @@ class Engine:
                 emit({"type": "eof"})
                 return
             if isinstance(item, dict):
-                if item.get("mode") and item["mode"] != self.mode:
+                m = item.get("mode")
+                if m and m != "ro-en" and not self.english_ok:
+                    self._refuse(m)                      # stays RO→EN; the app is told why
+                elif m and m != self.mode:
                     commit_all()
-                    self.mode = item["mode"]
+                    self.mode = m
                 continue
             ts, fr = item
             last_frame = time.time()
+            lag = last_frame - ts
+            if self.realtime and self.backlog_s:
+                if not behind and lag > self.backlog_s:
+                    behind = True
+                    emit({"type": "backlog", "ok": False, "s": round(lag, 1),
+                          "msg": f"speech recognition is {lag:.0f} s behind the audio"})
+                elif behind and lag < self.backlog_s / 3:
+                    behind = False
+                    emit({"type": "backlog", "ok": True, "s": round(lag, 1), "msg": "caught up"})
             if np.abs(fr).max() > 1e-6:
                 last_sound = last_frame
             if self.silent_s and last_frame - last_sound > self.silent_s:
@@ -372,12 +403,21 @@ class Engine:
             ev = self.pt.push(p)
             if self.max_commit and len(frames) >= self.max_commit:
                 ev = "force"
-            if ev == "pause" and len(frames) < self.min_commit:
-                continue                                  # short pause inside a sentence: keep going
+            # keep accumulating across a pause: quality profile (min_commit) or a backlog
+            # that is still queued (recognise it in one longer call instead of many short ones)
+            want_more = len(frames) < self.min_commit or \
+                (behind and not q.empty() and len(frames) < self.catchup_max)
+            if ev == "pause" and want_more:
+                pause_pending = True                      # remember it: the tracker won't repeat it
+                continue
+            if ev is None and pause_pending and not self.pt.in_speech and not want_more:
+                ev = "pause"                              # the skipped pause, now long enough
+            if ev:
+                pause_pending = False
             first_voiced = next((t for t, pp in zip(times, probs) if pp >= self.pt.threshold), times[0])
             if ev == "pause":
                 # trim trailing silence, keep 100 ms
-                k = max(i for i, pp in enumerate(probs) if pp >= self.pt.threshold) + 4
+                k = max((i for i, pp in enumerate(probs) if pp >= self.pt.threshold), default=len(probs) - 5) + 4
                 self.transcribe(np.concatenate(frames[:k]), times[0], last_voiced, first_voiced)
                 frames, probs, times = [], [], []
             elif ev == "force":
@@ -387,7 +427,7 @@ class Engine:
                 cut = lo + int(np.argmin(probs[lo:hi]))
                 self.transcribe(np.concatenate(frames[:cut]), times[0], times[cut - 1], first_voiced, final=False)
                 frames, probs, times = frames[cut:], probs[cut:], times[cut:]
-            elif self.partial_every and ts - last_partial > self.partial_every and len(frames) > 30:
+            elif self.partial_every and not behind and ts - last_partial > self.partial_every and len(frames) > 30:
                 last_partial = ts
                 try:
                     emit({"type": "partial", "text": self.stt(np.concatenate(frames)).strip()})
@@ -410,6 +450,7 @@ def main() -> None:
     if a.no_partials:
         cfg["partial_every_s"] = 0
     eng = Engine(a.stt, a.mode, cfg)
+    eng.realtime = not a.file or a.realtime      # a fast file run is not "behind"
     stop = threading.Event()
     q: queue.Queue = queue.Queue()
 

@@ -4,7 +4,9 @@
 Per model, per excerpt:
   - silver WER/CER vs Google (only if --silver is given; use it only after Google passed
     the Bible validation, see BENCHMARK.md)
-  - consensus WER: vs a ROVER consensus of the OTHER models (leave-one-out)
+  - consensus WER: vs a ROVER consensus of the OTHER models (leave-one-out); blank when
+    fewer than 3 others voted on some excerpt (it would just be one model's text), see
+    consensus_voters
   - term hit rate: terms.txt terms present in the consensus, spelled exactly by the model;
     'near' = right word, wrong diacritics/close misspelling
   - diacritic accuracy: among the model's words that match a consensus word containing
@@ -24,7 +26,7 @@ import pandas as pd
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from score_bible import load_terms, term_stats                         # noqa: E402
-from scoring import align, corpus_score, rover, score                  # noqa: E402
+from scoring import MIN_VOTERS, align, corpus_score, rover, score      # noqa: E402
 from textnorm import fold_diacritics, key_tokens, phon_key, tokens     # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -81,13 +83,14 @@ def main() -> None:
             print(f"SKIPPED {m}: transcripts for {sum(ex in hyps[m] for ex in excerpts)}/{len(excerpts)} excerpts",
                   file=sys.stderr)
             continue
-        cons_items, silver_items = [], []
+        cons_items, silver_items, n_vote = [], [], []
         tagg = [0, 0, 0]
         dn = dok = dced = 0
         for ex in excerpts:
-            others = [key_tokens(hyps[o][ex]) for o in voters if o != m]
+            others = [key_tokens(hyps[o][ex], numbers=True) for o in voters if o != m]
+            n_vote.append(sum(1 for o in others if o))
             others_raw = [tokens(hyps[o][ex]) for o in voters if o != m]
-            hk = key_tokens(hyps[m][ex])
+            hk = key_tokens(hyps[m][ex], numbers=True)
             cons_items.append(score(rover(others), hk, free_ends=False))
             cons_raw = rover(others_raw)
             for n_ref, hit, near in term_stats(cons_raw, tokens(hyps[m][ex]), terms).values():
@@ -95,16 +98,23 @@ def main() -> None:
             n, ok, ced = diacritic_acc(hyps[m][ex], cons_raw)
             dn += n; dok += ok; dced += ced
             if a.silver and a.silver != m and ex in hyps.get(a.silver, {}):
-                silver_items.append(score(key_tokens(hyps[a.silver][ex]), hk, free_ends=False))
+                silver_items.append(score(key_tokens(hyps[a.silver][ex], numbers=True), hk, free_ends=False))
         c = corpus_score(cons_items)
-        row = {"model": m, "consensus_wer": round(100 * c["wer"], 2), "consensus_cer": round(100 * c["cer"], 2),
+        voted = min(n_vote, default=0)
+        if voted < MIN_VOTERS:
+            print(f"WARNING {m}: only {voted} other voter(s) on some excerpt; consensus WER left blank "
+                  f"(term/diacritic figures compare against that model's text)", file=sys.stderr)
+        enough = voted >= MIN_VOTERS
+        row = {"model": m, "consensus_voters": voted,
+               "consensus_wer": round(100 * c["wer"], 2) if enough else None,
+               "consensus_cer": round(100 * c["cer"], 2) if enough else None,
                "term_hit": round(100 * tagg[1] / max(tagg[0], 1), 1), "term_near": round(100 * tagg[2] / max(tagg[0], 1), 1),
                "term_n": tagg[0], "diacritic_acc": round(100 * dok / max(dn, 1), 1), "cedilla_chars": dced}
         if silver_items:
             s = corpus_score(silver_items)
             row.update({"silver_wer": round(100 * s["wer"], 2), "silver_cer": round(100 * s["cer"], 2)})
         rows.append(row)
-    rows.sort(key=lambda r: r.get("silver_wer", r["consensus_wer"]))
+    sort_rows(rows)
     out = ROOT / "results"
     out.mkdir(exist_ok=True)
     keys = sorted({k for r in rows for k in r}, key=lambda k: (k != "model", k))
@@ -112,6 +122,15 @@ def main() -> None:
         w = csv.DictWriter(f, fieldnames=keys); w.writeheader(); w.writerows(rows)
     print(pd.DataFrame(rows).to_string(index=False))
     side_by_side(a.set, man, hyps, [r["model"] for r in rows][:4], a.silver)
+
+
+def sort_rows(rows: list[dict]) -> None:
+    """One metric for the whole table: silver WER if every row has it, else consensus WER
+    (blank consensus last)."""
+    if rows and all("silver_wer" in r for r in rows):
+        rows.sort(key=lambda r: r["silver_wer"])
+    else:
+        rows.sort(key=lambda r: (r["consensus_wer"] is None, r["consensus_wer"] or 0))
 
 
 def side_by_side(set_name, man, hyps, models, silver, n=10) -> None:

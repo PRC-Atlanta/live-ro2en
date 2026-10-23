@@ -3,7 +3,7 @@
 # then run the offline EN→RO A/B on it.
 cd "$(dirname "$0")/.."
 while true; do
-  F=$(ls Audio/EN* 2>/dev/null | head -1)
+  EN=(Audio/EN*); F=""; [ -e "${EN[0]}" ] && F=${EN[0]}
   if [ -n "$F" ]; then
     S1=$(stat -f %z "$F"); sleep 30; S2=$(stat -f %z "$F")
     [ "$S1" = "$S2" ] && [ "$S1" -gt 1000000 ] && break
