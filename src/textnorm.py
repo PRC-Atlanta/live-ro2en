@@ -141,7 +141,8 @@ def num_words(n: int) -> str:
 
 
 # one form per number word, applied to both sides: '42 de luni' is spoken 'patruzeci și două'
-_GENDER = {"două": "doi", "douăsprezece": "doisprezece", "una": "unu"}
+_GENDER = {"două": "doi", "douăsprezece": "doisprezece", "una": "unu",
+           "doua": "doi", "douasprezece": "doisprezece"}     # also without diacritics (wer_nodiac)
 
 
 def expand_numbers(toks: list[str]) -> list[str]:

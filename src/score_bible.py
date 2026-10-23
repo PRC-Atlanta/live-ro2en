@@ -198,11 +198,15 @@ def main() -> None:
     # partial run is scored on the same reference words as the others, not on fewer
     hk_of = {(m, ex): strip_headers(key_tokens(exs.get(ex, ""), numbers=True)) for m, exs in hyps.items() for ex in ex_book}
     span = excerpt_spans(hk_of, ex_book, ref_key)
+    if set(ex_book) - set(span):
+        print(f"WARNING: no transcript at all for {sorted(set(ex_book) - set(span))}; not scored", file=sys.stderr)
     per_ex, summary, term_rows = [], [], []
     n_ex = len(ex_book)
     for m, exs in sorted(hyps.items()):
         strict, folded, tagg = [], [], defaultdict(lambda: [0, 0, 0])
         for ex in sorted(ex_book):
+            if ex not in span:                   # no model has text for it: cannot be located
+                continue
             text = exs.get(ex, "")
             b = ex_book[ex]
             lo, hi = span[ex]

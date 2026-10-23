@@ -107,11 +107,11 @@ def find_spots(ref_text: str, google_text: str, local_text: str, alt_text: str) 
     for rt, at, at_ref in runs:
         rws, aws = close({rmap[i] for i in rt}, {amap[j] for j in at})
         at_w = rmap[at_ref] if at_ref < len(rmap) else len(rw)
-        if closed and (rws & closed[-1][0] or aws & closed[-1][1]):
-            rws, aws = close(closed[-1][0] | rws, closed[-1][1] | aws)     # overlapping spots: one spot
-            closed[-1] = [rws, aws, closed[-1][2]]
-        else:
-            closed.append([rws, aws, at_w])
+        while closed and (rws & closed[-1][0] or aws & closed[-1][1]):  # overlapping spots: one spot
+            prev = closed.pop()                                            # (re-check: closure may grow)
+            rws, aws = close(prev[0] | rws, prev[1] | aws)
+            at_w = prev[2]
+        closed.append([rws, aws, at_w])
     spots = []
     for rws, aws, at_w in closed:
         w0, w1 = (min(rws), max(rws) + 1) if rws else (at_w, at_w)

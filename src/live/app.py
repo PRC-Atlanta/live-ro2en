@@ -230,15 +230,17 @@ class Live:
                 self.status = f"listening ({ev['source']})"
             elif ev["type"] == "warn":
                 # e.g. the multilingual model failed to load: auto-detect degrades to RO only
-                self.warnings.append(ev["msg"])
+                if ev["msg"] == "audio input reopened":
+                    self.audio_fault = None              # the device is back
+                else:
+                    self._warn(ev["msg"])
                 self._log_event({"event": "warn", "msg": ev["msg"]})
             elif ev["type"] == "error":
                 self._on_engine_error(ev)
             elif ev["type"] == "mode":
                 # the engine could not run the requested mode (no multilingual model)
                 self.lang.set_mode(ev["mode"])
-                if ev["msg"] not in self.warnings:
-                    self.warnings.append(ev["msg"])
+                self._warn(ev["msg"])
                 self._log_event({"event": "mode", "mode": ev["mode"], "msg": ev["msg"]})
             elif ev["type"] == "backlog":
                 self.stt_behind = None if ev["ok"] else ev["msg"]
@@ -261,6 +263,8 @@ class Live:
             return
         self._flush()                        # a held fragment must not die with the engine
         self._drain()
+        if engine is not self.engine:        # a new run started while this one drained
+            return
         if not self.eof.is_set() and not self._stopping:
             self.status = f"ENGINE STOPPED (exit {rc}): captions halted, see logs/engine.log"
             self._log_event({"event": "engine_exit", "rc": rc})
@@ -356,9 +360,18 @@ class Live:
         if where == "transcribe":
             self.status = f"speech recognition failed on one chunk ({ev['msg'][:60]}); still listening"
             self._log_failure(ev, "stt_error", error=ev["msg"])
-        else:
-            self.warnings.append(f"{where}: {ev['msg']}")
+        elif where == "audio input":                   # retried every few seconds: one live alert
+            self.audio_fault = f"input device: {ev['msg']}"
             self._log_event({"event": "error", "where": where, "msg": ev["msg"]})
+        else:
+            self._warn(f"{where}: {ev['msg']}")
+            self._log_event({"event": "error", "where": where, "msg": ev["msg"]})
+
+    def _warn(self, msg: str, keep: int = 20):
+        """Shown until the next start; a repeated message is listed once, and the list is
+        bounded so a recurring fault cannot flood the control page."""
+        if msg not in self.warnings:
+            self.warnings = (self.warnings + [msg])[-keep:]
 
     def _handle(self, ev: dict):
         """Never let one bad chunk stop the service: log it and carry on."""

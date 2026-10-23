@@ -59,7 +59,7 @@ live engine uses; "clause 6 s" is the STT time for a 6 s clause, and "stream lat
 | SpeD 110M CTC | 11.18 | 10.25 | 3.99 | 75.1 (17.6) | 10.50 | — | — | — | Apache-2.0 |
 | Parakeet-TDT-0.6B-v3 (MLX) | 14.61 | 13.98 | 4.64 | 73.2 (20.0) | 13.36 | 0.015 | 0.14 (0.14) | 0.49 s | CC-BY-4.0 |
 | Parakeet Redux (1.58-bit) | 15.21 | 14.48 | 4.94 | 75.1 (16.1) | 14.14 | 0.019 | 0.07 (0.07) | 0.42 s | CC-BY-4.0 |
-| whisper-large-v3-turbo_ro (TransferRapid) | 31.88 | 31.28 | 23.14 | 55.1 (13.7) | 32.23 | 0.072 | 0.82 (0.89) | 1.24 s | CC-BY-NC-4.0 |
+| whisper-large-v3-turbo_ro (TransferRapid) | 31.86 | 31.25 | 23.14 | 55.1 (13.7) | 32.23 | 0.072 | 0.82 (0.89) | 1.24 s | CC-BY-NC-4.0 |
 
 Term accuracy is measured on terms.txt, which is also the phrase-boost list: for the boosted rows
 (phrase boost, Chirp 2 phrase set) it is an in-sample figure, not held-out term recall.

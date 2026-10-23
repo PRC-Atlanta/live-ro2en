@@ -181,3 +181,9 @@ def test_sermon_pipeline_fails_when_scoring_fails(tmp_path):
         (b / "python").chmod(0o755)
     r = subprocess.run(["bash", str(tmp_path / "scripts" / "run_sermon_pipeline.sh")], capture_output=True, text=True)
     assert r.returncode == 1 and "INCOMPLETE" in r.stdout and "pipeline done" not in r.stdout
+
+
+def test_number_fold_without_diacritics():
+    from textnorm import key_tokens
+    assert key_tokens("cele două femei", fold=True, numbers=True) == key_tokens("cele doua femei", fold=True, numbers=True)
+    assert key_tokens("douasprezece seminții", numbers=True) == key_tokens("doisprezece seminții", numbers=True)

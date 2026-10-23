@@ -581,3 +581,58 @@ def test_control_api_https_proxy_and_lan_host():
     assert request_allowed(lan, "POST", hosts, port)                         # listed host behind a proxy
     assert not request_allowed({**lan, "origin": "https://evil.example"}, "POST", hosts, port)
     assert not request_allowed({"host": "127.0.0.1:8765", "origin": "https://127.0.0.1"}, "POST", hosts, port)
+
+
+def test_replugged_mic_is_found_again_by_name(monkeypatch):
+    devices = [{"name": "Built-in Mic", "max_input_channels": 1}, {"name": "USB Interface", "max_input_channels": 2}]
+    opened, inits = [], []
+
+    class Stream:
+        def __init__(self, callback, device=None, **k):
+            opened.append(device); self.cb = callback
+            if len(opened) == 1:
+                raise RuntimeError("device lost")              # unplugged
+        def __enter__(self):
+            threading.Thread(target=lambda: [self.cb(np.zeros((engmod.FRAME, 1), np.float32), 0, None, None)
+                                             for _ in range(3)], daemon=True).start()
+            return self
+        def __exit__(self, *a):
+            return False
+
+    def reinit():                                            # replugged: PortAudio renumbers devices
+        inits.append(1); devices.insert(0, {"name": "Virtual Out", "max_input_channels": 0})
+    sd = types.SimpleNamespace(InputStream=Stream, _terminate=lambda: None, _initialize=reinit,
+                               query_devices=lambda d=None: devices if d is None else devices[d])
+    monkeypatch.setitem(sys.modules, "sounddevice", sd)
+    monkeypatch.setattr(engmod, "emit", lambda ev: None)
+    q, stop = queue.Queue(), threading.Event()
+    th = threading.Thread(target=engmod.mic_source, args=("1", q, stop), kwargs={"retry_s": (0.05,)}, daemon=True)
+    th.start(); time.sleep(0.3); stop.set(); th.join(2)
+    assert opened[:2] == [1, 2] and inits == [1]               # re-initialised, same interface by name
+
+
+def test_recurring_faults_do_not_flood_warnings(tmp_path):
+    live = _live(tmp_path)
+    evs = [{"type": "error", "where": "audio input", "msg": f"PortAudioError: lost ({k})"} for k in range(50)]
+    evs += [{"type": "warn", "msg": "audio input reopened"}]
+    evs += [{"type": "error", "where": "english stream", "msg": "RuntimeError: x"}] * 5
+    evs += [{"type": "warn", "msg": f"note {k}"} for k in range(30)]
+    live.engine = FakeEngine(evs, rc=0)
+    live._stopping = True
+    live._reader(live.engine)
+    assert live.audio_fault is None                          # cleared when the device came back
+    assert len(live.warnings) == 20 and live.warnings.count("english stream: RuntimeError: x") <= 1
+    assert not any("audio input" in w for w in live.warnings)
+
+
+def test_old_reader_does_not_touch_a_new_run(tmp_path):
+    live = _live(tmp_path)
+    old = FakeEngine([{"type": "ready", "source": "x"}], rc=1)
+    live.engine, live.running = old, True
+    new = FakeEngine([], rc=None)
+    real_drain = live._drain
+    def drain_while_new_run_starts():
+        real_drain(); live.engine = new                       # Start happened during the drain
+    live._drain = drain_while_new_run_starts
+    live._reader(old)
+    assert live.running and "ENGINE STOPPED" not in live.status

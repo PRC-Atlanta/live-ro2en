@@ -139,6 +139,23 @@ def file_source(path: str, realtime: bool, q: queue.Queue, stop: threading.Event
     q.put(None)
 
 
+def _reopen_device(sd, dev, name: str | None):
+    """PortAudio lists devices once, at initialisation: a re-plugged interface is only seen
+    after a re-init, and its index may have changed. Find it again by name (or keep the
+    system default when none was chosen)."""
+    try:
+        sd._terminate()
+        sd._initialize()
+    except Exception:                            # noqa: BLE001  best effort; the open will tell
+        pass
+    if name is None:
+        return dev
+    for i, d in enumerate(sd.query_devices()):
+        if d.get("name") == name and d.get("max_input_channels", 0) > 0:
+            return i
+    return dev
+
+
 def mic_source(device, q: queue.Queue, stop: threading.Event, stall_s: float = 2.0,
                retry_s: tuple[float, ...] = (1, 2, 5)) -> None:
     """Capture until stop. A device that fails to open, errors, or stops delivering audio
@@ -151,9 +168,14 @@ def mic_source(device, q: queue.Queue, stop: threading.Event, stall_s: float = 2
         last["t"] = time.time()
         q.put((last["t"], indata[:, 0].copy()))
     dev = int(device) if isinstance(device, str) and device.isdigit() else device
+    name = None                                  # the device's name, to find it again after a replug
     failures = 0
     while not stop.is_set():
         try:
+            if failures:
+                dev = _reopen_device(sd, dev, name)
+            elif dev is not None:
+                name = sd.query_devices(dev)["name"]
             with sd.InputStream(samplerate=SR, channels=1, dtype="float32", blocksize=FRAME,
                                 device=dev, callback=cb):
                 last["t"] = time.time()

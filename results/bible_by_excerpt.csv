@@ -127,7 +127,7 @@ whisper-large-v3-mlx,49-Efes_00,0.066,0.0607,0.0272,379
 whisper-large-v3-mlx,59-Iac_00,0.08,0.0725,0.0331,400
 whisper-large-v3-mlx,60-1Pet_00,0.1005,0.1005,0.0543,408
 whisper-large-v3-mlx,66-Apoc_00,0.0725,0.0697,0.027,717
-whisper-turbo-ro-hf,01-Gen_00,0.2541,0.2479,0.2054,484
+whisper-turbo-ro-hf,01-Gen_00,0.2521,0.2459,0.2051,484
 whisper-turbo-ro-hf,19-Ps_00,0.3353,0.3274,0.2018,507
 whisper-turbo-ro-hf,40-Mat_00,0.4155,0.4119,0.3457,556
 whisper-turbo-ro-hf,43-Ioan_01,0.325,0.325,0.2375,520
