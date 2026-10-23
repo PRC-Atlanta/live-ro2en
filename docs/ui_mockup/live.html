@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Translate — UI mockup</title>
+<!--
+  Visual reference for S5a/S5b (docs/APP_PLAN.md §1.3). Static mock with fake data:
+  click the big dial (or Space) to go live, H hides captions, 1/2/3 speaker, V cycles the
+  Heard / On screen / Both tabs, P simulates a
+  ProPresenter outage. Fully offline: no external fonts or scripts.
+  The :root tokens below seed src/live/ui/styles/tokens.css.
+-->
+<style>
+  :root {
+    --bg-0:#060d12; --bg-1:#0a1a22; --bg-2:#10262f; --bg-3:#16323d;
+    --edge:#2b6f7e; --edge-glow:rgba(70,214,236,.28);
+    --cyan:#46d6ec; --cyan-hi:#9df1ff; --cyan-dim:#1f7f92; --cyan-fill:#2aa9bf;
+    --lime:#a3e635; --amber:#f5b83d; --red:#ff5d52;
+    --ink:#d9eef2; --label:#b9cbd0; --mute:#6f8b93;
+    --bar:#0b0d0e; --btn:#2a2f31; --btn-hi:#3a4144; --btn-edge:#555d60;
+    --font: -apple-system, "SF Pro Display", "Helvetica Neue", system-ui, sans-serif;
+    --num: "SF Pro Rounded", ui-rounded, -apple-system, system-ui, sans-serif;
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; }
+  body { background:var(--bg-0); color:var(--ink); font:15px/1.4 var(--font);
+         display:flex; justify-content:center; padding:16px; }
+  .unit { width:100%; max-width:760px; background:#000; border:1px solid #1b1f21;
+          box-shadow:0 10px 40px rgba(0,0,0,.6); align-self:flex-start; }
+
+  /* toolbar strip */
+  .bar { display:flex; gap:4px; align-items:center; padding:3px 4px; background:var(--bar);
+         border-bottom:1px solid #000; }
+  .logo { width:30px; height:24px; display:grid; place-items:center; font-weight:800;
+          color:var(--ink); letter-spacing:-1px; font-size:14px; }
+  .tb { font:12px var(--font); color:#dfe5e7; padding:4px 10px; min-height:24px;
+        background:linear-gradient(#3a4144,#25292b); border:1px solid var(--btn-edge);
+        border-radius:2px; cursor:pointer; }
+  .tb:hover { background:linear-gradient(#4a5256,#2e3336); }
+  .tb.wide { flex:1; text-align:center; }
+
+  /* main panel */
+  .panel { position:relative; margin:4px; padding:12px 14px 14px;
+           background:radial-gradient(120% 90% at 50% 55%, var(--bg-3) 0%, var(--bg-2) 35%, var(--bg-1) 100%);
+           border:1px solid var(--edge); border-radius:4px;
+           box-shadow:inset 0 0 0 1px rgba(70,214,236,.08), inset 0 0 30px rgba(0,0,0,.5), 0 0 12px var(--edge-glow); }
+
+  .label { font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--label); font-weight:600; }
+  .sub { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); }
+
+  /* scope display */
+  .scope { position:relative; height:170px; background:linear-gradient(#0c1d25,#0a171e);
+           border:1px solid #0f2a33; box-shadow:inset 0 0 18px rgba(0,0,0,.7); }
+  .scope canvas { width:100%; height:100%; display:block; }
+  .scope .tag { position:absolute; top:6px; left:10px; }
+  .scope .legend { position:absolute; top:6px; right:10px; display:flex; gap:14px; }
+  .scope .tag, .scope .legend { background:rgba(10,23,30,.85); padding:2px 6px; border-radius:2px; }
+  .key { display:inline-flex; align-items:center; gap:6px; }
+  .key i { width:14px; height:3px; display:inline-block; }
+
+  /* caption mirror */
+  .mirror { margin-top:10px; padding:10px 14px 12px; background:#050b0e;
+            border:1px solid #0f2a33; box-shadow:inset 0 0 14px rgba(0,0,0,.9); }
+  .mtabs { display:flex; align-items:center; gap:0; margin:-2px 0 6px; }
+  .mtab { font:600 11px var(--font); letter-spacing:.12em; text-transform:uppercase; color:var(--mute);
+          background:linear-gradient(#1a2024,#101417); border:1px solid #2c3438; margin-left:-1px;
+          padding:7px 12px; min-height:32px; cursor:pointer; }
+  .mtab:first-child { border-radius:3px 0 0 3px; margin-left:0; } .mtab:last-child { border-radius:0 3px 3px 0; }
+  .mtab[aria-selected="true"] { color:var(--cyan-hi); border-color:var(--cyan-dim); position:relative;
+          background:linear-gradient(#123742,#0b2028); box-shadow:inset 0 0 8px rgba(70,214,236,.25); }
+  .mtabs .sub { margin-left:auto; }
+  .views { display:grid; gap:14px; }
+  .views[data-view="both"] { grid-template-columns:1fr 1fr; }
+  .view { display:none; min-width:0; }
+  .views[data-view="heard"] .v-heard, .views[data-view="screen"] .v-screen,
+  .views[data-view="both"] .view { display:block; }
+  .vhead { display:none; margin-bottom:2px; }
+  .views[data-view="both"] .vhead { display:block; }
+  .views[data-view="both"] .v-screen { border-left:1px solid #0f2a33; padding-left:14px; }
+  .heard { min-height:2.8em; font-size:19px; line-height:1.45; color:var(--label); white-space:pre-wrap; }
+  .heard .old { color:var(--mute); }
+  .views[data-view="both"] .screen { font-size:19px; }
+  .mirror .screen { min-height:2.8em; font-size:24px; line-height:1.4; color:var(--cyan-hi);
+                    text-shadow:0 0 10px rgba(70,214,236,.35); white-space:pre-wrap; transition:opacity .2s; }
+  .mirror.hidden .screen { opacity:.15; }  /* transcription keeps going, so Heard stays bright */
+  .mirror .hidtag { display:none; color:var(--amber); }
+  .mirror.hidden .hidtag { display:inline; }
+
+  /* LED row */
+  .ledrow { display:flex; justify-content:space-between; align-items:center; gap:12px;
+            flex-wrap:wrap; margin:14px 4px 4px; }
+  .led { display:inline-flex; align-items:center; gap:10px; background:none; border:0; padding:8px 4px;
+         color:var(--label); cursor:pointer; min-height:44px; font:inherit; }
+  .led b { width:16px; height:16px; border-radius:50%; background:#0d2a33;
+           border:2px solid #2b5d68; box-shadow:inset 0 1px 3px rgba(0,0,0,.8); }
+  .led.on b { background:radial-gradient(circle at 40% 35%, #fff 0, var(--amber) 35%, #8a5a00 100%);
+              border-color:#ffd27a; box-shadow:0 0 10px var(--amber); }
+  .pills { display:flex; gap:16px; flex-wrap:wrap; }
+  .pill { display:inline-flex; align-items:center; gap:8px; }
+  .pill i { width:9px; height:9px; border-radius:50%; background:var(--lime); box-shadow:0 0 8px var(--lime); }
+  .pill.warn i { background:var(--amber); box-shadow:0 0 8px var(--amber); }
+  .pill.err i { background:var(--red); box-shadow:0 0 8px var(--red); }
+  .pill span { color:var(--ink); font-size:13px; }
+
+  /* problem banner */
+  .banner { display:none; margin:8px 4px 0; padding:10px 12px; border:1px solid var(--red);
+            background:rgba(255,93,82,.08); color:var(--ink); align-items:center; gap:12px; }
+  .banner.show { display:flex; }
+  .banner p { margin:0; flex:1; }
+  .banner button { font:inherit; font-size:13px; color:#fff; background:transparent; border:1px solid var(--red);
+                   padding:8px 14px; border-radius:3px; cursor:pointer; min-height:40px; }
+
+  /* control deck */
+  .deck { display:grid; grid-template-columns:1fr 1.6fr 1fr; align-items:end; gap:8px; margin-top:6px; }
+  .ctl { display:flex; flex-direction:column; align-items:center; gap:8px; }
+
+  /* small knob */
+  .knobwrap { position:relative; width:150px; height:118px; }
+  .knob { position:absolute; left:50%; top:16px; width:84px; height:84px; margin-left:-42px; border-radius:50%;
+          background:radial-gradient(circle at 50% 40%, #1d5a6a 0%, #0f3440 60%, #0a2730 100%);
+          border:2px solid var(--cyan); box-shadow:0 0 14px var(--edge-glow), inset 0 0 12px rgba(0,0,0,.6); }
+  .knob .ptr { position:absolute; left:50%; top:50%; width:3px; height:12px; margin-left:-1.5px;
+               background:var(--cyan-hi); border-radius:2px; transform-origin:50% 0; transition:transform .25s; }
+  .knob .val { position:absolute; inset:0; display:grid; place-items:center; font:600 15px var(--num); color:var(--ink); }
+  .pos { position:absolute; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--mute);
+         background:none; border:0; cursor:pointer; padding:6px; min-width:44px; font-family:inherit; }
+  .pos.on { color:var(--cyan-hi); text-shadow:0 0 8px rgba(70,214,236,.6); }
+
+  /* big dial */
+  .bigwrap { position:relative; width:260px; height:230px; margin:0 auto; }
+  .bigwrap svg { position:absolute; inset:0; }
+  .big { position:absolute; left:34px; top:24px; width:172px; height:172px; border-radius:50%; cursor:pointer;
+         border:0; padding:0; font:inherit; color:var(--ink);
+         background:radial-gradient(circle at 50% 38%, #24687a 0%, #123a46 55%, #0b2731 100%);
+         box-shadow:0 0 0 3px #0b2027, 0 0 0 5px var(--cyan), 0 0 26px rgba(70,214,236,.45),
+                    inset 0 0 22px rgba(0,0,0,.55); transition:box-shadow .3s; }
+  .big:focus-visible { outline:3px solid var(--cyan-hi); outline-offset:6px; }
+  .big .ring { position:absolute; inset:14px; border-radius:50%;
+               background:repeating-conic-gradient(from 0deg, rgba(157,241,255,.22) 0 1.2deg, transparent 1.2deg 7.5deg);
+               -webkit-mask:radial-gradient(circle, transparent 62%, #000 63%, #000 70%, transparent 71%);
+                       mask:radial-gradient(circle, transparent 62%, #000 63%, #000 70%, transparent 71%); }
+  .big .tri { position:absolute; left:10px; top:62px; width:0; height:0; border-top:13px solid transparent;
+              border-bottom:13px solid transparent; border-left:22px solid var(--cyan-hi);
+              filter:drop-shadow(0 0 6px var(--cyan)); transition:transform .4s; transform-origin:76px 13px; }
+  .big .face { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; }
+  .big .face strong { font:600 26px var(--num); letter-spacing:.02em; }
+  .big .face small { font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--label); }
+  .big.live { box-shadow:0 0 0 3px #0b2027, 0 0 0 5px var(--lime), 0 0 30px rgba(163,230,53,.45), inset 0 0 22px rgba(0,0,0,.55); }
+  .big.live .tri { border-left-color:var(--lime); filter:drop-shadow(0 0 6px var(--lime)); }
+  .big.loading { cursor:progress; }
+  .arc-lbl { position:absolute; right:-34px; top:-16px; text-align:left; }
+  .arc-lbl .v { color:var(--cyan); font:600 13px var(--num); }
+  .arc-ticks { position:absolute; right:12px; font:11px var(--num); color:var(--mute); }
+
+  /* footer */
+  .foot { display:flex; justify-content:space-between; align-items:flex-end; margin-top:10px; }
+  .mark { font:700 22px var(--font); letter-spacing:.04em; color:var(--cyan);
+          text-shadow:0 0 10px rgba(70,214,236,.35); }
+  .mark span { display:inline-block; width:2px; height:22px; background:var(--cyan); margin:0 6px -3px; }
+  .brand { text-align:right; color:var(--label); font-size:11px; letter-spacing:.12em; text-transform:uppercase; }
+  .brand b { display:block; color:var(--ink); font-size:15px; letter-spacing:.06em; }
+
+  .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+
+  @media (max-width:560px) {
+    body { padding:0; }
+    #setupname, .scope .legend, .mtabs .sub { display:none; }
+    .views[data-view="both"] { grid-template-columns:1fr; }
+    .views[data-view="both"] .v-screen { border-left:0; padding-left:0; border-top:1px solid #0f2a33; padding-top:8px; } .bar { justify-content:flex-end; } .logo { margin-right:auto; }
+    .deck { grid-template-columns:1fr 1fr; }
+    .deck .ctl.center { grid-column:1 / -1; order:-1; }
+    .scope { height:120px; }
+  }
+  /* small laptop window beside ProPresenter: keep the big dial above the fold */
+  @media (max-height:600px) {
+    body { padding:0; } .panel { padding:8px 10px; }
+    .scope { height:64px; } .scope .tag, .scope .legend { display:none; }
+    .mirror { margin-top:6px; padding:6px 10px; } .mirror .screen { font-size:19px; }
+    .ledrow { margin:6px 2px 0; } .deck { zoom:.72; margin-top:0; } .foot { display:none; }
+  }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+</style>
+</head>
+<body>
+<div class="unit">
+  <div class="bar">
+    <div class="logo" aria-hidden="true">LT</div>
+    <button class="tb" title="Run a rehearsal with a recorded sermon">Rehearsal</button>
+    <button class="tb wide" id="setupname">Sunday morning · Behringer UMC → ProPresenter</button>
+    <button class="tb">Names &amp; words</button>
+    <button class="tb">Settings</button>
+    <button class="tb" title="Help">?</button>
+  </div>
+
+  <div class="panel">
+    <div class="scope">
+      <canvas id="scope"></canvas>
+      <div class="tag sub">Sound · Behringer UMC</div>
+      <div class="legend sub">
+        <span class="key"><i style="background:var(--cyan-fill)"></i>Sound</span>
+        <span class="key"><i style="background:var(--lime)"></i>Speech heard</span>
+      </div>
+    </div>
+
+    <div class="mirror" id="mirror">
+      <div class="mtabs" role="tablist" aria-label="What to show">
+        <button class="mtab" role="tab" data-view="heard">Heard</button>
+        <button class="mtab" role="tab" data-view="screen">On screen</button>
+        <button class="mtab" role="tab" data-view="both">Both</button>
+        <span class="sub">V to switch <span class="hidtag">· captions hidden</span></span>
+      </div>
+      <div class="views" id="views" data-view="screen">
+        <div class="view v-heard" role="tabpanel">
+          <div class="vhead sub" id="heardhead">Heard · Romanian</div>
+          <div class="heard" id="heard"></div>
+        </div>
+        <div class="view v-screen" role="tabpanel">
+          <div class="vhead sub">On the big screen · English <span class="hidtag">· hidden</span></div>
+          <div class="screen" id="screen" aria-live="polite"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ledrow">
+      <button class="led" id="hide"><b></b><span class="label">Hide captions</span><span class="sub">H</span></button>
+      <div class="pills">
+        <span class="pill" id="p-sound"><i></i><span>Sound OK</span></span>
+        <span class="pill" id="p-pp"><i></i><span>ProPresenter connected</span></span>
+        <span class="pill" id="p-pace"><i></i><span>Keeping up</span></span>
+      </div>
+    </div>
+
+    <div class="banner" id="banner" role="alert">
+      <p id="bannertext"></p><button id="bannerbtn">Try again</button>
+    </div>
+
+    <div class="deck">
+      <div class="ctl">
+        <div class="knobwrap">
+          <button class="pos" data-mode="ro-en" style="left:0;top:86px">RO→EN</button>
+          <button class="pos" data-mode="auto" style="left:50%;top:-6px;transform:translateX(-50%)">Auto</button>
+          <button class="pos" data-mode="en-ro" style="right:0;top:86px">EN→RO</button>
+          <div class="knob" id="k-mode"><div class="ptr"></div><div class="val" id="k-mode-v">RO</div></div>
+        </div>
+        <div class="label">Speaker</div>
+        <div class="sub">1 · 2 · 3</div>
+      </div>
+
+      <div class="ctl center">
+        <div class="bigwrap">
+          <svg viewBox="0 0 260 230" aria-hidden="true">
+            <path d="M 176 13 A 112 112 0 0 1 176 207" fill="none" stroke="#0e2a33" stroke-width="10" stroke-linecap="butt"/>
+            <path id="arc" d="M 176 13 A 112 112 0 0 1 176 207" fill="none" stroke="var(--lime)" stroke-width="6"
+                  pathLength="100" stroke-dasharray="0 100" style="filter:drop-shadow(0 0 4px var(--lime));transition:stroke-dasharray .4s"/>
+            <circle id="arcdot" r="5" fill="var(--cyan-hi)" cx="176" cy="13" style="filter:drop-shadow(0 0 4px var(--cyan))"/>
+          </svg>
+          <div class="arc-lbl"><div class="label" style="font-size:11px">Delay</div><div class="v" id="delay">–</div></div>
+          <div class="arc-ticks" style="top:4px;right:94px">0 s</div>
+          <div class="arc-ticks" style="top:204px;right:94px">10 s</div>
+          <button class="big loading" id="big" aria-describedby="bighint">
+            <div class="ring"></div><div class="tri" id="tri"></div>
+            <div class="face"><strong id="bigtxt">62%</strong><small id="bigsub">Getting ready</small></div>
+          </button>
+        </div>
+        <div class="label">Captions</div>
+        <div class="sub" id="bighint">Space · double-press to stop</div>
+      </div>
+
+      <div class="ctl">
+        <div class="knobwrap">
+          <button class="pos" data-prof="fast" style="left:0;top:86px">Quickest</button>
+          <button class="pos" data-prof="quality" style="right:0;top:86px">Best</button>
+          <div class="knob" id="k-prof"><div class="ptr"></div><div class="val" id="k-prof-v">Best</div></div>
+        </div>
+        <div class="label">Quality</div>
+        <div class="sub">Q</div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <div class="mark">LIVE<span></span>TRANSLATE</div>
+      <div class="brand"><b>RO ⇄ EN</b>Offline · on this Mac</div>
+    </div>
+  </div>
+</div>
+<div class="sr" id="announce" aria-live="polite"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const S = { phase:'loading', pct:62, mode:'auto', profile:'quality', hidden:false, pp:true, delay:null, t0:0 };
+const LINES = [
+  ['Fiindcă atât de mult a iubit Dumnezeu lumea, că a dat', 'and God so loved the world that he gave'],
+  ['pe singurul Lui Fiu, pentru ca oricine crede în El', 'his only Son, that whoever believes in him'],
+  ['să nu piară, ci să aibă viața veșnică.', 'should not perish but have eternal life.'],
+  ['Frați și surori, aceasta este inima', 'Brothers and sisters, this is the heart'],
+  ['evangheliei pe care o predicăm în dimineața asta.', 'of the gospel we preach this morning.']];
+let li = 0, screen = [], heard = [];
+let view = 'screen';
+try { view = localStorage.getItem('lt.view') || 'screen'; } catch (e) {}
+
+function render() {
+  const big = $('big');
+  big.classList.toggle('loading', S.phase === 'loading');
+  big.classList.toggle('live', S.phase === 'live');
+  if (S.phase === 'loading') { $('bigtxt').textContent = S.pct + '%'; $('bigsub').textContent = 'Getting ready'; }
+  else if (S.phase === 'ready') { $('bigtxt').textContent = 'START'; $('bigsub').textContent = 'Ready'; }
+  else { const s = Math.floor((Date.now() - S.t0) / 1000);
+         $('bigtxt').textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+         $('bigsub').textContent = S.hidden ? 'Captions hidden' : 'Captioning'; }
+  $('tri').style.transform = S.phase === 'live' ? 'rotate(-90deg)' : 'none';
+
+  const modeAng = {'ro-en':50, auto:180, 'en-ro':-50}[S.mode];
+  $('k-mode').querySelector('.ptr').style.transform = `rotate(${modeAng}deg) translateY(27px)`;
+  $('k-mode-v').textContent = {'ro-en':'RO', auto:'AUTO', 'en-ro':'EN'}[S.mode];
+  document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === S.mode));
+  $('k-prof').querySelector('.ptr').style.transform = `rotate(${S.profile === 'fast' ? 50 : -50}deg) translateY(27px)`;
+  $('k-prof-v').textContent = S.profile === 'fast' ? 'Quick' : 'Best';
+  document.querySelectorAll('[data-prof]').forEach(b => b.classList.toggle('on', b.dataset.prof === S.profile));
+
+  $('hide').classList.toggle('on', S.hidden);
+  $('mirror').classList.toggle('hidden', S.hidden);
+  $('screen').textContent = screen.join('\n');
+  const hv = heard.slice(view === 'heard' ? -4 : -2);
+  $('heard').innerHTML = hv.map((t, i) => `<div class="${i < hv.length - 1 ? 'old' : ''}">${t}</div>`).join('');
+  $('views').dataset.view = view;
+  document.querySelectorAll('.mtab').forEach(t => t.setAttribute('aria-selected', t.dataset.view === view));
+  $('heardhead').textContent = 'Heard · ' + (S.mode === 'en-ro' ? 'English' : 'Romanian');
+
+  const d = S.delay, pct = d == null ? 0 : Math.min(100, d * 10);
+  $('arc').setAttribute('stroke-dasharray', `${pct} 100`);
+  const a = (-60 + pct * 1.2) * Math.PI / 180;              // arc spans -60°..+60° around the dial centre (120,110)
+  $('arcdot').setAttribute('cx', 120 + 112 * Math.cos(a)); $('arcdot').setAttribute('cy', 110 + 112 * Math.sin(a));
+  $('delay').textContent = d == null ? '–' : d.toFixed(1) + ' s';
+  $('arc').setAttribute('stroke', d > 6 ? 'var(--amber)' : 'var(--lime)');
+
+  pill('p-pp', S.pp ? '' : 'err', S.pp ? 'ProPresenter connected' : 'ProPresenter not connected');
+  pill('p-pace', d > 6 ? 'warn' : '', d > 6 ? 'A bit slow' : 'Keeping up');
+  $('banner').classList.toggle('show', !S.pp);
+  $('bannertext').textContent = "Can't reach ProPresenter. Captions show here but not on the big screen. Is Network turned on in ProPresenter?";
+}
+function pill(id, cls, txt) { const p = $(id); p.className = 'pill ' + cls; p.querySelector('span').textContent = txt; }
+function say(t) { $('announce').textContent = t; }
+
+let lastSpace = 0;
+function toggleLive(fromKey) {
+  if (S.phase === 'ready') { S.phase = 'live'; S.t0 = Date.now(); say('Captioning'); }
+  else if (S.phase === 'live') {
+    if (fromKey && Date.now() - lastSpace > 500) { lastSpace = Date.now(); say('Press Space again to stop'); return; }
+    S.phase = 'ready'; S.delay = null; screen = []; heard = []; say('Stopped');
+  }
+  render();
+}
+$('big').onclick = () => toggleLive(false);
+function setView(v) { view = v; try { localStorage.setItem('lt.view', v); } catch (e) {} render(); }
+document.querySelectorAll('.mtab').forEach(t => t.onclick = () => setView(t.dataset.view));
+$('hide').onclick = () => { S.hidden = !S.hidden; render(); };
+$('bannerbtn').onclick = () => { S.pp = true; render(); };
+document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { S.mode = b.dataset.mode; render(); });
+document.querySelectorAll('[data-prof]').forEach(b => b.onclick = () => { S.profile = b.dataset.prof; render(); });
+$('k-mode').onclick = () => { S.mode = {'ro-en':'auto', auto:'en-ro', 'en-ro':'ro-en'}[S.mode]; render(); };
+$('k-prof').onclick = () => { S.profile = S.profile === 'fast' ? 'quality' : 'fast'; render(); };
+addEventListener('keydown', e => {
+  if (e.target.closest('input,textarea')) return;
+  const k = e.key.toLowerCase();
+  if (k === ' ') { e.preventDefault(); toggleLive(true); }
+  else if (k === 'h') { S.hidden = !S.hidden; render(); }
+  else if (k === 'escape') { screen = []; render(); }
+  else if (k === '1') { S.mode = 'auto'; render(); } else if (k === '2') { S.mode = 'ro-en'; render(); }
+  else if (k === '3') { S.mode = 'en-ro'; render(); }
+  else if (k === 'q') { S.profile = S.profile === 'fast' ? 'quality' : 'fast'; render(); }
+  else if (k === 'p') { S.pp = !S.pp; render(); }
+  else if (k === 'v') { setView({heard:'screen', screen:'both', both:'heard'}[view]); }
+});
+
+// fake loading → ready
+const load = setInterval(() => { S.pct = Math.min(100, S.pct + 7); if (S.pct >= 100) { S.phase = 'ready'; clearInterval(load); } render(); }, 250);
+// fake captions
+setInterval(() => {
+  if (S.phase !== 'live') return;
+  const [src, dst] = LINES[li++ % LINES.length];
+  heard = [...heard, src].slice(-4);
+  if (!S.hidden) screen = [...screen, dst].slice(-2);
+  S.delay = 2.4 + Math.random() * 2.6 + (S.profile === 'fast' ? -1 : 0) + (Math.random() < .1 ? 3 : 0);
+  render();
+}, 2600);
+setInterval(() => S.phase === 'live' && render(), 1000);
+
+// scope: scrolling sound envelope (cyan, mirrored) + speech gate (lime square trace)
+const cv = $('scope'), cx = cv.getContext('2d'), N = 240, env = new Array(N).fill(0), gate = new Array(N).fill(0);
+let ph = 0;
+function size() { const r = cv.getBoundingClientRect(); cv.width = r.width * devicePixelRatio; cv.height = r.height * devicePixelRatio; }
+addEventListener('resize', size); size();
+function step() {
+  ph += 1;
+  const speaking = (Math.sin(ph / 23) + Math.sin(ph / 7.3) * .4) > -0.2;
+  const syll = Math.abs(Math.sin(ph / 2.1)) * (0.55 + Math.random() * .45);
+  env.push(speaking ? syll * .9 : Math.random() * .05); env.shift();
+  gate.push(speaking ? 1 : 0); gate.shift();
+  // traces live below a reserved label strip so the lime gate never crosses the text
+  const showLabels = getComputedStyle(cv.parentNode.querySelector('.tag')).display !== 'none';
+  const top = (showLabels ? 26 : 6) * devicePixelRatio;
+  const W = cv.width, H = cv.height, amp = (H - top) / 2 - 4 * devicePixelRatio, mid = top + (H - top) / 2, dx = W / (N - 1);
+  cx.clearRect(0, 0, W, H);
+  cx.strokeStyle = 'rgba(70,214,236,.08)'; cx.lineWidth = 1;
+  for (let i = 1; i < 6; i++) { cx.beginPath(); const y = top + (H - top) * i / 6; cx.moveTo(0, y); cx.lineTo(W, y); cx.stroke(); }
+  cx.beginPath(); cx.moveTo(0, mid);
+  env.forEach((v, i) => cx.lineTo(i * dx, mid - v * amp * .82));
+  for (let i = N - 1; i >= 0; i--) cx.lineTo(i * dx, mid + env[i] * amp * .82);
+  cx.closePath(); cx.fillStyle = 'rgba(42,169,191,.75)'; cx.fill();
+  cx.strokeStyle = 'rgba(157,241,255,.9)'; cx.lineWidth = 1.5 * devicePixelRatio;
+  cx.beginPath(); cx.moveTo(0, mid); cx.lineTo(W, mid); cx.stroke();
+  cx.strokeStyle = '#a3e635'; cx.lineWidth = 2 * devicePixelRatio; cx.shadowColor = '#a3e635'; cx.shadowBlur = 6;
+  cx.beginPath();
+  gate.forEach((g, i) => { const y = g ? mid - amp : mid; i ? cx.lineTo(i * dx, y) : cx.moveTo(0, y); });
+  cx.stroke(); cx.shadowBlur = 0;
+}
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+setInterval(step, reduce ? 400 : 60);
+render();
+</script>
+</body>
+</html>

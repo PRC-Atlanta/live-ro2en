@@ -77,12 +77,64 @@ plus `error`. The full `phase` enum and contract field list are in §3.
   truth for state fields and endpoints. `ui/mock_state.js` provides a fake WebSocket and API, so
   the UI can be built and tested without models. Preact + htm may be vendored as one file later,
   if needed.
-- **Look:** dark booth theme by default, with a near-black background (#0E0F11), warm grey text
-  and a dim mirror. Green, amber and red are used for state only, always with an icon and a word.
-  - Primary button at least 72 px tall; touch targets at least 44 px; body text 17 px.
-  - Works in a 600×500 window next to ProPresenter. Below 520 px of height the transcript is
-    hidden.
-  - Status changes are announced with `aria-live`; the problem banner uses `role="alert"`.
+- **Look: an audio-plugin hardware panel** (in the style of Waves Sibilance). The reference
+  mockup is **[docs/ui_mockup/live.html](ui_mockup/live.html)**: open it in a browser and use
+  Space, H, 1/2/3 and P. Its `:root` tokens seed `ui/styles/tokens.css`. S5a and S5b match it,
+  and the review in §4.1 compares screenshots against it.
+  - **Frame:**
+    - A black toolbar strip of small bevelled grey buttons: Rehearsal, the current setup
+      (wide), Names & words, Settings, ?.
+    - Below it, a deep teal-navy panel (radial `#16323d → #0a1a22`) with a thin glowing cyan
+      edge.
+    - A wordmark `LIVE|TRANSLATE` in cyan at the bottom left; "RO ⇄ EN · Offline" at the
+      bottom right.
+  - **Scope display (top):** a scrolling sound envelope, filled cyan and mirrored around a
+    bright centre line, with a lime square trace for "speech heard". The labels ("Sound · <device>" and the
+    colour key) sit in a **reserved strip at the top**, and both traces are drawn only below
+    it, so the lime line never crosses text. In the compact layout the labels are hidden and
+    the strip collapses. It replaces a separate
+    level bar and shows at a glance that sound arrives and is recognised as speech.
+  - **Text display, with three tabs** (segmented buttons in the inset's top-left; V cycles
+    them; the last choice is remembered):
+    - **Heard:** the live transcript in the speaker's language, last 4 lines, the newest
+      brightest.
+    - **On screen:** the mirror of what ProPresenter shows, in glowing cyan-white, the same 2
+      lines and wrap. This is the default.
+    - **Both:** Heard and On screen side by side, each with a small header such as "Heard ·
+      Romanian" / "On the big screen · English". They stack on narrow windows.
+    - While captions are hidden, On screen dims with an amber "hidden" tag, and Heard keeps
+      updating because transcription continues.
+    - Backend: needs a `heard` list on `/ws` (the source of the last N clauses, plus the
+      interim `partial` when it is enabled) next to `screen`.
+  - **Control deck, like the plugin's knob row:**
+    - **Centre: one big glowing dial, the Start/Stop button.** Its face shows the state:
+      "62% Getting ready", "START Ready", or the elapsed time "12:04 Captioning". The ring is
+      cyan when ready and lime when live.
+    - Around the dial, a **Delay arc** (0–10 s, lime, amber over 6 s) with a numeric readout,
+      like the plugin's Range arc.
+    - **Left knob: Speaker.** Three click-to-select positions: RO→EN, Auto, EN→RO.
+    - **Right knob: Quality.** Quickest or Best.
+    - The knobs are *clicked*, never dragged. Each position label is a 44 px button, so no
+      fine motor control is needed.
+  - **LED row:** a round amber LED toggle for **Hide captions** (like the plugin's Lookahead
+    LED), and on the right the three health pills as small glowing dots plus words.
+  - **Type:** labels are small uppercase with wide letter-spacing (`.14em`) in light grey; values
+    use the rounded system numeric font; system fonts only, so it works offline.
+  - **Colour roles:**
+    - Cyan `#46d6ec`: the instrument, its controls and normal values.
+    - Lime `#a3e635`: live, speech, OK.
+    - Amber `#f5b83d`: hidden captions, a warning.
+    - Red `#ff5d52`: a problem.
+    - State is always shown with a word as well, never colour alone.
+  - Touch targets at least 44 px; the dial is 172 px.
+  - **Small window:** in a 600×500 window next to ProPresenter, the compact layout (height up
+    to 600 px) shrinks the scope and the deck so the dial stays above the fold, and hides the
+    footer.
+  - Status changes are announced with `aria-live`; the problem banner uses `role="alert"`;
+    `prefers-reduced-motion` slows the scope animation.
+  - The Setup, Settings, After and Help screens use the same frame, toolbar and panel, with
+    knobs only where a choice has 2–3 positions; everything else uses plain fields styled as
+    dark insets.
 - **Screens:**
   - **Setup wizard.** Shown on first run, or whenever models are missing.
     1. Hardware and disk check, then the profile choice ("Fast" about 9 GB, or "Fast + Best
@@ -102,14 +154,16 @@ plus `error`. The full `phase` enum and contract field list are in §3.
     the ProPresenter setup steps with screenshots.
 - **Live screen**, top to bottom:
   1. Three health pills, each a word plus a dot: **Sound** · **ProPresenter** · **Keeping up**.
-  2. One huge state-aware button: "Getting ready… 60%" → "▶ Start captions" → "■ Stop captions".
-     Stop takes a 0.6 s hold or a double key press, to prevent an accidental stop.
+  2. One big state-aware dial (see the Look above): "Getting ready 60%" → "START" → elapsed
+     time while captioning. Stop takes a 0.6 s hold or a double key press, to prevent an
+     accidental stop.
   3. A state line, e.g. "Captioning · Romanian → English · Best quality".
-  4. The sound level bar.
+  4. The sound scope (envelope plus speech trace).
   5. The **problem banner**: one plain-language message and one action button.
   6. The **mirror** of what is on the big screen, wrapped the same way ProPresenter wraps it.
   7. Live controls (§1.4).
-  8. A collapsed "What was heard" list (last 10 lines).
+  8. The full history (last 10 source/translation pairs) is in a collapsed list under the
+     text display; the Heard / On screen / Both tabs cover the live view.
   9. Raw latency numbers appear only in Advanced or on hover.
 - **Plain-language renames** (applied everywhere the UI shows these):
 
@@ -274,7 +328,7 @@ Rules for every session:
 | **S2** | **Output controls + ProPresenter robustness** | `captions.py`, `propresenter.py`, `mock_propresenter.py`, `live/routes/output.py` | Phase 0 | 1. Hide/show (`paused`), blank, retract, fix-last, lines resize. 2. `pp.health()`, `force_resend()`, `list_messages()`, backoff and reconnect. 3. `POST /api/pp/test` and `/api/pp/test_caption`. 4. Mock fault injection: `/mock/fail {n}`, `/mock/down`, `/mock/up`. **Tests:** with Hide on, no ProPresenter call is made while the log still gets `paused` entries; retract re-shows the previous lines; mock down → 3 failures → up → the current text is re-sent; a manual clear in the mock is followed by a resend; a message missing from the mock gives `message_missing`. |
 | **S3** | **Settings, names & spellings, session terms** | `live/settings.py`, `defaults.yaml`, `live/routes/settings.py`, `translate.py` (Glossary), `textnorm.py` (spellings merge), path lookups in `whistle_en.py`/`stt_run.py` | Phase 0 (`paths.py`) | 1. Layered settings: defaults ← user `settings.yaml`, with `schema_version`, migrations and atomic writes. 2. `GET/PUT /api/settings` with a whitelist and `restart_required`. 3. `/api/keywords`, `/api/spellings`, `/api/terms` (session terms applied live; sends the engine the `keywords` command defined by S1). 4. "Import config.yaml". 5. ProPresenter password stored in the Keychain. **Tests:** settings survive a restart; hidden keys are rejected; session term "Ionuț Pop" reaches `Glossary.relevant` and the spellings map with no restart; nothing is written into the repo when `LIVE_HOME` is set. |
 | **S4** | **Pacing, hot switch, safety filter** | `live/pipeline.py`, `translate.py` (`reset_context`, dual translator only; coordinate with S3 on Glossary lines), `config.yaml` `live.backlog_*` | Phase 0 | 1. Queue worker. 2. `backlog` and `pace` state. 3. Auto-fallback to Fast, with an `auto_actions` entry and Undo. 4. Drop above 12 s. 5. Hot translator swap with no engine respawn. 6. Context reset on language flip or resume. 7. Hallucination-loop, length-ratio and blocklist filters. **Tests:** a translator sleeping 2 s per call with clauses every 1 s gives `profile=="fast"` plus an auto action; switching profiles in an `e2e.py` rehearsal shows no stop/start gap in the mock events; a repeated output is dropped and counted. |
-| **S5a** | **UI: Live screen + Help + strings** | `ui/screens/live.js`, `ui/screens/help.js`, `ui/components/*`, `ui/i18n/strings.en.js` | Phase 0 (UI skeleton, `contract.json`); works against `mock_state.js` | The Live screen from §1.3, the controls and shortcuts from §1.4, the problem banner and all error copy. **Tests:** with the mock driving every `phase`, labels and colours are correct; every shortcut posts the right action; works at 600×500; every `problem.code` in `contract.json` has a string (the test fails on a missing one); a Playwright smoke run in the in-app browser passes. |
+| **S5a** | **UI: Live screen + Help + strings** | `ui/screens/live.js`, `ui/screens/help.js`, `ui/components/*`, `ui/i18n/strings.en.js` | Phase 0 (UI skeleton, `contract.json`); works against `mock_state.js` | The Live screen from §1.3, matching `docs/ui_mockup/live.html`; the controls and shortcuts from §1.4, the problem banner and all error copy. **Tests:** with the mock driving every `phase`, labels and colours are correct; every shortcut posts the right action; works at 600×500; every `problem.code` in `contract.json` has a string (the test fails on a missing one); a Playwright smoke run in the in-app browser passes. |
 | **S5b** | **UI: Setup wizard + Settings + After-sermon** | `ui/screens/setup/*`, `ui/screens/settings/*`, `ui/screens/after.js`, `ui/components/listeditor.js` | Phase 0; works against `mock_state.js` | The wizard (6 steps), the settings tabs and exposure rules, the summary, rating and export screen. **Tests:** against the mock, a fresh install reaches Live; Next stays disabled until the meter hears sound; a failed ProPresenter test shows the fix text; an edit survives a reload; `restart_required` shows "Applies next time you press Start". |
 | **S6** | **Models & first-run download** | `models.lock.json`, `live/model_setup.py`, `live/routes/setup.py`, `scripts/publish_models.py`, hardware and disk checks | Phase 0 (`paths.py`), the church Hugging Face repo | 1. `GET /api/setup` (models present, disk, RAM, recommended profile). 2. `POST /api/setup/download|cancel`, run as a separate child with `LIVE_ALLOW_NETWORK=1`, so the live processes never get network access. 3. sha256 check; writes `refs/main` itself. 4. A per-profile subset. 5. The NLLB ct2 build published once. **Tests:** on an empty `LIVE_HOME`: pick Fast → download → interrupt → resume → all sha256 OK → the app runs offline with `netaudit` showing 0. |
 | **S7** | **Embedded Python runtime** | `packaging/build_runtime.sh`, `packaging/prune.txt`, `packaging/audit_macho.sh` | Phase 0 (env-var contract). No `src/` edits | python-build-standalone with the common/nemo/mt site directories, pruned, compiled, and the otool audit (no `/opt/homebrew`, `/usr/local` or `/Users`). Size report. Optional: the env-merge spike, reported separately. **Test:** the dev app runs end to end on a rehearsal file using only `LIVE_ENGINE_PYTHON` and the runtime folder, copied to a different path. |
@@ -351,7 +405,11 @@ Every check below must pass before a volunteer uses the app in a service.
 3. `/code-review high` on the PR, with every finding fixed or explained.
 4. **File-ownership check:** `git diff --stat main...` touches only the files listed for that
    session in §2. If anything else is touched, explain it or move it.
-5. **Copy check** (UI PRs): no technical term from the rename table appears in visible UI text.
+5. **Look check** (UI PRs): screenshots at 1280×800 and 600×500 next to
+   `docs/ui_mockup/live.html` at the same sizes. Same frame, colour roles and control layout;
+   the dial is above the fold at 600×500. No trace or graphic overlaps any text, for example the
+   lime speech line against the scope labels.
+6. **Copy check** (UI PRs): no technical term from the rename table appears in visible UI text.
    Enforced by a grep test over `ui/`.
 
 ### 4.2 Integration (S11, after each merge and once at the end)
