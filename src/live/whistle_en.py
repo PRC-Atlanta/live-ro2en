@@ -21,6 +21,8 @@ import time
 
 import numpy as np
 
+import paths
+
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SR = 16000
 _HARD = re.compile(r"[.!?;:…]$")
@@ -32,7 +34,7 @@ def offline_env(cfg: dict) -> None:
     os.environ["NEEDLE_TELEMETRY"] = "0"
     os.environ["DO_NOT_TRACK"] = "1"
     os.environ["HF_HUB_OFFLINE"] = "1"
-    lib = ROOT / cfg.get("lib", "models/whistle/libneedle.dylib")
+    lib = paths.resource(cfg.get("lib", "models/whistle/libneedle.dylib"), ROOT)
     if lib.exists():
         os.environ["NEEDLE3_LIB_PATH"] = str(lib)
     os.environ["NEEDLE_WHISTLE_WEIGHTS"] = str(weights_path(cfg))
@@ -46,14 +48,22 @@ def weights_path(cfg: dict) -> pathlib.Path:
              **{str(k): v for k, v in (cfg.get("weights_by_depth") or {}).items()}}
     if depth not in files:
         raise ValueError(f"whistle.depth={depth!r} has no weights file; known: {sorted(files)}")
-    return ROOT / files[depth]
+    return paths.resource(files[depth], ROOT)
 
 
-def load_keywords(path: str | pathlib.Path) -> str:
-    p = ROOT / path
-    if not p.exists():
-        return ""
-    words = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.lstrip().startswith("#")]
+def read_keywords(path: str | pathlib.Path | None) -> list[str]:
+    """One word or phrase per line; blank lines and # comments are skipped."""
+    p = pathlib.Path(path) if path else None
+    if p is None or not p.exists():
+        return []
+    return [l.strip() for l in p.read_text(encoding="utf-8").splitlines()
+            if l.strip() and not l.lstrip().startswith("#")]
+
+
+def load_keywords(path: str | pathlib.Path, extra: list[str] | None = None) -> str:
+    """The bundled keywords file (relative to the code root) plus the user's and today's
+    additions (`extra`, sent by the orchestrator as whistle.keywords_extra), de-duplicated."""
+    words = read_keywords(paths.resource(str(path), ROOT)) + [w.strip() for w in extra or [] if w.strip()]
     return "\n".join(dict.fromkeys(words))
 
 
@@ -62,12 +72,19 @@ class WhistleSTT:
         offline_env(cfg)
         import needle
         self.model = needle.Whistle(weights=os.environ["NEEDLE_WHISTLE_WEIGHTS"])
-        self.keywords = load_keywords(cfg.get("keywords_file", "keywords_en.txt")) or None
+        self.keywords_file = cfg.get("keywords_file", "keywords_en.txt")
+        self.keywords = load_keywords(self.keywords_file, cfg.get("keywords_extra")) or None
         self.lock = threading.Lock()          # one model per process, not thread-safe
         self._q: queue.Queue | None = None
         self._thread: threading.Thread | None = None
         self.error: str | None = None         # set when the stream thread died; reported once
         self.transcribe(np.zeros(SR, dtype=np.float32))     # load + warm up once at startup
+
+    def set_keywords(self, words: list[str]):
+        """Engine `{"cmd":"keywords","words":[...]}`: the bundled file plus these additions
+        (the user's and today's names), replacing the previous additions. Used from the next
+        clause, and by a stream from its next start."""
+        self.keywords = load_keywords(self.keywords_file, words) or None
 
     def transcribe(self, audio: np.ndarray, word_timestamps: bool = False) -> dict:
         with self.lock:

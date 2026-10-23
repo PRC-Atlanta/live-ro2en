@@ -1,13 +1,53 @@
-"""Settings, keywords, spellings and session terms. Owned by S3."""
-from fastapi import APIRouter
+"""Settings, keywords, spellings and session terms. Owned by S3 (logic in live/settings.py).
+A rejected change answers 400 {error: rejected|invalid, keys?, detail} and changes nothing."""
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 
-from routes import not_built
+from routes import body, run
+
+
+def _reply(result):
+    code, payload = result
+    return JSONResponse(payload, status_code=code)
 
 
 def router(live) -> APIRouter:
     r = APIRouter()
-    for method, path in (("GET", "/api/settings"), ("PUT", "/api/settings"), ("GET", "/api/keywords"),
-                         ("PUT", "/api/keywords"), ("GET", "/api/spellings"), ("PUT", "/api/spellings"),
-                         ("POST", "/api/terms"), ("POST", "/api/import_config")):
-        not_built(r, method, path, "S3")
+
+    @r.get("/api/settings")
+    async def get_settings():
+        return live.settings_view()
+
+    @r.put("/api/settings")
+    async def put_settings(request: Request):
+        return _reply(await run(live.put_settings, await body(request)))
+
+    @r.get("/api/keywords")
+    async def get_keywords():
+        return await run(live.keywords_view)
+
+    @r.put("/api/keywords")
+    async def put_keywords(request: Request):
+        return _reply(await run(live.put_keywords, await body(request)))
+
+    @r.get("/api/spellings")
+    async def get_spellings():
+        return live.spellings_view()
+
+    @r.put("/api/spellings")
+    async def put_spellings(request: Request):
+        return _reply(await run(live.put_spellings, await body(request)))
+
+    @r.get("/api/terms")
+    async def get_terms():
+        return live.terms_view()
+
+    @r.post("/api/terms")
+    async def post_terms(request: Request):
+        return _reply(await run(live.set_terms, await body(request)))
+
+    @r.post("/api/import_config")
+    async def import_config(request: Request):
+        return _reply(await run(live.import_config, await body(request)))
+
     return r

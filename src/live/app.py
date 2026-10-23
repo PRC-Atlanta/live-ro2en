@@ -45,6 +45,8 @@ from lifecycle import LifecycleMixin                 # noqa: E402
 from output import OutputMixin                       # noqa: E402
 from pipeline import PipelineMixin                   # noqa: E402
 from propresenter import ProPresenter                # noqa: E402
+import settings                                      # noqa: E402
+from settings import SettingsMixin                   # noqa: E402
 from state import StateMixin                         # noqa: E402
 from translate import Glossary                       # noqa: E402
 # re-exported: tests and tools import these from live.app
@@ -52,7 +54,7 @@ from pipeline import is_echo, merge_clauses, pack_parts            # noqa: E402,
 from security import LOOPBACK, allowed_hosts, request_allowed      # noqa: E402,F401
 
 
-class Live(LifecycleMixin, PipelineMixin, OutputMixin, StateMixin):
+class Live(LifecycleMixin, PipelineMixin, OutputMixin, StateMixin, SettingsMixin):
     """One service: the engine child, the translator, ProPresenter and the control state.
     The behaviour lives in the mixins (lifecycle, pipeline, output, state); this is the data."""
 
@@ -120,7 +122,8 @@ def build_app(live: Live):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", default=str(ROOT / "config.yaml"))
+    ap.add_argument("--config", help="base settings (default: config.yaml in dev, defaults.yaml in the app)")
+    ap.add_argument("--settings", help="the user's settings.yaml over --config (default: paths.settings_file)")
     ap.add_argument("--file", help="play an audio file as live input (real-time paced)")
     ap.add_argument("--autostart", action="store_true")
     ap.add_argument("--exit-on-eof", action="store_true")
@@ -130,7 +133,7 @@ def main():
     ap.add_argument("--mode")
     ap.add_argument("--profile", help="fast | quality (overrides live.profile)")
     a = ap.parse_args()
-    cfg = yaml.safe_load(open(a.config))
+    cfg, a.settings_base, a.settings_notes = settings.load_config(a.config, a.settings, ROOT)
     if a.pp_port:
         cfg["propresenter"]["port"] = a.pp_port
     if a.port:

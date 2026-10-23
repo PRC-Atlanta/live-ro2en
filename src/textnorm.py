@@ -2,6 +2,7 @@
 diacritic folding, spoken-header stripping."""
 from __future__ import annotations
 
+import functools
 import re
 import unicodedata
 
@@ -229,20 +230,86 @@ def diacritic_stats(hyp_words: list[str]) -> dict:
     }
 
 
-def load_spellings(path=None) -> dict[str, str]:
-    """Preferred spellings from config.yaml (`spellings:` variant -> preferred)."""
+def merge_spellings(*maps: dict | None) -> dict[str, str]:
+    """One spellings map from layers (bundled, user, today's names): a later layer wins for the
+    same variant (compared case-insensitively), and longer variants come first, so 'Ionut Pop'
+    is replaced before a bare 'Ionut' could split it."""
+    out: dict[str, tuple[str, str]] = {}
+    for m in maps:
+        for a, b in (m or {}).items():
+            a, b = str(a).strip(), str(b).strip()
+            if a and b and a != b:
+                out[a.casefold()] = (a, b)
+    return dict(sorted(out.values(), key=lambda ab: -len(ab[0])))
+
+
+_FOLD_UP = str.maketrans("ĂÂÎȘȚ", "AAIST")
+
+
+def _fold_name_word(w: str) -> str:
+    """Diacritics off, except a word-final ă: without it a different real word is left
+    ('Biserică' -> 'Biserica' = 'the church'), which must never be rewritten."""
+    if w[-1:] in ("ă", "Ă"):
+        return w[:-1].translate(_FOLD).translate(_FOLD_UP) + w[-1]
+    return w.translate(_FOLD).translate(_FOLD_UP)
+
+
+def name_variants(term: str) -> dict[str, str]:
+    """Spellings that bring a name back to the form typed by the operator: 'Ionut Pop' and
+    'Ionuţ Pop' (no diacritics, cedilla) -> 'Ionuț Pop'. Empty when the name has neither.
+    A word-final ă is kept (see _fold_name_word)."""
+    term = " ".join(fix_cedilla(term).split())
+    folded = " ".join(_fold_name_word(w) for w in term.split())
+    cedilla = term.translate(str.maketrans("șțȘȚ", "şţŞŢ"))
+    return {v: term for v in dict.fromkeys((folded, cedilla)) if v != term}
+
+
+def load_spellings(path=None, user_path=None) -> dict[str, str]:
+    """Preferred spellings (`spellings:` variant -> preferred): the bundled ones from
+    config.yaml, merged with the user's additions in their settings.yaml (paths.settings_file)."""
     import pathlib
+    import sys
     import yaml
     path = path or pathlib.Path(__file__).resolve().parents[1] / "config.yaml"
-    return dict(yaml.safe_load(open(path)).get("spellings") or {})
+    base = yaml.safe_load(open(path)).get("spellings") or {}
+    if user_path is None:
+        live_dir = str(pathlib.Path(__file__).resolve().parent / "live")
+        if live_dir not in sys.path:
+            sys.path.insert(0, live_dir)
+        import paths
+        user_path = paths.settings_file()
+    user = {}
+    if pathlib.Path(user_path).exists():
+        try:
+            user = (yaml.safe_load(open(user_path)) or {}).get("spellings") or {}
+        except yaml.YAMLError:
+            user = {}
+    return merge_spellings(base, user if isinstance(user, dict) else {})
+
+
+@functools.lru_cache(maxsize=8)
+def _spellings_re(items: tuple) -> tuple[re.Pattern, dict[str, str]]:
+    """One compiled alternation for a whole spellings map (longest variant first), so a
+    clause is scanned once however long the user's lists grow; rebuilt only when they change."""
+    look = {a.casefold(): b for a, b in items if a and b}
+    alts = sorted({a for a, b in items if a and b}, key=len, reverse=True)
+    return re.compile(r"(?<![\w-])(?:" + "|".join(map(re.escape, alts)) + r")(?![\w-])", re.IGNORECASE), look
 
 
 def apply_spellings(text: str, spellings: dict[str, str]) -> str:
     """Replace whole-word variants with the preferred form, keeping a leading capital
-    (Filadelfia -> Philadelphia, filadelfia -> philadelphia)."""
-    for a, b in spellings.items():
-        def sub(m, b=b):
-            w = m.group(0)
-            return b[0].upper() + b[1:] if w[0].isupper() else b[0].lower() + b[1:]
-        text = re.sub(rf"(?<![\w-]){re.escape(a)}(?![\w-])", sub, text, flags=re.IGNORECASE)
-    return text
+    (Filadelfia -> Philadelphia, filadelfia -> philadelphia). One pass: a replacement is
+    never replaced again."""
+    if not spellings:
+        return text
+    pat, look = _spellings_re(tuple(spellings.items()))
+    if not look:
+        return text
+
+    def sub(m):
+        w = m.group(0)
+        b = look.get(w.casefold())
+        if b is None:
+            return w
+        return b[0].upper() + b[1:] if w[0].isupper() else b[0].lower() + b[1:]
+    return pat.sub(sub, text)
