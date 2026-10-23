@@ -52,6 +52,10 @@ class PauseTracker:
             return "pause"
         return None
 
+    def reset(self) -> None:
+        self._silence_ms = self._speech_ms = 0
+        self._in_speech = False
+
     @property
     def in_speech(self) -> bool:
         return self._in_speech

@@ -9,6 +9,7 @@ the clause (audio is paced in real time, so this is what a congregation would se
 from __future__ import annotations
 
 import argparse
+import collections
 import csv
 import json
 import pathlib
@@ -104,7 +105,10 @@ def main() -> None:
     time.sleep(cfg["live"].get("hold_s", 1.2) + 2.0)
     live.stop()
     srv.shutdown()
-    recs = [json.loads(l) for l in open(live.log_path)]
+    rows = [json.loads(l) for l in open(live.log_path)]
+    # latency metrics describe captions that were shown; failures are counted, not hidden
+    recs = [r for r in rows if r.get("outcome", "ok") == "ok" and "event" not in r]
+    outcomes = dict(collections.Counter(r["outcome"] for r in rows if "outcome" in r))
     lat = sorted(r["latency_s"] for r in recs)
     triggers = [e for e in state.events if e["path"].endswith("/trigger")]
     q = lambda xs, p: xs[min(len(xs) - 1, int(p * (len(xs) - 1)))] if xs else None
@@ -115,6 +119,9 @@ def main() -> None:
     fw = sorted(r["first_word_s"] for r in recs)
     summary = {"name": name, "audio": a.audio, "profile": live.profile, "stt": live.lc["stt_model"],
                "translator": live.lc["translator"], "mode": cfg["live"]["language_mode"], "clauses": len(recs), "pp_triggers": len(triggers),
+               "failed_chunks": sum(v for k, v in outcomes.items() if k != "ok"), "outcomes": outcomes,
+               "eof_reached": live.eof.is_set(), "engine_exit": live.engine.returncode if live.engine else None,
+               "warnings": live.warnings,
                "pp_errors": sum(1 for r in recs if not r["pp_ok"]),
                "lat_median": round(statistics.median(lat), 3) if lat else None, "lat_p90": q(lat, 0.9),
                "lat_max": lat[-1] if lat else None,

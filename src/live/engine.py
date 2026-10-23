@@ -276,21 +276,37 @@ class Engine:
             self.streamer.end_stream()                   # yields the final tail -> flush
             self._wstream = None
 
-    def run(self, q: queue.Queue, stop: threading.Event) -> None:
+    def run(self, q: queue.Queue, stop: threading.Event | None = None) -> None:
+        """Process queued audio until the None sentinel. Items are (time, frame) or
+        {"mode": m}; a mode change travels through the queue so the speech buffered before it
+        is committed under the old mode, never dropped or spliced onto later audio."""
         frames: list[np.ndarray] = []
         probs: list[float] = []
         times: list[float] = []
         pre: list[tuple[float, np.ndarray]] = []
         last_voiced = 0.0
         last_partial = 0.0
-        while not stop.is_set():
+
+        def commit_all() -> None:
+            nonlocal frames, probs, times
+            if frames:
+                first = next((t for t, pp in zip(times, probs) if pp >= self.pt.threshold), times[0])
+                self.transcribe(np.concatenate(frames), times[0], last_voiced or times[-1], first)
+            frames, probs, times = [], [], []
+            self.pt.reset()
+
+        while True:
             item = q.get()
             if item is None:
                 self._stop_whistle_stream()
-                if frames:
-                    self.transcribe(np.concatenate(frames), times[0], last_voiced or times[-1])
+                commit_all()
                 emit({"type": "eof"})
                 return
+            if isinstance(item, dict):
+                if item.get("mode") and item["mode"] != self.mode:
+                    commit_all()
+                    self.mode = item["mode"]
+                continue
             ts, fr = item
             p = self.vad(fr)
             if self._whistle_streaming(ts, fr, p):
@@ -358,9 +374,9 @@ def main() -> None:
             except json.JSONDecodeError:
                 continue
             if c.get("cmd") == "mode":
-                eng.mode = c["mode"]
+                q.put({"mode": c["mode"]})       # applied in order with the audio
             elif c.get("cmd") == "stop":
-                stop.set(); q.put(None); return
+                q.put(None); stop.set(); return  # sentinel first: buffered speech is still committed
     threading.Thread(target=stdin_loop, daemon=True).start()
     src = threading.Thread(target=file_source if a.file else mic_source,
                            args=((a.file, a.realtime) if a.file else (a.device,)) + (q, stop), daemon=True)

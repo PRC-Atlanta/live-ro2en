@@ -78,7 +78,8 @@ def main() -> None:
     if proc.returncode or not last:
         sys.exit(f"pipeline failed (exit {proc.returncode}); see {out / 'run.log'}")
     summary = json.loads(last[-1])
-    recs = [json.loads(l) for l in open(ROOT / summary["log"])]
+    rows = [json.loads(l) for l in open(ROOT / summary["log"])]
+    recs = [r for r in rows if r.get("outcome", "ok") == "ok" and "event" not in r]
     t0 = min(r["t_speech"] for r in recs) if recs else 0
     with open(out / "transcript_en.txt", "w") as f:
         for r in recs:
@@ -106,6 +107,7 @@ def main() -> None:
            "share_latency_le_2s": round(sum(x <= 2 for x in lat) / max(len(lat), 1), 3),
            "first_word_median_s": round(statistics.median(fw), 3) if fw else None, "first_word_p90_s": q(fw, 0.9),
            "share_first_word_le_6s": round(sum(x <= 6 for x in fw) / max(len(fw), 1), 3),
+           "failed_segments": summary.get("failed_chunks"), "eof_reached": summary.get("eof_reached"),
            "sandboxed": not a.no_sandbox, "network_attempts": len(attempts), "pp_errors": summary["pp_errors"]}
     ref = ref_txt
     if ref.exists():

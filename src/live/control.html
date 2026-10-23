@@ -30,7 +30,7 @@
   table { width:100%; border-collapse:collapse; }
   td { padding:8px 6px; border-top:1px solid var(--line); vertical-align:top; width:47%; }
   td.l { width:6%; color:var(--mute); font-variant-numeric:tabular-nums; text-align:right; }
-  .mute { color:var(--mute); } .err { color:var(--stop); } .partial { color:var(--mute); font-style:italic; }
+  .mute { color:var(--mute); } .err { color:var(--stop); white-space:pre-line; } .partial { color:var(--mute); font-style:italic; }
   @media (max-width:700px) { td { display:block; width:100%; } td.l { text-align:left; } }
 </style>
 </head>
@@ -80,7 +80,11 @@ function render(s) {
   $('status').textContent = s.status;
   $('models').textContent = (s.stt || '') + ' · ' + (s.translator || '').split('/').pop();
   $('screen').textContent = s.screen || '';
-  $('pperr').textContent = s.pp_error ? 'ProPresenter: ' + s.pp_error : '';
+  const c = s.counts || {}, failed = (c.error || 0) + (c.empty_stt || 0) + (c.empty_mt || 0);
+  $('pperr').textContent = [s.pp_error ? 'ProPresenter: ' + s.pp_error : '',
+    ...(s.warnings || []).map(w => 'Warning: ' + w),
+    failed ? `Chunks without a caption: ${failed} (error ${c.error || 0}, no speech text ${c.empty_stt || 0}, ` +
+             `no translation ${c.empty_mt || 0}) of ${failed + (c.ok || 0)}` : ''].filter(Boolean).join('\n');
   $('partial').textContent = s.partial ? '… ' + s.partial : '';
   document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === s.mode));
   document.querySelectorAll('#profiles button').forEach(b => b.classList.toggle('on', b.dataset.profile === s.profile));

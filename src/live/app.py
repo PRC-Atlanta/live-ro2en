@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import collections
 import datetime as dt
 import json
 import os
@@ -70,6 +71,10 @@ class Live:
         self._pending: dict | None = None
         self._timer: threading.Timer | None = None
         self._proc_lock = threading.Lock()
+        self._reader_thread: threading.Thread | None = None
+        self._stopping = False
+        self.warnings: list[str] = []                  # engine degradations, shown until restart
+        self.counts: collections.Counter = collections.Counter()   # clause outcomes this run
 
     def _profile_cfg(self, name: str) -> dict:
         """config.yaml `live` settings with the chosen profile's overrides on top."""
@@ -118,18 +123,26 @@ class Live:
         elif device or self.lc.get("input_device") is not None:
             cmd += ["--device", str(device or self.lc["input_device"])]
         self.status = "starting engine"
-        self.engine = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                       stderr=open(ROOT / "logs" / "engine.log", "a"), text=True, bufsize=1)
+        self.warnings, self.counts = [], collections.Counter()
+        self.eof.clear()
+        self._stopping = False
+        with open(ROOT / "logs" / "engine.log", "a") as err:     # the child keeps its own copy
+            self.engine = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                           stderr=err, text=True, bufsize=1)
         self.running = True
-        threading.Thread(target=self._reader, daemon=True).start()
+        self._reader_thread = threading.Thread(target=self._reader, args=(self.engine,), daemon=True)
+        self._reader_thread.start()
 
     def stop(self):
+        self._stopping = True
         if self.engine and self.engine.poll() is None:
             try:
                 self.engine.stdin.write(json.dumps({"cmd": "stop"}) + "\n"); self.engine.stdin.flush()
-                self.engine.wait(5)
+                self.engine.wait(20)         # it transcribes the speech it still holds, then emits eof
             except Exception:
                 self.engine.kill()
+        if self._reader_thread and self._reader_thread is not threading.current_thread():
+            self._reader_thread.join(30)     # let the final clause be translated, shown and logged
         self.running = False
         self.status = "stopped"
         self._broadcast()
@@ -146,14 +159,18 @@ class Live:
         self._broadcast()
 
     # --- clause pipeline ---------------------------------------------------------------
-    def _reader(self):
-        for line in self.engine.stdout:
+    def _reader(self, engine: subprocess.Popen):
+        for line in engine.stdout:
             try:
                 ev = json.loads(line)
             except json.JSONDecodeError:
                 continue
             if ev["type"] == "ready":
                 self.status = f"listening ({ev['source']})"
+            elif ev["type"] == "warn":
+                # e.g. the multilingual model failed to load: auto-detect degrades to RO only
+                self.warnings.append(ev["msg"])
+                self._log_event({"event": "warn", "msg": ev["msg"]})
             elif ev["type"] == "partial":
                 self.partial = ev["text"]
             elif ev["type"] == "clause":
@@ -163,7 +180,15 @@ class Live:
                 self.status = "input ended"
                 self.eof.set()
             self._broadcast()
+        rc = engine.wait()
+        if engine is not self.engine:        # an older engine; a newer run owns the state
+            return
+        self._flush()                        # a held fragment must not die with the engine
+        if not self.eof.is_set() and not self._stopping:
+            self.status = f"ENGINE STOPPED (exit {rc}): captions halted, see logs/engine.log"
+            self._log_event({"event": "engine_exit", "rc": rc})
         self.running = False
+        self._broadcast()
 
     def _on_clause(self, ev: dict):
         """Hold very short fragments ('Dar acum.') briefly and merge them with the next
@@ -179,7 +204,7 @@ class Live:
                 threading.Thread(target=self._handle, args=(p,), daemon=True).start()
                 p = None
             if p:
-                ev = {**ev, "ro": f"{p['ro']} {ev['ro']}".strip(), "multi": f"{p['multi']} {ev['multi']}".strip(),
+                ev = {**ev, **{k: f"{p.get(k) or ''} {ev.get(k) or ''}".strip() for k in ("ro", "multi", "en")},
                       "t_start": p["t_start"], "t_speech": p.get("t_speech", p["t_start"]), "stt_s": p["stt_s"] + ev["stt_s"],
                       "audio_s": p["audio_s"] + ev["audio_s"]}
             self._pending = None
@@ -211,6 +236,26 @@ class Live:
                 self.status = f"error on one chunk ({type(e).__name__}); still listening"
                 with open(ROOT / "logs" / "app_errors.log", "a") as f:
                     f.write(f"{dt.datetime.now().isoformat()} {ev.get('ro', '')[:200]!r}\n{traceback.format_exc()}\n")
+                self._log_failure(ev, "error", error=f"{type(e).__name__}: {e}")
+
+    def _log_failure(self, ev: dict, outcome: str, **extra):
+        """A clause that produced no caption still gets a log record and a count, so empty
+        or failed chunks are visible in the metrics instead of silently missing."""
+        rec = {"id": ev.get("id"), "outcome": outcome, "t_start": ev.get("t_start"), "t_end": ev.get("t_end"),
+               "ro": ev.get("ro", ""), "multi": ev.get("multi", ""), "en": ev.get("en", ""),
+               "audio_s": ev.get("audio_s"), "stt_s": ev.get("stt_s"), "profile": self.profile,
+               "time": dt.datetime.now().isoformat(timespec="milliseconds"), **extra}
+        with self.lock:
+            self.counts[outcome] += 1
+        self._write_log(rec)
+
+    def _log_event(self, rec: dict):
+        self._write_log({**rec, "time": dt.datetime.now().isoformat(timespec="milliseconds")})
+
+    def _write_log(self, rec: dict):
+        if self.log_path:
+            with open(self.log_path, "a") as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
     def _handle_locked(self, ev: dict):
         # language: in auto mode decide from the multilingual transcript
@@ -220,6 +265,7 @@ class Live:
         src_text = ev["ro"] if lang == "ro" else (ev.get("en") or ev.get("multi") or ev["ro"])
         src_text = apply_spellings(src_text, self.cfg.get("spellings") or {})
         if not src_text.strip():
+            self._log_failure(ev, "empty_stt", lang=lang)
             return
         tgt = "en" if lang == "ro" else "ro"
         clauses, tail = split_clauses(src_text)
@@ -231,13 +277,16 @@ class Live:
                        if hasattr(self.tr, "context") else self.tr.translate(p, lang, tgt, self.gloss))
         translation = " ".join(o for o in out if o)
         t_tr = time.time() - t0
+        if not translation.strip():                     # nothing new to show: not a success
+            self._log_failure(ev, "empty_mt", lang=lang, source=src_text, mt_s=round(t_tr, 3))
+            return
         shown = self.caps.add(translation)
         t1 = time.time()
         ok = self.pp.show(shown)
         t_disp = time.time()
         latency = t_disp - ev["t_end"]
         n_g, ok_g = self.gloss.adherence(src_text, translation, lang)
-        rec = {"id": ev["id"], "t_start": ev["t_start"], "t_end": ev["t_end"], "t_display": t_disp,
+        rec = {"id": ev["id"], "outcome": "ok", "t_start": ev["t_start"], "t_end": ev["t_end"], "t_display": t_disp,
                "lang": lang, "source": src_text,
                "en_recognizer": (ev.get("source") or ("whistle" if ev.get("en") else "parakeet")) if lang == "en" else None, "translation": translation, "latency_s": round(latency, 3),
                # average delay per word, approximating words as evenly spread over the commit
@@ -250,9 +299,12 @@ class Live:
                "time": dt.datetime.now().isoformat(timespec="milliseconds")}
         with self.lock:
             self.history = (self.history + [rec])[-10:]
-            self.lat.append(latency)
-        with open(self.log_path, "a") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            self.counts["ok"] += 1
+            if ok:
+                self.lat.append(latency)
+            else:
+                self.counts["pp_error"] += 1
+        self._write_log(rec)
 
     # --- UI state ------------------------------------------------------------------------
     def state(self) -> dict:
@@ -266,6 +318,7 @@ class Live:
                     "lines": [{"src": h["source"], "dst": h["translation"], "lat": h["latency_s"],
                                "lang": h["lang"]} for h in self.history],
                     "screen": self.caps.text, "pp_error": self.pp.last_error,
+                    "warnings": list(self.warnings), "counts": dict(self.counts),
                     "translator": self.lc["translator"], "stt": self.lc["stt_model"]}
 
     def _broadcast(self):
