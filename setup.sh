@@ -21,7 +21,8 @@ fi
 
 [ -f models/vad/silero_vad.onnx ] || curl -sfL -o models/vad/silero_vad.onnx \
   https://raw.githubusercontent.com/snakers4/silero-vad/master/src/silero_vad/data/silero_vad.onnx
-for m in nllb-200-distilled-1.3B nllb-200-3.3B; do
+NLLB="nllb-200-distilled-1.3B"; [ "${1:-}" != "live" ] && NLLB="$NLLB nllb-200-3.3B"   # 3.3B: benchmarks only
+for m in $NLLB; do
   [ -f models/ct2/$m/model.bin ] || .venv-mt/bin/ct2-transformers-converter --model facebook/$m \
       --output_dir models/ct2/$m --quantization int8_float16 --force
 done
@@ -29,11 +30,18 @@ done
 import yaml
 from huggingface_hub import snapshot_download
 cfg = yaml.safe_load(open("config.yaml"))
-spec = cfg["live"]["translator"]
-if spec.startswith("mlx:"):
-    snapshot_download(spec.split(":", 1)[1])
-for repo in ["mlx-community/parakeet-tdt-0.6b-v3", "surogate/jackrabbit-110m-ro"]:
-    snapshot_download(repo)
+specs = {cfg["live"].get("translator", "")} | {p.get("translator", "") for p in (cfg.get("profiles") or {}).values()}
+for spec in specs:                       # every translator a profile can switch to
+    if spec.startswith("mlx:"):
+        snapshot_download(spec.split(":", 1)[1])
+# speech models (+ NLLB tokenizer, needed offline at runtime)
+from huggingface_hub import hf_hub_download
+for repo, files in [("surogate/jackrabbit-110m-ro", ["jackrabbit-110m-ro.nemo", "lm-4gram-ro.nemo"])]:
+    for f in files:
+        hf_hub_download(repo, f)
+snapshot_download("mlx-community/parakeet-tdt-0.6b-v3")
+from transformers import AutoTokenizer
+AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-1.3B")
 PY
 # Whistle (English STT): fetch the engine + weights ONCE, vendored in models/whistle so the
 # runtime never downloads anything (telemetry off for this step too).
@@ -45,8 +53,9 @@ if [ ! -f models/whistle/whistle.cact ] || [ ! -f models/whistle/libneedle.dylib
   LIB=$(.venv-nemo/bin/python -c "import os; os.environ['NEEDLE_TELEMETRY']='0'; import needle; print(needle._library_path(3))")
   cp "$LIB" models/whistle/libneedle.dylib
 fi
-[ -f data/ref/cornilescu/data/data.parquet ] || .venv/bin/python -c "
+[ "${1:-}" = "live" ] || [ -f data/ref/cornilescu/data/data.parquet ] || .venv/bin/python -c "
 from huggingface_hub import hf_hub_download
 hf_hub_download('k-mktr/romanian_cornilescu_ro','data/data.parquet',repo_type='dataset',local_dir='data/ref/cornilescu')"
+mkdir -p logs/services
 .venv/bin/python -m pytest -q tests
 echo "Setup complete. Next: cp .env.example .env (only for dev Google tools), then see README.md"
