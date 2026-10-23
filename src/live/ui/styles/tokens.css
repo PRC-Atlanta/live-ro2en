@@ -15,14 +15,10 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
 body { background: var(--bg-0); color: var(--ink); font: 15px/1.4 var(--font); }
-.bar { display: flex; gap: 4px; align-items: center; padding: 3px 4px; background: var(--bar);
-       border-bottom: 1px solid #000; flex-wrap: wrap; }
-.bar a { font: 12px var(--font); color: #dfe5e7; padding: 4px 10px; text-decoration: none;
-         background: linear-gradient(var(--btn-hi), var(--btn)); border: 1px solid var(--btn-edge); border-radius: 2px; }
-.bar a[aria-current="page"] { color: var(--cyan-hi); border-color: var(--edge); }
-.logo { font-weight: 800; padding: 0 8px; letter-spacing: -.5px; }
-.conn { margin-left: auto; font-size: 12px; color: var(--mute); padding: 0 8px; }
-.conn[data-ok="true"] { color: var(--lime); }
+/* connection line above the screen: only while /ws is lost (or with ?mock) */
+.conn { margin: 0; padding: 6px 16px; font-size: 13px; text-align: center; color: #04161c; background: var(--amber); }
+.conn[data-kind="mock"] { color: var(--mute); background: none; padding-bottom: 0; font-size: 12px; }
+.conn[hidden] { display: none; }
 main { padding: 16px; max-width: 760px; margin: 0 auto; }
 .placeholder { border: 1px dashed var(--edge); padding: 16px; color: var(--label); }
 .placeholder pre { color: var(--mute); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }

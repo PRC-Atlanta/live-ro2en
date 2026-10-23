@@ -28,7 +28,7 @@ export const FIELDS = {
     { key: "propresenter.token_name", label: "Text token name", kind: "text" },
     { key: "propresenter.max_lines", label: "Lines on screen", kind: "choice",
       options: [[1, "1 line"], [2, "2 lines"], [3, "3 lines"]] },
-    { key: "propresenter.max_chars_per_line", label: "Line width (letters)", kind: "number", min: 20, max: 90 },
+    { key: "propresenter.max_chars_per_line", label: "Line width (letters)", kind: "number", min: 20, max: 80 },
     { key: "propresenter.stage_message", label: "Also show on the stage display", kind: "toggle" },
   ],
   advanced: [
@@ -60,8 +60,7 @@ export function stored(f, v) {
   return v;
 }
 
-// {live: {k: v}} patch for one field
+// the PUT /api/settings body for one field: {values: {"propresenter.max_lines": 3}}
 export function patch(key, value) {
-  const [sec, k] = key.split(".");
-  return { [sec]: { [k]: value } };
+  return { values: { [key]: value } };
 }

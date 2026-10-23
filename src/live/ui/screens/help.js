@@ -51,7 +51,7 @@ export function render(el, store) {
 
   const unsub = store.subscribe(s => {
     s ||= {};
-    f.setSetupName(S.toolbar.setupName(s.audio?.device, !(s.pp ? !s.pp.connected : s.pp_error)));
+    f.update(s);
   });
 
   const DONE = { rehearsal: S.toast.rehearsal, diagnostics: S.toast.diagnostics };
@@ -59,7 +59,7 @@ export function render(el, store) {
     b.onclick = async () => {
       b.disabled = true;
       const action = b.dataset.do;
-      const res = await send(action, action === "rehearsal" ? { sample: "default" } : {});
+      const res = await send(action, {});                 // rehearsal: the first recording in samples/
       b.disabled = false;
       toast(messageFor(res) || DONE[action], res.ok ? "ok" : res.notBuilt ? "info" : "warn");
       if (res.ok && action === "rehearsal") location.hash = "#live";

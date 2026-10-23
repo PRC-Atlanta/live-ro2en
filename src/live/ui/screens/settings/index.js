@@ -1,8 +1,8 @@
 // Settings (APP_PLAN §1.3): Basic, Names & Spellings, ProPresenter, Advanced (collapsed, with
 // Reset to defaults). Every change saves at once through PUT /api/settings; when the answer
 // has restart_required, the field says "Applies next time you press Start".
-import { call, h, useStyles, choice, led, field, button, note, NOT_BUILT } from "../setup/kit.js";
-import { saveNote, settingsOf, getPath, ppFixText, ppResult } from "../setup/flow.js";
+import { call, h, useStyles, screenFrame, choice, led, field, button, note, NOT_BUILT } from "../setup/kit.js";
+import { saveNote, settingsOf, settingsBody, getPath, ppFixText, ppResult } from "../setup/flow.js";
 import { listEditor } from "../../components/listeditor.js";
 import { TABS, FIELDS, shown, stored, patch } from "./fields.js";
 
@@ -20,16 +20,16 @@ export function render(el, store) {
   let tab = "basic";
   try { tab = localStorage.getItem(TAB_KEY) || "basic"; } catch { /* private mode */ }
   if (!TABS.some(([id]) => id === tab)) tab = "basic";
-  let settings = {}, defaults = null, loadedOk = false;
+  // settings: nested {live: {...}}; defaults: by dotted key; limits: the backend's fields (min/max)
+  let settings = {}, defaults = null, limits = {}, loadedOk = false;
   let onState = () => {};
 
   const tabs = h("div.fx-tabs", { role: "tablist", "aria-label": "Settings" });
   const pane = h("div", { role: "tabpanel" });
   const top = note();
-  el.append(h("div.fx-screen", h("section.fx-panel",
+  const unframe = screenFrame(el, store, h("section.fx-panel",
     h("div.fx-head", h("span.fx-label", "Settings"), h("span.fx-sub", "Saved as you go")),
-    tabs, top, pane,
-    h("div.fx-foot", h("div.fx-mark", "LIVE", h("span"), "TRANSLATE"), h("span.fx-sub", "RO ⇄ EN · Offline")))));
+    tabs, top, pane));
 
   const tabBtns = TABS.map(([id, label]) => h("button.fx-tab", {
     type: "button", role: "tab", "data-tab": id, onclick: () => show(id),
@@ -60,6 +60,10 @@ export function render(el, store) {
         input.value = value ?? "";
       });
     } else {
+      // the narrower of this screen's range and the one the backend accepts
+      const min = Math.max(f.min ?? -Infinity, limits[f.key]?.min ?? -Infinity);
+      const max = Math.min(f.max ?? Infinity, limits[f.key]?.max ?? Infinity);
+      f = { ...f, min: isFinite(min) ? min : undefined, max: isFinite(max) ? max : undefined };
       input = h("input", {
         type: f.kind === "number" ? "number" : "text", min: f.min, max: f.max, step: f.step,
         inputmode: f.kind === "number" ? "decimal" : null, spellcheck: false, autocomplete: "off",
@@ -102,28 +106,33 @@ export function render(el, store) {
     names() {
       const kwMsg = note(), spMsg = note();
       const words = listEditor({ label: "Names & words", placeholders: ["e.g. Ionuț Pop"], addLabel: "Add a name or word",
-        onChange: async v => { kwMsg.say("Saving…"); const n = saveNote(await call("PUT", "keywords", { words: v })); kwMsg.say(n.text, n.tone); } });
+        onChange: async v => { kwMsg.say("Saving…"); const n = saveNote(await call("PUT", "keywords", { user: v })); kwMsg.say(n.text, n.tone); } });
       const spell = listEditor({ label: "Preferred spellings", pair: true, placeholders: ["Heard as", "Write as"], addLabel: "Add a spelling",
         onChange: async v => {
           spMsg.say("Saving…");
-          const n = saveNote(await call("PUT", "spellings", { spellings: Object.fromEntries(v) }));
+          const n = saveNote(await call("PUT", "spellings", { user: Object.fromEntries(v) }));
           spMsg.say(n.text, n.tone);
         } });
+      // GET/PUT keywords and spellings: {bundled, user, session}; only the user's list is edited here
+      const kwBuilt = h("span.fx-hint"), spBuilt = h("span.fx-hint");
+      const builtIn = (n, what) => (n ? `Also uses ${n} ${what} that come with the app.` : "");
       pane.append(
         h("div.fx-sec", h("span.fx-label", "Names & words"),
           h("p.fx-text", "Names, places and words the translator should know: guest speakers, church names, " +
                          "books of the Bible. Kept for every service. For one service only, press T on the Live screen."),
-          words.el, kwMsg),
+          words.el, kwBuilt, kwMsg),
         h("div.fx-sec", h("span.fx-label", "Preferred spellings"),
           h("p.fx-text", "When a word is heard one way, write it another way, e.g. Iisus → Isus."),
-          spell.el, spMsg));
+          spell.el, spBuilt, spMsg));
       call("GET", "keywords").then(r => {
-        if (r.ok) words.set(r.data?.words || []);
+        if (r.ok) { words.set(r.data?.user || []); kwBuilt.textContent = builtIn(r.data?.bundled?.length, "names and words"); }
         else kwMsg.say(r.notBuilt ? `Names & words: ${NOT_BUILT.toLowerCase()}` : "Couldn't load the list.", "warn");
       });
       call("GET", "spellings").then(r => {
-        if (r.ok) spell.set(Object.entries(r.data?.spellings || {}));
-        else spMsg.say(r.notBuilt ? `Preferred spellings: ${NOT_BUILT.toLowerCase()}` : "Couldn't load the list.", "warn");
+        if (r.ok) {
+          spell.set(Object.entries(r.data?.user || {}));
+          spBuilt.textContent = builtIn(Object.keys(r.data?.bundled || {}).length, "spellings");
+        } else spMsg.say(r.notBuilt ? `Preferred spellings: ${NOT_BUILT.toLowerCase()}` : "Couldn't load the list.", "warn");
       });
     },
 
@@ -135,13 +144,9 @@ export function render(el, store) {
         if (!defaults) { resetMsg.say("Reset is not available in this version yet.", "warn"); return; }
         if (!armed) { armed = true; reset.textContent = "Press again to reset"; resetMsg.say("This resets the Advanced settings above.", "warn"); return; }
         armed = false; reset.textContent = "Reset to defaults";
-        const body = {};
-        for (const f of FIELDS.advanced) {
-          const [sec, k] = f.key.split(".");
-          const v = getPath(defaults, f.key);
-          if (v !== undefined) (body[sec] ??= {})[k] = v;
-        }
-        const r = await call("PUT", "settings", body);
+        const vals = {};                               // only the Advanced keys ({reset: true} would reset all)
+        for (const f of FIELDS.advanced) if (defaults[f.key] !== undefined) vals[f.key] = defaults[f.key];
+        const r = await call("PUT", "settings", settingsBody(vals));
         const n = saveNote(r);
         if (r.ok) { settings = settingsOf(r.data); show("advanced", true); }
         resetMsg.say(n.text === "Saved" ? "Reset to defaults." : n.text, n.tone);
@@ -186,7 +191,7 @@ export function render(el, store) {
 
   call("GET", "settings").then(r => {
     loadedOk = r.ok;
-    if (r.ok) { settings = settingsOf(r.data); defaults = r.data?.defaults || null; }
+    if (r.ok) { settings = settingsOf(r.data); defaults = r.data?.defaults || null; limits = r.data?.fields || {}; }
     else top.say(r.notBuilt ? `Saving settings is ${NOT_BUILT.toLowerCase()} Changes here won't be kept.`
                             : "Couldn't load the settings. Close and reopen the app.", "warn");
     const s = store.get();
@@ -195,5 +200,5 @@ export function render(el, store) {
     show(tab);
   });
   const unsub = store.subscribe(s => onState(s));
-  return () => unsub();
+  return () => { unsub(); unframe(); };
 }

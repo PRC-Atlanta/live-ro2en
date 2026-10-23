@@ -1,16 +1,19 @@
 // Setup wizard logic with no DOM, so tests/test_ui_setup.py can drive it under node.
 //
-// Shapes this screen expects (planned endpoints; a 501 is handled everywhere):
-//   GET  /api/setup        (S6) {ram_gb, disk_free_gb, recommended: "fast"|"quality",
-//                                models: {fast: {present, gb}, quality: {present, gb}},
-//                                download: {state: idle|running|verifying|paused|done|error,
-//                                           profile, pct, eta_s, label, error}}
-//   POST /api/setup/download {profile}, POST /api/setup/cancel
-//   GET  /api/permissions  (S1) {microphone: granted|denied|undetermined}
-//   GET  /api/devices           [{index, name, likely_mixer?}]
-//   POST /api/pp/test      (S2) {ok, error_code: unreachable|auth|message_missing|null, detail?}
-//   POST /api/pp/test_caption   {ok, error_code?}
-//   PUT  /api/settings     (S3) partial {live: {...}, propresenter: {...}} -> {settings, restart_required}
+// Payloads (contract.json; the real routes are src/live/routes/{setup,output,settings}.py):
+//   GET  /api/setup  (S6) @setup: {profiles: {fast|quality: {size_bytes, missing_bytes, ready, downloadable}},
+//                    models, recommended_profile, disk: {free_bytes}, hardware: {ram_bytes}, checks,
+//                    needs_setup, problem, download: {state: idle|running|done|cancelled|error,
+//                    profile, done_bytes, total_bytes, pct, rate_bps, eta_s, error, error_code}}
+//   POST /api/setup/download {profile} -> @setup (409 {error: live, msg} while captioning)
+//   POST /api/setup/cancel -> @setup; it really stops, and the next download resumes the partial files
+//   GET  /api/permissions  (S1, planned: 501 until built) {microphone: granted|denied|undetermined}
+//   GET  /api/devices      [{index, name}]
+//   POST /api/pp/test      (S2) @pp_test {ok, detail, messages, message_found, pp: @pp_status}
+//   POST /api/pp/test_caption  @pp_test_caption {ok, detail, pp}
+//   GET  /api/settings     (S3) @settings {values: {"live.profile": ...}, defaults, fields, restart_required, ...}
+//   PUT  /api/settings     {values: {"dotted.key": value}} -> @settings; 400 @settings_rejected for a key
+//                          that can't be changed, 400 @settings_invalid {detail: {key: reason}}
 
 export const STEPS = [
   { id: "check", title: "This Mac" },
@@ -21,20 +24,33 @@ export const STEPS = [
   { id: "lang", title: "Usual language" },
 ];
 
-export const MIN_RAM_FOR_BEST = 16;
-export const SIZES_GB = { fast: 9, quality: 19 };
+// the limits model_setup.py checks: GiB of memory, GB (10^9) of disk
+const GiB = 1024 ** 3, GB = 1000 ** 3;
+export const MIN_RAM_FOR_BEST = 24;
+const DISK_MARGIN_GB = 2;
+export const SIZES_GB = { fast: 7, quality: 18 };      // shown only until GET /api/setup answers
+
+export const ramGb = info => (info?.hardware?.ram_bytes ? Math.round(info.hardware.ram_bytes / GiB) : null);
+export const freeGb = info => (info?.disk?.free_bytes != null ? info.disk.free_bytes / GB : null);
+// GB a profile takes (each profile includes the ones before it); still to download unless ready
+export function sizeGb(info, p) {
+  const b = info?.profiles?.[p];
+  return b ? Math.max(1, Math.round((b.ready || !b.missing_bytes ? b.size_bytes : b.missing_bytes) / GB)) : SIZES_GB[p];
+}
 
 // Which profile choices to offer: {fast: reason|null, quality: reason|null} (null = allowed).
 export function profileLimits(info) {
-  const need = p => info?.models?.[p]?.gb ?? SIZES_GB[p];
-  const have = p => !!info?.models?.[p]?.present;
   const out = {};
+  const ram = ramGb(info), free = freeGb(info);
   for (const p of ["fast", "quality"]) {
+    const prof = info?.profiles?.[p];
     let why = null;
-    if (p === "quality" && info?.ram_gb != null && info.ram_gb < MIN_RAM_FOR_BEST)
-      why = `Needs ${MIN_RAM_FOR_BEST} GB of memory; this Mac has ${info.ram_gb} GB.`;
-    else if (!have(p) && info?.disk_free_gb != null && info.disk_free_gb < need(p) + 2)
-      why = `Needs about ${need(p) + 2} GB free; this Mac has ${Math.floor(info.disk_free_gb)} GB.`;
+    if (p === "quality" && ram != null && ram < MIN_RAM_FOR_BEST)
+      why = `Needs ${MIN_RAM_FOR_BEST} GB of memory; this Mac has ${ram} GB.`;
+    else if (prof && !prof.ready && !prof.downloadable)
+      why = "Not available to download in this version yet.";
+    else if (prof && !prof.ready && free != null && free < prof.missing_bytes / GB + DISK_MARGIN_GB)
+      why = `Needs about ${Math.ceil(prof.missing_bytes / GB + DISK_MARGIN_GB)} GB free; this Mac has ${Math.floor(free)} GB.`;
     out[p] = why;
   }
   return out;
@@ -42,29 +58,40 @@ export function profileLimits(info) {
 
 export function defaultProfile(info) {
   const lim = profileLimits(info);
-  const want = info?.recommended || "fast";
+  const want = info?.recommended_profile || "fast";
   return lim[want] ? (lim.fast ? null : "fast") : want;
 }
+
+// The download state in the wizard's words: the backend's "cancelled" is "paused" here (the
+// partial files stay and the next download carries on from them).
+export function downloadState(d) {
+  return d?.state === "cancelled" ? "paused" : d?.state || "idle";
+}
+
+const DL_ERRORS = {
+  disk_full: "this Mac ran out of free space. Free some space, then",
+  network: "the connection was lost.",
+  checksum: "a file arrived damaged; it is fetched again.",
+  not_published: "part of the translator is not available to download yet.",
+  network_not_allowed: "this version is not allowed to use the internet.",
+};
 
 // Download progress in words.
 export function downloadText(d) {
   if (!d) return "";
   const left = d.eta_s == null ? "" : d.eta_s > 90 ? ` · about ${Math.round(d.eta_s / 60)} min left`
                                                    : ` · under 2 min left`;
-  switch (d.state) {
-    case "running": return `${d.label || "Downloading"} · ${Math.floor(d.pct ?? 0)}%${left}`;
-    case "verifying": return "Checking the downloaded files…";
+  switch (downloadState(d)) {
+    case "running": return `Downloading · ${Math.floor(d.pct ?? 0)}%${left}`;
     case "paused": return `Paused at ${Math.floor(d.pct ?? 0)}%. Press Resume to carry on where it stopped.`;
-    case "error": return `The download stopped: ${d.error || "connection lost"}. Press Resume to try again; nothing is lost.`;
+    case "error": return `The download stopped: ${DL_ERRORS[d.error_code] || DL_ERRORS.network} Press Resume to try again; nothing is lost.`;
     case "done": return "Downloaded and checked.";
     default: return "";
   }
 }
 
 export function modelsReady(info, profile) {
-  if (!info) return false;
-  const p = ["fast"].concat(profile === "quality" ? ["quality"] : []);
-  return p.every(k => info.models?.[k]?.present) || info.download?.state === "done";
+  return !!info?.profiles?.[profile === "quality" ? "quality" : "fast"]?.ready;   // quality includes fast
 }
 
 // "Next stays disabled until the meter hears sound": sound on the chosen input for 0.75 s.
@@ -84,14 +111,18 @@ export class SoundCheck {
     return this.heard;
   }
 }
+// The state has no `audio` field until S1 builds the level meter: the wizard can't listen then.
+export const hasMeter = s => !!s && "audio" in s;
 
-// Mixer-like inputs first (the backend's likely_mixer, else a name guess), then the rest.
+// Mixer-like inputs first (the backend's likely_mixer, else a name guess), then the rest, and
+// virtual or meeting-app inputs (BlackHole, Teams, Pro Tools bridges) last: the first one is preselected.
 const MIXERISH = /(behringer|focusrite|scarlett|presonus|yamaha|allen|heath|midas|soundcraft|mackie|motu|rme|zoom|tascam|usb audio|interface|mixer|umc|x32|xr18|dante|line in)/i;
-const NOT_SOUNDBOARD = /(blackhole|soundflower|zoomaudiodevice|teams|iphone|airpods)/i;
+const NOT_SOUNDBOARD = /(blackhole|soundflower|zoomaudiodevice|teams|iphone|airpods|loopback|aggregate|audio bridge|virtual)/i;
 export function sortDevices(list) {
   const mix = d => d.likely_mixer ?? (MIXERISH.test(d.name) && !NOT_SOUNDBOARD.test(d.name));
+  const rank = d => (d.mixer ? 2 : NOT_SOUNDBOARD.test(d.name) ? 0 : 1);
   return [...(list || [])].map(d => ({ ...d, mixer: !!mix(d) }))
-    .sort((a, b) => (b.mixer - a.mixer) || a.index - b.index);
+    .sort((a, b) => (rank(b) - rank(a)) || a.index - b.index);
 }
 
 // What to do when the ProPresenter test fails: one message and one fix, in plain words.
@@ -120,22 +151,40 @@ export function ppFixText(code, cfg = {}) {
   }
 }
 
-// Turns a call() result for pp/test into {ok, code}
+// Turns a call() result for pp/test or pp/test_caption into {ok, code}: the code is the
+// health ping's pp.error_code, or message_missing when ProPresenter answered without our message.
 export function ppResult(res) {
   if (res.notBuilt) return { ok: false, code: "not_built" };
   if (res.offline) return { ok: false, code: "offline" };
-  if (res.ok && res.data?.ok !== false) return { ok: true, code: null };
-  return { ok: false, code: res.data?.error_code || "unreachable" };
+  const d = res.data || {};
+  if (res.ok && d.ok === true) return { ok: true, code: null };
+  if (d.pp?.error_code) return { ok: false, code: d.pp.error_code };
+  if (d.pp?.connected && d.message_found === false) return { ok: false, code: "message_missing" };
+  return { ok: false, code: "unreachable" };
 }
 
-// Settings PUT answer -> the note to show next to the field.
+// Settings PUT answer -> the note to show next to the field. restart_required is true when a
+// setting that applies at Start changed while captions are running.
 export const RESTART_NOTE = "Applies next time you press Start";
 export function saveNote(res) {
   if (res.notBuilt) return { text: "Saving settings is not available in this version yet.", tone: "warn" };
-  if (!res.ok) return { text: res.data?.detail || res.data?.error || "Could not save. Try again.", tone: "bad" };
+  if (!res.ok) return { text: refusedText(res.data), tone: "bad" };
   const rr = res.data?.restart_required;
   if (Array.isArray(rr) ? rr.length : rr) return { text: RESTART_NOTE, tone: "warn" };
   return { text: "Saved", tone: "good" };
+}
+
+// a 400 answer in words: {error: rejected, keys} or {error: invalid, detail: {key: reason}}
+function refusedText(d) {
+  if (d?.error === "rejected") return "That setting can't be changed here.";
+  const det = d?.detail;
+  if (det && typeof det === "object") {
+    const why = Object.values(det).find(v => typeof v === "string");
+    if (why) return `Not saved: it ${why}.`;
+  }
+  if (typeof det === "string" && det) return det;
+  if (typeof d?.msg === "string" && d.msg) return d.msg;
+  return "Could not save. Try again.";
 }
 
 // Can the operator press Next on this step?
@@ -144,7 +193,7 @@ export function canNext(step, ctx) {
     case "check": return !!ctx.profile;
     case "download": return !!ctx.modelsReady;
     case "mic": return ctx.mic === "granted" || ctx.mic === "unknown";
-    case "sound": return !!ctx.heard;
+    case "sound": return !!ctx.heard || !!ctx.noMeter;
     case "pp": return !!ctx.ppOk || !!ctx.ppSkipped;
     case "lang": return !!ctx.mode;
     default: return false;
@@ -163,7 +212,15 @@ export function setPath(obj, path, value) {
 export function getPath(obj, path) {
   return path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), obj);
 }
-// The settings object from a GET /api/settings answer ({settings, defaults} or the object itself)
+
+// A GET/PUT /api/settings answer {values: {"live.profile": "fast", ...}} as a nested object
+// ({live: {profile: "fast"}}), so screens read it with getPath(s, "live.profile").
 export function settingsOf(data) {
-  return data && typeof data === "object" && data.settings && typeof data.settings === "object" ? data.settings : (data || {});
+  if (!data || typeof data !== "object" || !data.values || typeof data.values !== "object") return {};
+  let out = {};
+  for (const [k, v] of Object.entries(data.values)) out = setPath(out, k, v);
+  return out;
 }
+
+// The PUT /api/settings body for some dotted keys: settingsBody({"live.profile": "fast"})
+export const settingsBody = values => ({ values });

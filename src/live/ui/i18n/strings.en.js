@@ -8,6 +8,8 @@ export const S = {
   toolbar: {
     rehearsal: "Rehearsal", rehearsalHint: "Run a rehearsal with a recorded sermon",
     names: "Names & words", settings: "Settings", help: "?", helpHint: "Help",
+    navLabel: "Screens", live: "Live", liveHint: "The Live screen", setupHint: "Sound input and ProPresenter (Settings)",
+    after: "After", afterHint: "Summary, rating and transcript of the last service",
     setupName: (device, pp) => `${device || "No sound input"} → ${pp ? "ProPresenter" : "ProPresenter (not connected)"}`,
   },
 
