@@ -1,4 +1,5 @@
-"""Pinned model versions (requirements/models.lock.txt) for setup.sh.
+"""Pinned model versions (requirements/models.lock.txt) for setup.sh and the app's first-run
+download (src/live/model_setup.py, which uses `items`/`subset` and `pin_ref`).
 
 Downloading a Hugging Face repo by commit hash does not write `refs/main` in the cache, and
 the offline runtime (HF_HUB_OFFLINE=1, no revision given) resolves models through
@@ -50,6 +51,34 @@ def fetch(repo: str, files: list[str] | None = None) -> None:
     else:
         snapshot_download(repo, revision=rev)
     pin_ref(repo, rev)
+
+
+PLACEHOLDER = "0" * 40               # an unpublished repo (see the comment in models.lock.txt)
+TIERS = ("fast", "quality")          # download profiles; each one includes the tiers before it
+
+
+def items(lock: pathlib.Path | None = None) -> list[dict]:
+    """Every hf/dataset lock line with its optional columns:
+    {kind, repo, rev, size, profile, files (list, [] = not listed), dir (str|None)}."""
+    out = []
+    for line in (lock or LOCK).read_text().splitlines():
+        parts = line.split()
+        if len(parts) < 3 or parts[0] not in ("hf", "dataset"):
+            continue
+        extra = dict(p.split("=", 1) for p in parts[3:] if "=" in p)
+        out.append({"kind": parts[0], "repo": parts[1], "rev": parts[2],
+                    "size": int(extra.get("size", 0)), "profile": extra.get("profile", "bench"),
+                    "files": [f for f in extra.get("files", "").split(",") if f],
+                    "dir": extra.get("dir")})
+    return out
+
+
+def subset(profile: str, lock: pathlib.Path | None = None) -> list[dict]:
+    """The lock items a download profile needs: 'fast' = Fast only, 'quality' = Fast + Best."""
+    if profile not in TIERS:
+        raise ValueError(f"unknown profile {profile!r}; one of {', '.join(TIERS)}")
+    want = TIERS[:TIERS.index(profile) + 1]
+    return [i for i in items(lock) if i["profile"] in want]
 
 
 def pin_all(cache_dir: str | pathlib.Path | None = None) -> list[str]:

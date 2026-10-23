@@ -8,7 +8,18 @@
     "problem_code": {"enum": ["no_sound", "device_lost", "mic_denied", "recognition_behind", "captions_behind",
                               "engine_stopped", "english_unavailable", "pp_unreachable", "pp_message_missing",
                               "disk_full", "models_missing"]},
-    "not_built": {"object": {"error": {"enum": ["not_implemented"]}, "endpoint": "str", "owner": "str"}}
+    "not_built": {"object": {"error": {"enum": ["not_implemented"]}, "endpoint": "str", "owner": "str"}},
+    "setup": {"object": {"profiles": {"map": {"object": {"size_bytes": "int", "missing_bytes": "int", "ready": "bool", "downloadable": "bool"}}},
+                                                      "models": {"list": {"object": {"id": "str", "profile": {"enum": ["fast", "quality"]}, "size_bytes": "int", "present": "bool", "published": "bool"}}},
+                                                      "recommended_profile": {"enum": ["fast", "quality"]},
+                                                      "disk": {"object": {"path": "str", "free_bytes": "int"}},
+                                                      "hardware": {"object": {"ram_bytes": "int", "arch": "str", "chip": "str", "apple_silicon": "bool"}},
+                                                      "checks": {"list": {"object": {"id": "str", "ok": "bool", "detail": "str"}}},
+                                                      "needs_setup": "bool", "problem": {"enum": ["models_missing", null]},
+                                                      "download": {"object": {"state": {"enum": ["idle", "running", "done", "cancelled", "error"]}, "running": "bool",
+                                                                              "profile": "str|null", "done_bytes": "int", "total_bytes": "int", "pct": "num",
+                                                                              "rate_bps": "num|null", "eta_s": "num|null", "item": "str|null", "file": "str|null",
+                                                                              "error": "str|null", "error_code": "str|null"}}}}
   },
 
   "state": {
@@ -91,9 +102,9 @@
     {"method": "POST", "path": "/api/import_config", "owner": "S3", "built": false},
 
     {"method": "GET",  "path": "/api/devices",      "owner": "S6", "built": true, "response": {"list": {"object": {"index": "int", "name": "str"}}}},
-    {"method": "GET",  "path": "/api/setup",        "owner": "S6", "built": false},
-    {"method": "POST", "path": "/api/setup/download", "owner": "S6", "built": false},
-    {"method": "POST", "path": "/api/setup/cancel", "owner": "S6", "built": false},
+    {"method": "GET",  "path": "/api/setup",        "owner": "S6", "built": true, "response": "@setup"},
+    {"method": "POST", "path": "/api/setup/download", "owner": "S6", "built": true, "request": {"profile": {"enum": ["fast", "quality"]}}, "response": "@setup"},
+    {"method": "POST", "path": "/api/setup/cancel", "owner": "S6", "built": true, "response": "@setup"},
 
     {"method": "POST", "path": "/api/preflight",    "owner": "S9", "built": false},
     {"method": "POST", "path": "/api/rate",         "owner": "S9", "built": false, "request": {"score": "int", "tags": {"list": "str"}, "note": "str"}},
