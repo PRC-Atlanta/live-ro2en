@@ -31,3 +31,7 @@ __pycache__/
 .DS_Store
 *.partial
 data/propresenter/
+
+# Dev user data (settings.yaml, saved names) and agent worktrees
+user/
+.claude/worktrees/

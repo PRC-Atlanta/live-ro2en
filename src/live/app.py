@@ -38,6 +38,8 @@ ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 import paths                                         # noqa: E402
+if os.environ.get("LIVE_HOME"):        # loaders and the model downloader share one cache
+    os.environ.setdefault("HF_HOME", str(paths.hf_home()))
 import security                                      # noqa: E402
 from captions import RollingCaptions                 # noqa: E402
 from langid import LangTracker                       # noqa: E402
@@ -47,6 +49,7 @@ from pipeline import PipelineMixin                   # noqa: E402
 from propresenter import ProPresenter                # noqa: E402
 import settings                                      # noqa: E402
 from settings import SettingsMixin                   # noqa: E402
+from report import SessionMixin                      # noqa: E402
 from state import StateMixin                         # noqa: E402
 from translate import Glossary                       # noqa: E402
 # re-exported: tests and tools import these from live.app
@@ -54,7 +57,7 @@ from pipeline import is_echo, merge_clauses, pack_parts            # noqa: E402,
 from security import LOOPBACK, allowed_hosts, request_allowed      # noqa: E402,F401
 
 
-class Live(LifecycleMixin, PipelineMixin, OutputMixin, StateMixin, SettingsMixin):
+class Live(LifecycleMixin, PipelineMixin, OutputMixin, SessionMixin, StateMixin, SettingsMixin):
     """One service: the engine child, the translator, ProPresenter and the control state.
     The behaviour lives in the mixins (lifecycle, pipeline, output, state); this is the data."""
 

@@ -68,12 +68,11 @@
                                            "action": {"object": {"id": "str", "label": "str"}}}},
                        "nullable": true, "built": false, "owner": "S1"},
     "auto_actions":   {"type": {"list": {"object": {"t": "num", "msg": "str"}}}, "built": false, "owner": "S4"},
-    "elapsed_s":      {"type": "num|null", "built": false, "owner": "S9"},
-    "first_word_ok_pct": {"type": "num|null", "built": false, "owner": "S9"},
+    "elapsed_s":      {"type": "num|null", "built": true, "owner": "S9"},
+    "first_word_ok_pct": {"type": "num|null", "built": true, "owner": "S9"},
     "session_terms_n": {"type": "int", "built": true, "owner": "S3"},
     "corrections_n":  {"type": "int", "built": true, "owner": "S2"},
-    "preflight":      {"type": "@preflight", "nullable": true, "built": false, "owner": "S9",
-                       "note": "served once routes/session.py is mounted; S11 flips built (with elapsed_s, first_word_ok_pct) when Live includes report.SessionMixin"}
+    "preflight":      {"type": "@preflight", "nullable": true, "built": true, "owner": "S9"}
   },
 
   "endpoints": [

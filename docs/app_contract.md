@@ -51,10 +51,8 @@ page. The new UI is served at `/ui/`. S5a switches `/` over to it once the Live 
 On connect, `/ws` sends one state object. It sends another on every change, and at least once
 a second. See `contract.json` → `state` for every field and its type.
 
-- **Built:** `running status mode profile profiles lang partial latency_last latency_median
-  lines[{src,dst,lat,lang}] screen pp_error warnings counts alerts translator stt`.
-- **Planned:** `phase progress audio pp pace backlog paused held problem auto_actions elapsed_s
-  first_word_ok_pct session_terms_n corrections_n preflight`.
+- **Built:** `running status mode profile profiles lang partial latency_last latency_median lines screen pp_error warnings counts alerts translator stt pp paused held elapsed_s first_word_ok_pct session_terms_n corrections_n preflight`.
+- **Planned:** `phase progress audio pace backlog problem auto_actions`.
 
 `phase`: `needs_setup → loading → ready → starting → listening | captioning → stopping →
 stopped/ready … → unloading`, plus `error`.
@@ -137,8 +135,8 @@ paths resolve to exactly where they were before.
 ## Orchestrator flags
 
 - **Built:** `--config --file --autostart --exit-on-eof --headless --pp-port --mode --profile
-  --port`. `--port` overrides `live.web_port`; the shell passes a free port.
-- **Planned:** `--settings <settings.yaml>` (S3) and `--hold` (S1: preload and wait for
+  --port --settings`. `--port` overrides `live.web_port`; the shell passes a free port.
+- **Planned:** `--hold` (S1: preload and wait for
   Start).
 
 ## Bundle layout (S7/S8/S10)

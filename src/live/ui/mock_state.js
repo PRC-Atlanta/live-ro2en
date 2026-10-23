@@ -58,7 +58,6 @@ for (const [code, severity] of Object.entries(PROBLEMS)) {
   SCENARIOS[code] ??= t => ({ ...SCENARIOS.live(t), problem: { code, severity, action: { id: "help", label: "What to do" } } });
 }
 
-export const scenarios = Object.keys(SCENARIOS);
 
 export function startMock(store, name = "live") {
   const fn = SCENARIOS[name] || SCENARIOS.live;
@@ -263,7 +262,6 @@ SCENARIOS.after = fromBackend(() => ({
   lines: LINES.map(([src, dst]) => ({ src, dst, lat: 2.1, lang: "ro" })),
 }));
 SCENARIOS.unbuilt = SCENARIOS.after;
-scenarios.push(...Object.keys(SCENARIOS).filter(k => !scenarios.includes(k)));
 
 // ---- S5a: Live-screen scenarios (appended) -------------------------------------------------
 // remaining phases, the five sound-meter cases from docs/ui_mockup/compare.html, pace, and
@@ -300,4 +298,6 @@ Object.assign(SCENARIOS, {
                    return { ...s, audio: { ...s.audio, ok: false },
                             problem: { code: "no_sound", severity: "warn", action: { id: "help", label: "What to check" } } }; },
 });
-for (const k of Object.keys(SCENARIOS)) if (!scenarios.includes(k)) scenarios.push(k);
+
+// every scenario, including those appended above (S5a, S5b)
+export const scenarios = Object.keys(SCENARIOS);
