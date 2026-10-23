@@ -15,10 +15,11 @@ Plan and status: [docs/APP_PLAN.md](docs/APP_PLAN.md).
 - [x] Volunteer README sections and the Sunday quick card (`docs/sunday_quick_card.pdf`).
 
 ### Left
-- [ ] **S10 release pipeline** (in progress): `make dist` → assembled, signed app → DMG →
-      notarized. Needs a *Developer ID Application* certificate and a `live-ro2en`
-      notarytool keychain profile (see `docs/release.md` once S10 lands).
-- [ ] Run the macOS 14 runtime build once with the network (MLX may have no macOS 14 wheel).
+- [x] **S10 release pipeline:** `make dist` builds the runtime, assembles and signs the app,
+      makes the DMG and verifies it (passes ad hoc; 1.8 GB app, ~700 MB DMG). The macOS 14
+      runtime build works: every pinned package has a macOS 14 wheel.
+- [ ] Signed + notarized build: needs a *Developer ID Application* certificate and the
+      `live-ro2en` notarytool keychain profile (`docs/release.md`), then `make dist notarize`.
 - [ ] Sparkle auto-update: EdDSA key and appcast (the user generates the key).
 - [ ] The church Hugging Face repo for the NLLB build (until then neither quality downloads in the app).
 - [ ] Clean-install test on a fresh user account (`docs/clean_install_test.md`), a usability test

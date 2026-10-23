@@ -498,9 +498,14 @@ commit, except a cosmetic one: a health ping and a caption can interleave their 
 error text (caption order is safe). 287 tests pass.
 
 Still not verified:
-- The macOS 14 runtime build (needs the network; MLX may have no macOS 14 wheel at the pin).
 - The Swift shell's hang restart and SIGKILL escalation (built, not exercised).
 - The microphone in real use; the Swift app's window and dialogs by eye.
+
+### Phase 2 status (2026-10-23)
+S11's cleanup is done (98ee266). S10 is merged: `make dist` builds, signs (ad hoc until a
+Developer ID certificate exists), packages and verifies the app; the macOS 14 runtime build
+works with the current pins. A packaged app stops at Setup until the church Hugging Face repo
+for the NLLB build exists. Sparkle is still a stub (needs the user's EdDSA key and feed).
 
 ### Phase 2: assembly
 - **S10: Release pipeline.**
