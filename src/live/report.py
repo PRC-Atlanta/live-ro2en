@@ -437,7 +437,8 @@ class SessionMixin:
 
     def _session_state(self) -> dict:
         s, path = self._session, self.log_path
-        out = {"elapsed_s": None, "first_word_ok_pct": None, "preflight": self._preflight}
+        out = {"elapsed_s": None, "first_word_ok_pct": None, "preflight": self._preflight,
+               "rehearsal": bool(self.running and path and path == getattr(self, "_rehearsal_log", None))}
         if path:
             ok_s = float(self.lc.get("first_word_ok_s", FIRST_WORD_OK_S))
             with s.tracker.lock:

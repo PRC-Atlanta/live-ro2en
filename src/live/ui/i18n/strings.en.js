@@ -7,6 +7,7 @@ export const S = {
 
   toolbar: {
     rehearsal: "Rehearsal", rehearsalHint: "Run a rehearsal with a recorded sermon",
+    rehearsalStopHint: "Stop the rehearsal",
     names: "Names & words", settings: "Settings", help: "?", helpHint: "Help",
     navLabel: "Screens", live: "Live", liveHint: "The Live screen", setupHint: "Sound input and ProPresenter (Settings)",
     after: "After", afterHint: "Summary, rating and transcript of the last service",
@@ -143,7 +144,7 @@ export const S = {
     nothingToFix: "There is no caption to fix yet.",
     nothingToRemove: "There is no caption to remove.",
     ppOn: "Captions go to ProPresenter again",
-    rehearsal: "Rehearsal started", diagnostics: "Saved a diagnostics file to the Desktop",
+    rehearsal: "Rehearsal started", rehearsalStopped: "Rehearsal stopped", diagnostics: "Saved a diagnostics file to the Desktop",
     savedAt: path => `Saved a diagnostics file in ${path}`,
   },
 

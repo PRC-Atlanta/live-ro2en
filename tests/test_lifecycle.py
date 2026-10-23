@@ -692,6 +692,27 @@ def test_rehearsal_leaves_the_sound_input_warm(sandbox):
         live.shutdown()
 
 
+def test_a_rehearsal_from_a_warm_engine_stays_running_until_stopped(sandbox):
+    """Start retires the warm engine for the file's own engine; the old engine's exit must not
+    mark the run stopped (the Rehearsal button then showed nothing playing and could not stop it)."""
+    import preflight
+    import report
+    live = report.attach(_live(sandbox))
+    try:
+        live.preload(wait=True)
+        th = preflight.rehearse(live, _wav(sandbox / "s.wav", 16000, 20.0), timeout_s=60)
+        assert until(lambda: live._engine_src is not None and live._listening, 15)
+        time.sleep(1.0)                                          # the warm engine has exited by now
+        st = live.state()
+        assert st["running"] and st["rehearsal"]
+        live.stop()
+        th.join(10)
+        st = live.state()
+        assert not st["running"] and not st["rehearsal"]
+    finally:
+        live.shutdown()
+
+
 def test_a_warm_engine_crashing_after_a_rehearsal_still_hits_the_restart_limit(sandbox):
     import preflight
     live = _live(sandbox)

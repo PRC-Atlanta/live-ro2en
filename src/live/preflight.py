@@ -190,6 +190,7 @@ def rehearse(live, sample: pathlib.Path, timeout_s: float | None = None) -> thre
     finally:
         live.args.file = prev                  # the engine already has the file; Start uses the mic
     live._log_event({"event": "rehearsal", "sample": sample.name})
+    live._rehearsal_log = live.log_path       # state `rehearsal` is true while this run is live
     if timeout_s is None:
         try:
             import soundfile as sf

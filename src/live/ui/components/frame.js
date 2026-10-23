@@ -48,10 +48,21 @@ export function frame(el, opts = {}) {
   ensureStyles().then(() => { unit.style.visibility = ""; });
   const tb = n => el.querySelector(`[data-tb="${n}"]`);
   const go = name => () => { location.hash = `#${name}`; };
+  // a toggle: pressed again while the recording plays, it stops the rehearsal
+  let rehearsing = false;
+  const setRehearsing = on => {
+    rehearsing = !!on;
+    tb("rehearsal").classList.toggle("on", rehearsing);
+    tb("rehearsal").setAttribute("aria-pressed", String(rehearsing));
+    tb("rehearsal").title = rehearsing ? S.toolbar.rehearsalStopHint : S.toolbar.rehearsalHint;
+  };
   tb("rehearsal").onclick = opts.onRehearsal || (async () => {
-    const res = await send("rehearsal", {});            // no sample: the first recording in samples/
-    toast(messageFor(res) || S.toast.rehearsal, res.ok ? "ok" : "info");
+    const stopping = rehearsing;
+    const res = await send(stopping ? "stop" : "rehearsal", {});   // no sample: the first recording in samples/
+    if (res.ok) setRehearsing(stopping ? false : res.data?.rehearsal ?? true);
+    toast(messageFor(res) || (stopping ? S.toast.rehearsalStopped : S.toast.rehearsal), res.ok ? "ok" : "info");
   });
+  setRehearsing(false);
   // its own window (the Mac app opens a separate captions window; a browser a new one)
   tb("display").onclick = () => window.open(new URL("display.html", location.href).href, "lt-captions");
   for (const [n, screen] of Object.entries(GOES)) if (!tb(n).onclick) tb(n).onclick = go(screen);
@@ -64,6 +75,7 @@ export function frame(el, opts = {}) {
     // the parts of the toolbar that follow the state: the setup name, and After once a service ran
     update(s) {
       s ||= {};
+      if (rehearsing !== !!s.rehearsal) setRehearsing(s.rehearsal);
       api.setSetupName(S.toolbar.setupName(s.audio?.device,
         s.pp?.enabled === false ? "off" : !(s.pp ? !s.pp.connected : s.pp_error)));
       const ran = s.elapsed_s != null || Object.keys(s.counts || {}).length > 0;

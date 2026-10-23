@@ -102,6 +102,7 @@
     "auto_actions":   {"type": {"list": {"object": {"t": "num", "msg": "str"}}}, "built": true, "owner": "S4"},
     "elapsed_s":      {"type": "num|null", "built": true, "owner": "S9"},
     "first_word_ok_pct": {"type": "num|null", "built": true, "owner": "S9"},
+    "rehearsal":      {"type": "bool", "built": true, "owner": "S9"},
     "session_terms_n": {"type": "int", "built": true, "owner": "S3"},
     "corrections_n":  {"type": "int", "built": true, "owner": "S2"},
     "preflight":      {"type": "@preflight", "nullable": true, "built": true, "owner": "S9"}

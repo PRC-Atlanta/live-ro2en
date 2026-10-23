@@ -27,7 +27,7 @@ export function baseState() {
     display: { size: "large", lines: 2, colors: "white_on_black", network: false, url: null, network_error: null },
     pace: { state: "ok", behind_s: null }, backlog: { n: 0, oldest_s: null },
     paused: false, held: false, problem: null, auto_actions: [],
-    elapsed_s: null, first_word_ok_pct: null, session_terms_n: 0, corrections_n: 0, preflight: null,
+    elapsed_s: null, first_word_ok_pct: null, rehearsal: false, session_terms_n: 0, corrections_n: 0, preflight: null,
   };
 }
 
@@ -436,7 +436,7 @@ export async function mockApi(method, path, body = {}) {
     }
     case "POST stop": {                                  // the practice service ends: captions stop too
       const { lines } = stateNow();
-      return live({ running: false, phase: "ready", screen: "", partial: "", lines });
+      return live({ running: false, phase: "ready", screen: "", partial: "", lines, rehearsal: false });
     }
     case "POST pause": case "POST hold":
       if (typeof body.on !== "boolean") return status(400, { error: "bad_request", detail: "on must be true or false" });
@@ -452,7 +452,7 @@ export async function mockApi(method, path, body = {}) {
       return live({ profile: body.profile });
     case "POST rehearsal":
       if (stateNow().running) return status(409, { error: "busy", detail: "Stop captioning before starting a rehearsal." });
-      return live({ running: true, phase: "captioning" });
+      return live({ running: true, phase: "captioning", rehearsal: true });
     case "POST diagnostics":
       return status(200, { ok: true, path: "/Users/church/Desktop/Live RO2EN diagnostics 2026-10-25 1102.zip" });
 

@@ -492,6 +492,7 @@ class LifecycleMixin:
             if eng is None or eng.poll() is not None:
                 return
             self._stopping = True
+            eng.retired = True                 # replaced on purpose: its exit must not end the run
             try:
                 eng.stdin.write(json.dumps({"cmd": "stop"}) + "\n"); eng.stdin.flush()
                 eng.wait(10)
@@ -727,6 +728,9 @@ class LifecycleMixin:
                 return
             self.status = f"ENGINE STOPPED (exit {rc}): captions halted, see logs/engine.log"
             self._engine_dead = self.status
+        if getattr(engine, "retired", False):  # Start retired a warm engine for a file: Start owns running
+            self._broadcast()
+            return
         self.running = False
         self.phase_hint = None
         self._broadcast()
