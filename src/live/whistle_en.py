@@ -66,6 +66,7 @@ class WhistleSTT:
         self.lock = threading.Lock()          # one model per process, not thread-safe
         self._q: queue.Queue | None = None
         self._thread: threading.Thread | None = None
+        self.error: str | None = None         # set when the stream thread died; reported once
         self.transcribe(np.zeros(SR, dtype=np.float32))     # load + warm up once at startup
 
     def transcribe(self, audio: np.ndarray, word_timestamps: bool = False) -> dict:
@@ -80,6 +81,7 @@ class WhistleSTT:
     def start_stream(self, on_event) -> None:
         """Run Whistle.stream over chunks fed via feed(); on_event(dict) gets every result."""
         self._q = queue.Queue()
+        self.error = None
 
         def chunks():
             while True:
@@ -89,15 +91,20 @@ class WhistleSTT:
                 yield c
 
         def run():
-            with self.lock:
-                for ev in self.model.stream(chunks(), language="en", keywords=self.keywords):
-                    on_event(ev)
+            try:
+                with self.lock:
+                    for ev in self.model.stream(chunks(), language="en", keywords=self.keywords):
+                        on_event(ev)
+            except Exception as e:            # noqa: BLE001  never die silently: report, stop feeding
+                self.error = f"{type(e).__name__}: {e}"
+                on_event({"error": self.error})
+                return
             on_event({"end": True})
         self._thread = threading.Thread(target=run, daemon=True)
         self._thread.start()
 
     def feed(self, chunk: np.ndarray) -> None:
-        if self._q is not None:
+        if self._q is not None and not self.error:       # a dead stream must not grow the queue
             self._q.put(np.ascontiguousarray(chunk, dtype=np.float32))
 
     def end_stream(self, wait: float = 10.0) -> None:

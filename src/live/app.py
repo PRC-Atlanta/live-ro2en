@@ -17,6 +17,7 @@ import datetime as dt
 import json
 import os
 import pathlib
+import queue
 import statistics
 import subprocess
 import sys
@@ -75,6 +76,13 @@ class Live:
         self._stopping = False
         self.warnings: list[str] = []                  # engine degradations, shown until restart
         self.counts: collections.Counter = collections.Counter()   # clause outcomes this run
+        self.audio_fault: str | None = None            # engine watchdog: dead/unplugged/muted input
+        self.behind_s: float | None = None             # set while captions lag more than lag_warn_s
+        # clauses are translated and shown by ONE worker in arrival order (a held fragment and
+        # the clause after it can never overtake each other)
+        self._work: queue.Queue = queue.Queue()
+        self._worker: threading.Thread | None = None
+        self._worker_lock = threading.Lock()
 
     def _profile_cfg(self, name: str) -> dict:
         """config.yaml `live` settings with the chosen profile's overrides on top."""
@@ -114,7 +122,8 @@ class Live:
         cmd = [str(py), str(HERE / "engine.py"), "--stt", self.lc["stt_model"], "--mode", self.lang.mode,
                "--cfg", json.dumps({**{k: self.lc[k] for k in ("vad_threshold", "min_pause_ms", "max_clause_s",
                                                                 "partial_every_s", "min_commit_s", "max_commit_s",
-                                                                "en_recognizer", "context_s", "lookahead_words") if k in self.lc},
+                                                                "en_recognizer", "context_s", "lookahead_words",
+                                                                "audio_watchdog_s", "digital_silence_s") if k in self.lc},
                                    "whistle": {**(self.cfg.get("whistle") or {}),   # whistle_<key> in live/profile overrides
                                                **{k[len("whistle_"):]: v for k, v in self.lc.items()
                                                   if k.startswith("whistle_")}}})]
@@ -124,6 +133,7 @@ class Live:
             cmd += ["--device", str(device or self.lc["input_device"])]
         self.status = "starting engine"
         self.warnings, self.counts = [], collections.Counter()
+        self.audio_fault = self.behind_s = None
         self.eof.clear()
         self._stopping = False
         with open(ROOT / "logs" / "engine.log", "a") as err:     # the child keeps its own copy
@@ -171,12 +181,18 @@ class Live:
                 # e.g. the multilingual model failed to load: auto-detect degrades to RO only
                 self.warnings.append(ev["msg"])
                 self._log_event({"event": "warn", "msg": ev["msg"]})
+            elif ev["type"] == "error":
+                self._on_engine_error(ev)
+            elif ev["type"] == "audio":
+                self.audio_fault = None if ev["ok"] else ev["msg"]
+                self._log_event({"event": "audio", "ok": ev["ok"], "msg": ev["msg"]})
             elif ev["type"] == "partial":
                 self.partial = ev["text"]
             elif ev["type"] == "clause":
                 self._on_clause(ev)
             elif ev["type"] == "eof":
                 self._flush()
+                self._drain()                # the last clause is shown and logged before eof
                 self.status = "input ended"
                 self.eof.set()
             self._broadcast()
@@ -184,6 +200,7 @@ class Live:
         if engine is not self.engine:        # an older engine; a newer run owns the state
             return
         self._flush()                        # a held fragment must not die with the engine
+        self._drain()
         if not self.eof.is_set() and not self._stopping:
             self.status = f"ENGINE STOPPED (exit {rc}): captions halted, see logs/engine.log"
             self._log_event({"event": "engine_exit", "rc": rc})
@@ -201,7 +218,7 @@ class Live:
             if p and cap and ev["t_end"] - p.get("t_speech", p["t_start"]) > cap:
                 # merging would make the first word wait too long: send the fragment on its own
                 self._pending = None
-                threading.Thread(target=self._handle, args=(p,), daemon=True).start()
+                self._submit(p)
                 p = None
             if p:
                 ev = {**ev, **{k: f"{p.get(k) or ''} {ev.get(k) or ''}".strip() for k in ("ro", "multi", "en")},
@@ -217,14 +234,44 @@ class Live:
                 self._timer.daemon = True
                 self._timer.start()
                 return
-        self._handle(ev)
+            self._submit(ev)                 # under the lock: a timer flush cannot slip in between
 
     def _flush(self):
         with self.lock:
             ev, self._pending = self._pending, None
-        if ev:
-            self._handle(ev)
-            self._broadcast()
+            if ev:
+                self._submit(ev)
+
+    def _submit(self, ev: dict):
+        self._work.put(ev)
+        with self._worker_lock:
+            if not (self._worker and self._worker.is_alive()):
+                self._worker = threading.Thread(target=self._work_loop, daemon=True)
+                self._worker.start()
+
+    def _work_loop(self):
+        while True:
+            ev = self._work.get()
+            try:
+                self._handle(ev)
+                self._broadcast()
+            finally:
+                self._work.task_done()
+
+    def _drain(self):
+        """Wait until every submitted clause has been translated, shown and logged."""
+        self._work.join()
+
+    def _on_engine_error(self, ev: dict):
+        """The engine survived a failure (one chunk, the English stream, the audio device):
+        count and log it, and keep it visible."""
+        where = ev.get("where", "engine")
+        if where == "transcribe":
+            self.status = f"speech recognition failed on one chunk ({ev['msg'][:60]}); still listening"
+            self._log_failure(ev, "stt_error", error=ev["msg"])
+        else:
+            self.warnings.append(f"{where}: {ev['msg']}")
+            self._log_event({"event": "error", "where": where, "msg": ev["msg"]})
 
     def _handle(self, ev: dict):
         """Never let one bad chunk stop the service: log it and carry on."""
@@ -297,9 +344,14 @@ class Live:
                "mt_s": round(t_tr, 3), "pp_s": round(t_disp - t1, 4), "pp_ok": ok,
                "pp_error": self.pp.last_error, "audio_s": ev["audio_s"], "glossary": [n_g, ok_g],
                "time": dt.datetime.now().isoformat(timespec="milliseconds")}
+        warn_s = float(self.lc.get("lag_warn_s", 6.0))
+        late = bool(warn_s) and latency > warn_s
+        self.behind_s = round(latency, 1) if late else None     # clears on the next timely caption
         with self.lock:
             self.history = (self.history + [rec])[-10:]
             self.counts["ok"] += 1
+            if late:
+                self.counts["late"] += 1
             if ok:
                 self.lat.append(latency)
             else:
@@ -319,7 +371,18 @@ class Live:
                                "lang": h["lang"]} for h in self.history],
                     "screen": self.caps.text, "pp_error": self.pp.last_error,
                     "warnings": list(self.warnings), "counts": dict(self.counts),
+                    "alerts": self.alerts(),
                     "translator": self.lc["translator"], "stt": self.lc["stt_model"]}
+
+    def alerts(self) -> list[str]:
+        """Live faults the operator must see now (cleared when they recover)."""
+        out = []
+        if self.audio_fault and self.running:
+            out.append(f"NO AUDIO: {self.audio_fault}")
+        if self.behind_s:
+            out.append(f"CAPTIONS BEHIND: last one {self.behind_s} s after the speech "
+                       f"(> {self.lc.get('lag_warn_s', 6.0)} s); the computer cannot keep up")
+        return out
 
     def _broadcast(self):
         for q in list(self.listeners):
@@ -332,10 +395,40 @@ class Live:
 PAGE = (HERE / "control.html").read_text()
 
 
+def allowed_hosts(lc: dict) -> set[str]:
+    """Host names the control page may be reached by (loopback + web_host + extras)."""
+    return {"127.0.0.1", "localhost", "::1", str(lc.get("web_host", "127.0.0.1"))} | \
+        set(lc.get("web_allowed_hosts") or [])
+
+
+def request_allowed(headers, method: str, hosts: set[str], port: int) -> bool:
+    """Only the control page itself may drive or watch the service. Host must be one of
+    ours (stops DNS rebinding); anything that changes state, and the WebSocket, must come
+    from our own origin (stops any other web page in a browser on this Mac from stopping or
+    clearing the captions, or reading the transcript)."""
+    from urllib.parse import urlsplit
+    if urlsplit("//" + (headers.get("host") or "")).hostname not in hosts:
+        return False
+    if method in ("GET", "HEAD"):
+        return True
+    origin = headers.get("origin")
+    if origin is None:                   # non-browser client (curl, scripts): Host check is enough
+        return method == "WS" or "application/json" in (headers.get("content-type") or "")
+    o = urlsplit(origin)
+    return o.scheme == "http" and o.hostname in hosts and (o.port or 80) == port
+
+
 def build_app(live: Live):
-    from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+    from fastapi import FastAPI, Request, WebSocketDisconnect
     from fastapi.responses import HTMLResponse, JSONResponse
     app = FastAPI()
+    hosts, port = allowed_hosts(live.lc), int(live.cfg["live"]["web_port"])
+
+    @app.middleware("http")
+    async def same_origin_only(request: Request, call_next):
+        if not request_allowed(request.headers, request.method, hosts, port):
+            return JSONResponse({"error": "forbidden: control page only"}, status_code=403)
+        return await call_next(request)
 
     @app.get("/")
     def index():
@@ -370,8 +463,13 @@ def build_app(live: Live):
             await loop.run_in_executor(None, live.clear)
         return live.state()
 
-    @app.websocket("/ws")
-    async def ws(sock: WebSocket):
+    # registered as a plain route: with `from __future__ import annotations` FastAPI cannot
+    # resolve a `sock: WebSocket` parameter (imported here, not at module level) and closed
+    # every connection with 1008, so the page never received live updates
+    async def ws(sock):
+        if not request_allowed(sock.headers, "WS", hosts, port):
+            await sock.close(code=1008)          # policy violation: not our control page
+            return
         await sock.accept()
         q: asyncio.Queue = asyncio.Queue(maxsize=50)
         loop = asyncio.get_running_loop()
@@ -393,6 +491,8 @@ def build_app(live: Live):
             pass
         finally:
             live.listeners.discard(b)
+    from starlette.routing import WebSocketRoute
+    app.router.routes.append(WebSocketRoute("/ws", ws))
     return app
 
 

@@ -144,10 +144,13 @@ def mic_source(device, q: queue.Queue, stop: threading.Event) -> None:
     def cb(indata, frames, t, status):
         q.put((time.time(), indata[:, 0].copy()))
     dev = int(device) if isinstance(device, str) and device.isdigit() else device
-    with sd.InputStream(samplerate=SR, channels=1, dtype="float32", blocksize=FRAME,
-                        device=dev, callback=cb):
-        while not stop.is_set():
-            time.sleep(0.1)
+    try:
+        with sd.InputStream(samplerate=SR, channels=1, dtype="float32", blocksize=FRAME,
+                            device=dev, callback=cb):
+            while not stop.is_set():
+                time.sleep(0.1)
+    except Exception as e:                       # wrong index, device busy, unplugged mid-run
+        emit({"type": "error", "where": "audio input", "msg": f"{type(e).__name__}: {e}"})
 
 
 # --- main loop ----------------------------------------------------------------------------
@@ -175,6 +178,10 @@ class Engine:
         self.min_commit = int(cfg.get("min_commit_s", 0) * SR / FRAME)
         self.max_commit = int(cfg.get("max_commit_s", 0) * SR / FRAME)
         self.n = 0
+        # audio watchdog: no frames at all (device gone) or exact digital silence (muted/dead
+        # interface) for this long is reported; a real quiet room still has a noise floor
+        self.no_audio_s = float(cfg.get("audio_watchdog_s", 2.0))
+        self.silent_s = float(cfg.get("digital_silence_s", 10.0))
         # English recognizer: Whistle (streaming, offline) or the previous Parakeet path (A/B)
         self.whistle = None
         self.wcfg = cfg.get("whistle") or {}
@@ -200,6 +207,18 @@ class Engine:
 
     def transcribe(self, audio: np.ndarray, t_start: float, t_end: float, t_speech: float | None = None,
                    final: bool = True) -> None:
+        """One failed chunk (model/MPS error) is reported as an error event; the engine keeps
+        listening instead of dying mid-service."""
+        try:
+            self._transcribe(audio, t_start, t_end, t_speech, final)
+        except Exception as e:                   # noqa: BLE001
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            emit({"type": "error", "where": "transcribe", "msg": f"{type(e).__name__}: {e}",
+                  "t_start": t_start, "t_end": t_end, "audio_s": round(len(audio) / SR, 3)})
+
+    def _transcribe(self, audio: np.ndarray, t_start: float, t_end: float, t_speech: float | None = None,
+                    final: bool = True) -> None:
         t = time.time()
         en_locked_whistle = self.mode == "en-ro" and self.whistle is not None
         need_ro = self.mode != "en-ro" or (self.multi is None and not self.whistle)
@@ -237,7 +256,8 @@ class Engine:
         """Feed audio to Whistle while EN→RO is locked. Non-speech frames (VAD below
         whistle.vad_threshold: music, choir, noise) are replaced by silence, which Whistle
         returns as empty text. Returns True when the frame was consumed by the stream."""
-        want = self.streamer is not None and self.mode == "en-ro" and self.wcfg.get("stream", True)
+        want = self.streamer is not None and self.mode == "en-ro" and self.wcfg.get("stream", True) \
+            and not getattr(self.streamer, "error", None)      # a failed stream: use the clause path
         if not want:
             self._stop_whistle_stream()
             return False
@@ -254,7 +274,9 @@ class Engine:
                                   max_chunk_s=self.wcfg.get("max_chunk_s", 2.5))
 
             def on_event(ev):
-                if ev.get("end"):
+                if ev.get("error"):
+                    emit({"type": "error", "where": "english stream", "msg": ev["error"]})
+                if ev.get("end") or ev.get("error"):
                     asm.flush(); return
                 asm.add(words_from_event(ev), ev.get("pass_ms", 0.0))
                 asm.tick(float(ev.get("received", 0.0)), ev.get("pending", ""), ev.get("pass_ms", 0.0))
@@ -295,8 +317,22 @@ class Engine:
             frames, probs, times = [], [], []
             self.pt.reset()
 
+        last_frame = last_sound = time.time()
+        alarm = None                                     # current audio fault, reported once
+
+        def audio_state(kind: str | None, msg: str = "") -> None:
+            nonlocal alarm
+            if kind != alarm:                            # once per change of fault, not per tick
+                alarm = kind
+                emit({"type": "audio", "ok": kind is None, "fault": kind, "msg": msg or "audio input back"})
+
         while True:
-            item = q.get()
+            try:
+                item = q.get(timeout=0.5)
+            except queue.Empty:
+                if self.no_audio_s and time.time() - last_frame > self.no_audio_s:
+                    audio_state("no_frames", f"no audio from the input device for {time.time() - last_frame:.0f} s")
+                continue
             if item is None:
                 self._stop_whistle_stream()
                 commit_all()
@@ -308,6 +344,14 @@ class Engine:
                     self.mode = item["mode"]
                 continue
             ts, fr = item
+            last_frame = time.time()
+            if np.abs(fr).max() > 1e-6:
+                last_sound = last_frame
+            if self.silent_s and last_frame - last_sound > self.silent_s:
+                audio_state("digital_silence",
+                            f"input is digital silence for {last_frame - last_sound:.0f} s (muted or dead mic?)")
+            else:
+                audio_state(None)
             p = self.vad(fr)
             if self._whistle_streaming(ts, fr, p):
                 continue

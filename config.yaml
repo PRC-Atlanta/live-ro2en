@@ -58,8 +58,12 @@ live:
   lookahead_words: 0          # look-ahead (hold last word at mid-speech cuts): tested, breaks the 6 s ceiling for RO, no RO gain
   en_recognizer: parakeet     # English speech (EN→RO): parakeet | parakeet-stream | whistle  — A/B switch
   context_clauses: 2          # previous commits shown to an LLM translator as context
+  audio_watchdog_s: 2.0       # no frames from the input device this long -> NO AUDIO alert
+  digital_silence_s: 10.0     # exact zeros this long (muted/dead interface) -> NO AUDIO alert
+  lag_warn_s: 6.0             # a caption later than this after the speech -> CAPTIONS BEHIND alert
   web_host: 127.0.0.1
   web_port: 8765
+  web_allowed_hosts: []       # extra host names for the control page (only if web_host is not loopback)
   transcript_log_dir: logs/services
 
 # Profiles override the `live` settings above. fast = lowest delay (~1.5 s after each phrase);

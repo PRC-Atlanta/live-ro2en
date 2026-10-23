@@ -52,8 +52,7 @@ class ProPresenter:
             return True
         ok = self._req("POST", f"/v1/message/{self._mid()}/trigger",
                        [{"name": self.token_name, "text": {"text": text}}]) in (200, 204)
-        if self.stage:
-            self._req("PUT", "/v1/stage/message", text)
+        self._also_stage("PUT", text)
         if ok:
             self._last = text
         return ok
@@ -61,9 +60,18 @@ class ProPresenter:
     def clear(self) -> bool:
         self._last = ""
         ok = self._req("GET", f"/v1/message/{self._mid()}/clear") in (200, 204)
-        if self.stage:
-            self._req("DELETE", "/v1/stage/message")
+        self._also_stage("DELETE")
         return ok
+
+    def _also_stage(self, method: str, text=None) -> None:
+        """Mirror to the stage message. Its result must not hide a failed main caption: the
+        main error stays, and a stage failure is reported on its own."""
+        if not self.stage:
+            return
+        main_err = self.last_error
+        self._req(method, "/v1/stage/message", text)
+        stage_err = self.last_error
+        self.last_error = main_err or (f"stage: {stage_err}" if stage_err else None)
 
     def ping(self) -> bool:
         return self._req("GET", "/version") == 200
