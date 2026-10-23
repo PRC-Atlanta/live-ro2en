@@ -3,6 +3,7 @@
 #
 #   macos/build.sh            release build
 #   macos/build.sh debug      debug build
+#   APP_OUT=/path/X.app macos/build.sh    build the .app somewhere else (packaging/assemble_app.sh)
 #
 # Run it:  open "macos/build/Live RO2EN.app"
 # In dev the shell starts <repo>/.venv-mt/bin/python <repo>/src/live/app.py --port <free>,
@@ -18,7 +19,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 CONF="${1:-release}"
-APP="$HERE/build/Live RO2EN.app"
+APP="${APP_OUT:-$HERE/build/Live RO2EN.app}"
 
 swift build --package-path "$HERE" -c "$CONF"
 BIN="$(swift build --package-path "$HERE" -c "$CONF" --show-bin-path)/LiveRO2EN"
@@ -26,6 +27,13 @@ BIN="$(swift build --package-path "$HERE" -c "$CONF" --show-bin-path)/LiveRO2EN"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Live RO2EN"
+# SwiftPM adds an LC_RPATH into the build Mac's Xcode toolchain (back-deployment libraries this
+# macOS 14+ binary never loads: its Swift runtime is /usr/lib/swift). It points nowhere on a
+# user's Mac, so drop every absolute search path outside the system (packaging/audit_macho.sh).
+otool -l "$APP/Contents/MacOS/Live RO2EN" | awk '/cmd LC_RPATH$/ {r=1; next} r && $1 == "path" {print $2; r=0}' |
+  { grep -Ev '^(/usr/lib/|/System/|@)' || true; } | while IFS= read -r rp; do
+    install_name_tool -delete_rpath "$rp" "$APP/Contents/MacOS/Live RO2EN"
+  done
 cp "$HERE/Info.plist" "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
