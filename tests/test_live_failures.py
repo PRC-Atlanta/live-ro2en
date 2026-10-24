@@ -646,3 +646,22 @@ def test_empty_ro_transcript_falls_back_to_the_multilingual_one(tmp_path):
     live._handle(_clause(2, ro="", multi="and then"))               # not Romanian: still dropped
     assert [r["outcome"] for r in _log(live)] == ["ok", "empty_stt"]
     assert "EN: neprihănirea" in live.caps.text
+
+
+def test_each_phrase_logs_the_input_gain_and_level(tmp_path):
+    live = _live(tmp_path)
+    live.lang.set_mode("ro-en")
+    live.lc["input_gain_db"] = 22
+    ev = _clause(1, ro="Frați și surori, astăzi citim din Romani.", ago=2.0)
+    t0, t1 = ev["t_start"], ev["t_end"]
+    for i in range(10):                                  # 10 readings over the phrase, 10 Hz
+        live._level_hist.append((t0 + i * 0.1, -40.0 if i % 2 else -60.0, -30.0, bool(i % 2)))
+    live._level_hist.append((t1 + 5, -10.0, -1.0, True))  # after the phrase: not counted
+    live._handle(ev)
+    live._handle(_clause(2, ro="   "))                   # nothing heard: still logged, no readings
+    rec, empty = _log(live)
+    assert rec["gain_db"] == 22.0 and empty["gain_db"] == 22.0
+    assert rec["level"] == {"speech_db": -40.0, "all_db": -43.0, "peak_db": -30.0, "n": 10}
+    assert empty["level"] is None
+    live._on_level({"rms_db": -50.0, "peak_db": -45.0, "speech": True})   # the engine's level events feed it
+    assert live._level_hist[-1][1:] == (-50.0, -45.0, True)

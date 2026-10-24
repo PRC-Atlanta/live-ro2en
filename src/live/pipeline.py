@@ -420,10 +420,18 @@ class PipelineMixin:
         rec = {"id": ev.get("id"), "outcome": outcome, "t_start": ev.get("t_start"), "t_end": ev.get("t_end"),
                "ro": ev.get("ro", ""), "multi": ev.get("multi", ""), "en": ev.get("en", ""),
                "audio_s": ev.get("audio_s"), "stt_s": ev.get("stt_s"), "profile": self.profile,
+               **self._input_fields(ev),
                "time": dt.datetime.now().isoformat(timespec="milliseconds"), **extra}
         with self.lock:
             self.counts[outcome] += 1
         self._write_log(rec)
+
+    def _input_fields(self, ev: dict) -> dict:
+        """The input gain and level while the phrase was spoken (lifecycle._level_over)."""
+        lvl = None
+        if hasattr(self, "_level_over") and ev.get("t_start") is not None and ev.get("t_end") is not None:
+            lvl = self._level_over(ev["t_start"], ev["t_end"])
+        return {"gain_db": float(self.lc.get("input_gain_db", 0) or 0), "level": lvl}
 
     def _log_event(self, rec: dict):
         self._write_log({**rec, "time": dt.datetime.now().isoformat(timespec="milliseconds")})
@@ -503,6 +511,7 @@ class PipelineMixin:
                "mt_s": round(t_tr, 3), "pp_s": round(t_disp - t1, 4), "pp_ok": ok,
                "caught_up": ev.get("caught_up", 1), "mt_truncated": truncated, "passthrough": passthrough,
                "pp_error": self.pp.last_error, "audio_s": ev["audio_s"], "glossary": [n_g, ok_g],
+               **self._input_fields(ev),
                **safety,
                "time": dt.datetime.now().isoformat(timespec="milliseconds")}
         warn_s = float(self.lc.get("lag_warn_s", 6.0))

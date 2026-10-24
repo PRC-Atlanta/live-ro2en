@@ -18,6 +18,7 @@ from __future__ import annotations
 import collections
 import datetime as dt
 import json
+import math
 import os
 import pathlib
 import signal
@@ -116,6 +117,7 @@ class LifecycleMixin:
         self._english_unavailable = False
         self._audio_kind: str | None = None      # no_frames | digital_silence | mic_denied | device_lost
         self._level: tuple[float, dict] | None = None
+        self._level_hist: collections.deque = collections.deque(maxlen=1200)   # (t, rms, peak, speech): ~2 min
         self._last_voice_t: float | None = None
         self._last_level_push = 0.0
         self.input_name: str | None = None       # the input the engine opened (its name)
@@ -823,11 +825,27 @@ class LifecycleMixin:
     def _on_level(self, ev: dict):
         now = time.time()
         self._level = (now, ev)
+        if isinstance(ev.get("rms_db"), (int, float)):
+            self._level_hist.append((now, float(ev["rms_db"]), float(ev.get("peak_db") or ev["rms_db"]),
+                                     bool(ev.get("speech"))))
         if ev.get("speech"):
             self._last_voice_t = now
         if now - self._last_level_push >= 0.05:        # the meter moves at the engine's rate (≤ 20 Hz)
             self._last_level_push = now
             self._broadcast()
+
+    def _level_over(self, t0: float, t1: float) -> dict | None:
+        """The input level while a phrase was spoken, for its log record: speech_db = the
+        average (power) of the readings the voice detector called speech, all_db = of every
+        reading, peak_db = the loudest peak; dBFS. None when no readings cover the phrase."""
+        rows = [r for r in list(self._level_hist) if t0 - 0.1 <= r[0] <= t1 + 0.2]
+        if not rows:
+            return None
+        def avg(vals):
+            vals = [v for v in vals if v > -120]
+            return round(10 * math.log10(sum(10 ** (v / 10) for v in vals) / len(vals)), 1) if vals else None
+        return {"speech_db": avg([r[1] for r in rows if r[3]]), "all_db": avg([r[1] for r in rows]),
+                "peak_db": round(max(r[2] for r in rows), 1), "n": len(rows)}
 
     def _warn(self, msg: str, keep: int = 20):
         """Shown until the next start; a repeated message is listed once, and the list is
