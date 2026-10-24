@@ -12,6 +12,10 @@ Standard library only (any python3).
   scripts/livectl.py logs                    the service logs, newest last (repo and installed app)
   scripts/livectl.py summary [LOG]           analysis of a service log (default: the newest)
   scripts/livectl.py transcript [LOG] [OUT]  Romanian | English side by side, one phrase per pair
+  scripts/livectl.py monitor [SECONDS]       event stream for Claude's Monitor tool: every SECONDS
+                                             (default 60) the new phrases RO|EN; at once: clipping,
+                                             behind, English detected, slow phrase, phase change, exit.
+                                             Resumes where the last run stopped (re-arm safe).
 
 The app only accepts state-changing calls with a JSON content type (or its own page's origin):
 this script sends that. Repo runs listen on 8765; the installed app picks a free port each launch,
@@ -23,6 +27,7 @@ import pathlib
 import statistics as st
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -173,6 +178,103 @@ def transcript(p: pathlib.Path) -> str:
     return "\n".join(rows) + "\n"
 
 
+def _pos_file(log: pathlib.Path) -> pathlib.Path:
+    return pathlib.Path(tempfile.gettempdir()) / f"livectl-monitor-{log.stem}.pos"
+
+
+def monitor(every: float = 60.0) -> None:
+    """Print one block per event, flushed; exit when the app is gone. Phrases are read from the
+    newest service log (a new Start makes a new log: followed), from where the previous monitor
+    run stopped, so a re-armed monitor neither repeats nor skips phrases."""
+    def say(text):
+        print(text, flush=True)
+    log, seen, pending, prev_lang = None, 0, [], None
+    last_digest, last_phase, clip_n, alerted = time.time(), None, 0, set()
+    gone = 0
+    while True:
+        try:
+            s = call("GET", "state") if find_url() else None
+        except SystemExit:
+            s = None
+        if s is None:
+            gone += 1
+            if gone >= 3:
+                if pending:
+                    say(_digest(pending))
+                say("APP STOPPED: the control server is gone")
+                return
+            time.sleep(2)
+            continue
+        gone = 0
+        phase = s.get("phase")
+        if phase != last_phase:
+            if last_phase is not None:
+                say(f"PHASE {last_phase} -> {phase} ({s.get('status')})")
+            last_phase = phase
+        a = s.get("audio") or {}
+        clip_n = clip_n + 1 if (a.get("peak_db") or -120) >= -1 else 0
+        if clip_n == 5:                                     # ~10 s of peaks at full scale
+            say(f"ALERT clipping: peak {a.get('peak_db')} dB, level {a.get('rms_db')} dB, gain {a.get('gain_db')} dB")
+        pace = s.get("pace") or {}
+        if pace.get("state") == "behind" and "behind" not in alerted:
+            alerted.add("behind")
+            say(f"ALERT captions behind by {pace.get('behind_s')} s (queue {(s.get('backlog') or {}).get('n')})")
+        elif pace.get("state") == "ok":
+            alerted.discard("behind")
+        for w in s.get("warnings") or []:
+            if w not in alerted:
+                alerted.add(w)
+                say(f"WARNING {w}")
+        newest = logs()[-1] if logs() else None
+        if newest is not None and newest != log:
+            log = newest
+            try:
+                seen = int(_pos_file(log).read_text())
+            except (OSError, ValueError):
+                seen = 0 if time.time() - log.stat().st_mtime < 5 else sum(1 for _ in log.open())
+        if log is not None:
+            rows = log.open().readlines()
+            for line in rows[seen:]:
+                try:
+                    r = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if r.get("outcome"):
+                    pending.append(r)
+                    if r["outcome"] == "ok" and r.get("lang") != prev_lang and prev_lang and s.get("mode") == "auto":
+                        say(f"ALERT language switched {prev_lang} -> {r.get('lang')}: "
+                            f"{r.get('source', '')[:70]!r} -> {r.get('translation', '')[:60]!r}")
+                    if r["outcome"] == "ok":
+                        prev_lang = r.get("lang")
+                    if (r.get("mt_s") or 0) > 8 or (r.get("first_word_s") or 0) > 20:
+                        say(f"ALERT slow phrase {r['time'][11:19]}: mt {r.get('mt_s', 0):.1f} s, "
+                            f"first word {r.get('first_word_s', 0):.0f} s ({r.get('profile')})")
+                elif r.get("event") in ("profile", "backlog"):
+                    say("EVENT " + json.dumps({k: v for k, v in r.items() if k != "time"}, ensure_ascii=False)[:200])
+            seen = len(rows)
+            _pos_file(log).write_text(str(seen))
+        if pending and time.time() - last_digest >= every:
+            say(_digest(pending))
+            pending, last_digest = [], time.time()
+        time.sleep(2)
+
+
+def _digest(rows: list[dict]) -> str:
+    ok = [r for r in rows if r["outcome"] == "ok"]
+    head = (f"PHRASES {rows[0]['time'][11:19]}-{rows[-1]['time'][11:19]}: {len(ok)} shown, "
+            f"{len(rows) - len(ok)} not")
+    if ok:
+        head += (f"; first word median {st.median(r['first_word_s'] for r in ok):.1f} s, "
+                 f"mt median {st.median(r['mt_s'] for r in ok):.1f} s")
+        lv = [r["level"]["speech_db"] for r in ok if isinstance(r.get("level"), dict) and r["level"].get("speech_db") is not None]
+        if lv:
+            head += f", speech level {st.median(lv):.0f} dB"
+    body = [f"  {'Q' if r.get('profile') == 'quality' else 'F'}{r.get('lang', '')} RO: {r.get('source', '')}\n"
+            f"        EN: {r.get('translation', '')}" for r in ok]
+    body += [f"  -- {r['outcome']}: {(r.get('ro') or r.get('multi') or '')[:60]!r}" for r in rows if r["outcome"] != "ok"]
+    return "\n".join([head] + body)
+
+
 def main(argv: list[str]) -> None:
     cmd, args = (argv[0], argv[1:]) if argv else ("status", [])
     if cmd == "url":
@@ -195,6 +297,8 @@ def main(argv: list[str]) -> None:
         print(json.dumps(call("PUT", "settings", {"values": {args[0]: val}}), ensure_ascii=False)[:2000])
     elif cmd == "get":
         print(json.dumps(call("GET", args[0]), ensure_ascii=False, indent=1)[:6000])
+    elif cmd == "monitor":
+        monitor(float(args[0]) if args else 60.0)
     elif cmd == "logs":
         for p in logs()[-15:]:
             print(f"{p}  {p.stat().st_size // 1024} KB")
