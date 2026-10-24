@@ -16,6 +16,7 @@ import unicodedata
 
 import gate
 import guards
+import names as namelist
 import paths
 import translate
 from captions import tidy_clause
@@ -480,6 +481,16 @@ class PipelineMixin:
             self._gate_rows, self._gate_name_set = rows, gate.names_from(rows)
         return self._gate_name_set
 
+    def _repair_names(self, text: str, lang: str, info: dict) -> str:
+        """The Romanian recogniser's near-misses of today's names, back to the name (idea 2):
+        'familia Pha' → 'familia Puha', 'Drago' → 'Dragoș'; logged as `names_fixed`."""
+        if lang != "ro" or getattr(self, "gloss", None) is None:
+            return text
+        text, fixed = namelist.repair_ro(text, namelist.ro_names(self.gloss), gate.lexicon()["ro"])
+        if fixed:
+            info["names_fixed"] = [list(f) for f in fixed]
+        return text
+
     def _gate_min_real(self) -> float:
         return float(self.lc.get("gate_min_real", 0.6) or 0)
 
@@ -522,6 +533,7 @@ class PipelineMixin:
     def _handle_locked(self, ev: dict):
         lang, src_text, src_info = self._source(ev)
         src_text = apply_spellings(src_text, self.cfg.get("spellings") or {})
+        src_text = self._repair_names(src_text, lang, src_info)
         if not src_text.strip():
             self._log_failure(ev, "empty_stt", lang=lang)
             return

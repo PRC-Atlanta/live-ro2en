@@ -200,6 +200,8 @@ def test_session_term_reaches_glossary_and_spellings_live(home):
     cmd = live.engine.sent()[-1]
     assert cmd["cmd"] == "keywords" and {"Ionuț Pop", "John"} <= set(cmd["words"])
     assert {"Ionuț Pop", "John"} <= set(live.cfg["whistle"]["keywords_extra"])
+    # the Romanian recogniser: the Romanian side of the names ('Ioan', not the English 'John')
+    assert "Ionuț Pop" in cmd["ro"] and "John" not in cmd["ro"] and live.cfg["ro_names"] == cmd["ro"]
     assert c.get("/api/terms").json() == {"lines": ["Ionuț Pop", "Ioan = John"], "n": 2}
     assert c.get("/api/spellings").json()["session"]["Ionut Pop"] == "Ionuț Pop"
     # a new list replaces today's terms; nothing was saved for next time
@@ -237,7 +239,8 @@ def test_keywords_and_spellings_endpoints(home):
     assert "Nebuchadnezzar" in kw["bundled"] and kw["user"] == []
     r = c.put("/api/keywords", json={"user": ["Pastor Mihai", "  Corinth  ", "Corinth"]}, headers=ME)
     assert r.status_code == 200 and r.json()["user"] == ["Pastor Mihai", "Corinth"]
-    assert live.engine.sent()[-1] == {"cmd": "keywords", "words": ["Pastor Mihai", "Corinth"]}
+    sent = live.engine.sent()[-1]
+    assert {k: sent[k] for k in ("cmd", "words")} == {"cmd": "keywords", "words": ["Pastor Mihai", "Corinth"]}
     assert c.put("/api/keywords", json={"user": ["ok", 3]}, headers=ME).status_code == 400
     assert c.put("/api/keywords", json={"user": ["x" * 500]}, headers=ME).status_code == 400
     assert c.get("/api/keywords").json()["user"] == ["Pastor Mihai", "Corinth"]

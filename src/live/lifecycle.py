@@ -343,6 +343,7 @@ class LifecycleMixin:
         return {**{k: self.lc[k] for k in ENGINE_CFG_KEYS if k in self.lc},
                 "input_gain_db": self._gain_now(),     # a restarted engine carries on from the auto gain
                 "parakeet_stream": self.cfg.get("parakeet_stream") or {},
+                "ro_names": list(self.cfg.get("ro_names") or []),   # boosted by the Romanian recogniser
                 "whistle": {**(self.cfg.get("whistle") or {}),   # whistle_<key> in live/profile overrides
                             **{k[len("whistle_"):]: v for k, v in self.lc.items() if k.startswith("whistle_")}}}
 
