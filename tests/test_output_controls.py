@@ -187,6 +187,96 @@ def test_layout_resizes_and_rejects_bad_sizes(tmp_path, mock):
             live.layout(**bad)
 
 
+# --- word-paced reveal with the operator's controls --------------------------------------------
+LONG = "one two three four five six seven eight nine ten"
+
+
+def _revealing(tmp_path, port):
+    """A Live whose captions reveal on a hand-driven clock; the pace timer is ticked by the test."""
+    live = _live(tmp_path, port)
+    now = [0.0]
+    live.caps = RollingCaptions(60, 2, min_line_s=2.5, clock=lambda: now[0], reveal=True)
+    live._pace = lambda: None
+
+    def tick(until):
+        while (due := live.caps.next_due()) is not None and due <= until:
+            now[0] = due
+            live._pace_tick()
+    return live, tick
+
+
+def test_reveal_sends_the_first_words_then_the_rest(tmp_path, mock):
+    live, tick = _revealing(tmp_path, mock.port)
+    shown, ok, outcome = live._show(LONG, audio_s=4.0)
+    assert (shown, ok, outcome) == ("one two three", True, "ok")
+    assert mock.visible["Live Translation"] == "one two three"
+    tick(10)
+    assert mock.visible["Live Translation"] == LONG
+
+
+def test_hide_drops_pending_words(tmp_path, mock):
+    live, tick = _revealing(tmp_path, mock.port)
+    live._show(LONG, audio_s=4.0)
+    live.pause(True)
+    tick(10)
+    assert mock.visible == {} and live.caps.text == "" and not live.caps.pending
+
+
+def test_hold_keeps_the_screen_while_words_come_in_and_release_shows_them_all(tmp_path, mock):
+    live, tick = _revealing(tmp_path, mock.port)
+    live._show(LONG, audio_s=8.0)
+    live.hold(True)
+    tick(1.0)
+    assert mock.visible["Live Translation"] == "one two three" and live.caps.pending
+    live.hold(False)
+    assert mock.visible["Live Translation"] == LONG and not live.caps.pending
+
+
+def test_remove_and_fix_last_include_words_not_revealed_yet(tmp_path, mock):
+    live, tick = _revealing(tmp_path, mock.port)
+    live._show("Amen")
+    live._show(LONG, audio_s=4.0)
+    assert live.retract() is True
+    tick(10)
+    assert mock.visible["Live Translation"] == "Amen"            # no stray words come up later
+    live._show(LONG, audio_s=4.0)
+    assert live.correct("Fixed") is True
+    tick(10)
+    assert mock.visible["Live Translation"] == "Amen Fixed"
+
+
+def test_blank_drops_pending_words(tmp_path, mock):
+    live, tick = _revealing(tmp_path, mock.port)
+    live._show(LONG, audio_s=4.0)
+    live.blank()
+    tick(10)
+    assert mock.visible == {} and not live.caps.pending
+
+
+def test_reveal_setting_applies_now(tmp_path, mock):
+    live, tick = _revealing(tmp_path, mock.port)
+    live.settings_path = tmp_path / "settings.yaml"              # not into the repo's user/
+    assert live.put_settings({"values": {"live.caption_reveal": False, "live.caption_reveal_wps": 5}})[0] == 200
+    assert live.caps.reveal is False and live.caps.reveal_wps == 5
+    assert live._show(LONG, audio_s=4.0)[0] == LONG
+
+
+def test_an_earlier_reveal_step_replaces_a_later_pace_timer(tmp_path, mock):
+    live = _live(tmp_path, mock.port)
+    live.caps = RollingCaptions(10, 1, min_line_s=8.0, reveal=True)
+    try:
+        live._show("aaaa bbbb cccc")                               # a line waits 8 s
+        late = live._pace_timer
+        live.caps.clear()
+        live._show(LONG, audio_s=4.0)                               # its next words are due in <1 s
+        assert live._pace_timer is not late and live._pace_due < live.caps.clock() + 1
+        assert not late.is_alive() or late.finished.is_set()
+    finally:
+        for t in (late, live._pace_timer):
+            if t is not None:
+                t.cancel()
+
+
 # --- ProPresenter robustness ----------------------------------------------------------------
 def test_down_three_failures_then_up_resends_current_text(mock):
     pp = ProPresenter(port=mock.port, backoff_s=(0,))

@@ -64,6 +64,8 @@ FIELDS: dict[str, dict] = {
     "live.hold_s":             {"group": "advanced", "type": "num", "min": 0, "max": 5, "apply": "now"},
     "live.sentence_pause_s":   {"group": "advanced", "type": "num", "min": 0, "max": 3, "apply": "now"},
     "live.caption_min_line_s": {"group": "advanced", "type": "num", "min": 0, "max": 8, "apply": "now"},
+    "live.caption_reveal":     {"group": "advanced", "type": "bool", "apply": "now"},
+    "live.caption_reveal_wps": {"group": "advanced", "type": "num", "min": 1, "max": 8, "apply": "now"},
     "live.partial_every_s":    {"group": "advanced", "type": "num", "min": 0, "max": 5, "apply": "start"},
     "live.lag_warn_s":         {"group": "advanced", "type": "num", "min": 2, "max": 30, "apply": "now"},
     "live.keep_both_translators": {"group": "advanced", "type": "enum", "choices": ["auto", True, False], "apply": "now"},
@@ -404,6 +406,10 @@ class SettingsMixin:
             self.lang.set_mode(get(self.cfg, "live.language_mode"))
         if "live.caption_min_line_s" in changed and hasattr(self.caps, "min_line_s"):
             self.caps.min_line_s = float(get(self.cfg, "live.caption_min_line_s") or 0)
+        if "live.caption_reveal" in changed and hasattr(self.caps, "reveal"):
+            self.caps.reveal = bool(get(self.cfg, "live.caption_reveal"))   # from the next phrase
+        if "live.caption_reveal_wps" in changed and hasattr(self.caps, "reveal_wps"):
+            self.caps.reveal_wps = float(get(self.cfg, "live.caption_reveal_wps") or 3)
         if any(k.startswith("display.") for k in changed) and hasattr(self, "_display_changed"):
             self._display_changed(changed)
         if "propresenter.enabled" in changed and hasattr(self, "_set_pp_enabled"):

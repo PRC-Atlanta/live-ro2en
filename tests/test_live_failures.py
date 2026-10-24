@@ -101,6 +101,7 @@ def test_failed_and_empty_chunks_are_logged_and_counted(tmp_path):
         appmod.ROOT = real_root
     assert [r["outcome"] for r in _log(live)] == ["ok", "empty_stt", "empty_mt", "error"]
     assert live.state()["counts"] == {"ok": 1, "empty_stt": 1, "empty_mt": 1, "error": 1}
+    live.caps.flush()                                                  # the rest is revealed at speaking pace
     assert len(live.lat) == 1 and live.caps.text == "Brothers and sisters, today we read"   # the period waits for a pause
 
 

@@ -18,6 +18,8 @@ live:
   hold_s: 1.2                 # ...for at most this long
   sentence_pause_s: 1.0       # a chunk's final period is shown only if the next one starts after this long a pause
   caption_min_line_s: 2.5     # a caption line stays up at least this long before it scrolls off (0 = no pacing)
+  caption_reveal: true        # a long phrase's words go up a few at a time over its speaking time, not in one jump
+  caption_reveal_wps: 3       # ...at about this many words a second (faster when the phrase is long for its time)
   partial_every_s: 0           # >0 shows interim text on the control page (adds load)
   stt_model: jackrabbit-ctc-lm-b8          # Jackrabbit CTC + 4-gram LM, beam 8 (see BENCHMARK.md)
   stt_venv: .venv-nemo

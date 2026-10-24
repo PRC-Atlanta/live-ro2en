@@ -24,6 +24,8 @@ class OutputMixin:
         self._pp_thread: threading.Thread | None = None
         self._pp_stop = threading.Event()
         self._test_timer: threading.Timer | None = None
+        self._pace_timer: threading.Timer | None = None   # see _pace
+        self._pace_due = 0.0
         self.register_state(self._output_state)
 
     def _output_state(self) -> dict:
@@ -35,35 +37,43 @@ class OutputMixin:
                 "corrections_n": self._corrections[str(self.log_path)]}
 
     # --- the pipeline's way onto the screen ------------------------------------------------
-    def _show(self, translation: str, close: str = "") -> tuple[str, bool | None, str]:
+    def _show(self, translation: str, close: str = "", audio_s: float | None = None) -> tuple[str, bool | None, str]:
         """Add a translation to the captions and send them, unless hidden or held.
         Returns (screen text, sent ok or None when nothing was sent, outcome) where outcome
         is "ok", "paused" (Hide is on: not added, so Show starts clean) or "held".
-        `close` ends the previous caption first (RollingCaptions.add)."""
+        `close` ends the previous caption first; with its speaking time `audio_s` the rest
+        of a long translation is revealed by the pace timer (RollingCaptions.add)."""
         with self._out_lock:
             if self.paused:
                 return "", None, "paused"
-            shown = self.caps.add(translation, close)
+            shown = self.caps.add(translation, close, audio_s=audio_s)
             self._pace()
             if self.held:
                 return shown, None, "held"
             return shown, self.pp.show(shown), "ok"
 
     def _pace(self):
-        """Lines waiting for the one above to have been read (captions.min_line_s) go up
-        from a timer, one at a time."""
+        """One timer for everything the captions bring up later: pending words of the last
+        translation (captions reveal) and lines waiting for the one above to have been read
+        (captions.min_line_s). A timer set for later than the new due time is replaced."""
         with self._out_lock:
             due = self.caps.next_due() if hasattr(self.caps, "next_due") else None
-            t = getattr(self, "_pace_timer", None)
-            if due is None or (t is not None and t.is_alive()):
+            t = self._pace_timer
+            if due is None:
                 return
+            if t is not None and t.is_alive():
+                if due >= self._pace_due - 0.01:
+                    return
+                t.cancel()                     # a tick that already started does no harm
+            self._pace_due = due
             self._pace_timer = threading.Timer(max(0.05, due - self.caps.clock()), self._pace_tick)
             self._pace_timer.daemon = True
             self._pace_timer.start()
 
     def _pace_tick(self):
         with self._out_lock:
-            self._pace_timer = None
+            if self._pace_timer is threading.current_thread():
+                self._pace_timer = None
             if self.caps.advance() and not (self.paused or self.held):
                 self.pp.show(self.caps.text)
         self._broadcast()
@@ -113,13 +123,16 @@ class OutputMixin:
 
     def hold(self, on: bool = True):
         """Hold (on): the screen keeps the current caption while new ones are only collected.
-        Release (off): the screen jumps to the current captions."""
+        Release (off): the screen jumps to the current captions, words still waiting to be
+        revealed included."""
         on = bool(on)
         with self._out_lock:
             if on == self.held:
                 return
             self.held = on
             if not on:
+                if hasattr(self.caps, "flush"):
+                    self.caps.flush()
                 self._push()
         self._log_event({"event": "hold", "on": on})
         self._broadcast()

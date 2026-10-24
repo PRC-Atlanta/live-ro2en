@@ -496,7 +496,8 @@ class PipelineMixin:
         screen_text, self._cap_open = tidy_clause(translation, continues, tgt, src_text)
         self._cap_end = ev["t_end"]
         t1 = time.time()
-        shown, ok, outcome = self._show(screen_text, close="." if prev_open and not continues else "")
+        shown, ok, outcome = self._show(screen_text, close="." if prev_open and not continues else "",
+                                        audio_s=ev.get("audio_s"))
         t_disp = time.time()
         latency = t_disp - ev["t_end"]
         n_g, ok_g = self.gloss.adherence(src_text, translation, lang)

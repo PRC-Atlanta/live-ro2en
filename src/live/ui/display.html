@@ -51,7 +51,39 @@
     } else {
       heldText = null;
     }
-    if (want !== shown) { shown = want; text.textContent = want; }
+    if (want !== shown) paint(want);
+  }
+
+  // Roll-up: when lines leave the top, the text slides up over 250 ms instead of jumping
+  // (the leaving lines fade); words appended to the last line just appear. Anything else
+  // (Hide, Blank, Hold released, Remove last...) is shown at once, as is everything when
+  // the viewer asks for reduced motion.
+  const still = window.matchMedia("(prefers-reduced-motion: reduce)");
+  let rollTimer = 0;
+  const lineDivs = ls => ls.map(l => { const d = document.createElement("div"); d.textContent = l; return d; });
+  function settle(want) {
+    clearTimeout(rollTimer); rollTimer = 0;
+    text.style.transition = text.style.transform = "";
+    text.replaceChildren(...lineDivs(want ? want.split("\n") : []));
+  }
+  function paint(want) {
+    const before = shown.split("\n").filter(Boolean), after = want.split("\n").filter(Boolean);
+    shown = want;
+    // k lines rolled off: the new first line continues what was line k (it may have grown)
+    let k = 0;
+    if (after.length && !after[0].startsWith(before[0] || "\u0000")) {
+      k = before.findIndex((l, i) => i > 0 && after[0].startsWith(l));
+    }
+    if (k <= 0 || still.matches || document.hidden) return settle(want);
+    settle(before.slice(0, k).concat(after).join("\n"));
+    const leaving = [...text.children].slice(0, k);
+    const h = leaving.reduce((sum, d) => sum + d.offsetHeight, 0);
+    text.style.transform = `translateY(${h}px)`;            // where the old lines were
+    void text.offsetHeight;                                 // start from there...
+    text.style.transition = "transform .25s ease-out";
+    text.style.transform = "translateY(0)";                 // ...and slide up
+    leaving.forEach(d => { d.style.transition = "opacity .25s"; d.style.opacity = "0"; });
+    rollTimer = setTimeout(() => settle(want), 280);
   }
 
   function connect() {
@@ -62,7 +94,7 @@
       dot.hidden = false;
       // a stale caption must not stay up for long: 5 s from the first drop, whatever the
       // retries (each failed one closes again; they must not restart the countdown)
-      if (!lostTimer) lostTimer = setTimeout(() => { shown = ""; heldText = null; text.textContent = ""; }, 5000);
+      if (!lostTimer) lostTimer = setTimeout(() => { shown = ""; heldText = null; settle(""); }, 5000);
       setTimeout(connect, 1000);
     };
   }

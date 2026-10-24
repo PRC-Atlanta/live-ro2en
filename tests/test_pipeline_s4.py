@@ -88,6 +88,7 @@ def test_blocklist_masks_words(tmp_path):
     live._handle(_clause(1, "Frați și surori, astăzi citim."))
     rec = _log(live)[-1]
     assert rec["outcome"] == "ok" and rec["masked"] == 2
+    live.caps.flush()                                                  # all of it, not only the first words
     assert live.caps.text.replace("\n", " ") == "This *** thing, said the *** man"
     assert live.counts["masked"] == 2
 
@@ -97,6 +98,7 @@ def test_blocklist_file_and_phrases(tmp_path):
     live = _live(tmp_path, translate=lambda t, *a, **k: "A Bad  Word here, a badword there")
     live.cfg["paths"]["blocklist"] = str(tmp_path / "block.txt")
     live._handle(_clause(1, "Frați și surori, astăzi citim."))
+    live.caps.flush()                                                  # all of it, not only the first words
     assert live.caps.text.replace("\n", " ") == "A *** here, a badword there"
     assert live.history[-1]["translation"] == "A *** here, a badword there"   # the log has what was shown
 
