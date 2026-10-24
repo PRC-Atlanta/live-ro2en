@@ -73,11 +73,11 @@ def captions(recs: list[dict]) -> list[dict]:
     return sorted(ok, key=lambda r: r.get("t_start") or 0)
 
 
-# outcomes that are not failures: the operator's Hide/Hold, and output the safety filter dropped
-# on purpose (a translator loop or an overlong answer, or garbled recognition the confidence
-# gate kept from the translator; counted as `filtered`)
-OPERATOR = ("paused", "held")
-FILTERED = ("mt_loop", "mt_overlong", "low_confidence")
+# outcomes that are not failures: the operator's Hide/Hold/Song, and output the safety filter
+# dropped on purpose (a translator loop or an overlong answer, garbled recognition the confidence
+# gate kept from the translator, or a phrase the English listener heard twice; counted as `filtered`)
+OPERATOR = ("paused", "held", "song")
+FILTERED = ("mt_loop", "mt_overlong", "low_confidence", "overlap_repeat")
 
 
 def summary(recs: list[dict], start: float | None = None, first_word_ok_s: float = FIRST_WORD_OK_S) -> dict:

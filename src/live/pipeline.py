@@ -16,7 +16,9 @@ import unicodedata
 
 import gate
 import guards
+import overlap
 import paths
+import song
 import translate
 from captions import tidy_clause
 from langid import score as lang_score
@@ -42,6 +44,17 @@ def is_name_list(text: str) -> bool:
     return len(words) >= 2 and sum(w[0].isupper() for w in words) >= 0.75 * len(words)
 
 
+# a phrase that stops on one of these was cut mid-thought ("aduc condoleanțe din."): it waits
+# for the next one (idea 20). Compared with diacritics: "sa" (his) ends phrases, "să" does not.
+DANGLING = frozenset("din de la în cu pe pentru și că care dar iar sau ca să "
+                     "of to in on for and but that which the a an".split())
+
+
+def dangling(text: str) -> bool:
+    words = tokens(text)
+    return bool(words) and words[-1] in DANGLING
+
+
 def pack_parts(parts: list[str], max_words: int) -> list[str]:
     """Join consecutive clauses into calls of at most max_words (a clause longer than that
     stays whole), so a backlog is translated in few calls without overrunning max_tokens."""
@@ -55,7 +68,10 @@ def pack_parts(parts: list[str], max_words: int) -> list[str]:
 
 
 def merge_clauses(a: dict, b: dict) -> dict:
-    """Clause `a` followed by clause `b` as one clause (text fields joined, a's start)."""
+    """Clause `a` followed by clause `b` as one clause (text fields joined, a's start). The
+    English texts lose a start that repeats a's end (idea 16: recognised twice)."""
+    b = {**b, **{k: overlap.trim(a.get(k) or "", b.get(k) or "")[0] for k in ("multi", "en")
+                 if a.get(k) and b.get(k) and b["t_start"] - a["t_end"] < OVERLAP_GAP_S}}
     return {**b, **{k: f"{a.get(k) or ''} {b.get(k) or ''}".strip() for k in ("ro", "multi", "en")},
             "t_start": a["t_start"], "t_speech": a.get("t_speech", a["t_start"]),
             # stt_s stays b's (what delayed b's t_emit, so vad_wait_s stays right); total kept apart
@@ -131,6 +147,7 @@ def mask(text: str, pat: re.Pattern | None, sub: str = "***") -> tuple[str, int]
 
 
 KEEPALIVE_TICK_S = 15.0                  # how often idle translators are checked
+OVERLAP_GAP_S = 2.0                      # a repeat across a longer pause was said twice, not heard twice
 
 class PipelineMixin:
     RESTART_KEYS = RESTART_KEYS
@@ -144,6 +161,9 @@ class PipelineMixin:
         self._recent_out: collections.deque = collections.deque(maxlen=2)   # (source key, output key)
         self._current: dict | None = None      # the clause the worker is on (backlog)
         self._block: tuple = (None, None)      # (words, compiled pattern)
+        self._pending_cap = 0.0                # the span a held phrase may grow to (_on_clause)
+        self._prev_src: tuple = ("", "", None) # (language, text, t_end) of the last phrase (overlap)
+        self._song_det = song.SongDetector()
         threading.Thread(target=gate.lexicon, daemon=True).start()   # the gate's word lists (~0.2 s)
         self.register_state(self._pipeline_state)
 
@@ -325,14 +345,18 @@ class PipelineMixin:
     # --- clauses -------------------------------------------------------------------------
     def _on_clause(self, ev: dict):
         """Hold very short fragments ('Dar acum.') briefly and merge them with the next
-        clause: translating 1-3 words alone is poor. Sentence-final fragments go now."""
+        clause: translating 1-3 words alone is poor. Sentence-final fragments go now.
+        Slow speakers (idea 20): a phrase under phrase_min_words, or one that stops on "din",
+        "și", "of"..., waits longer (hold_slow_s) and may grow to hold_max_s, because most of
+        a slow speaker's seconds are pauses."""
         with self.lock:
             if self._timer:
                 self._timer.cancel()
             self._hold_gen += 1                        # a timer that already fired is now stale
             p = self._pending
             cap = self.lc.get("max_chunk_s", 0)
-            if p and cap and ev["t_end"] - p.get("t_speech", p["t_start"]) > cap:
+            p_cap = getattr(self, "_pending_cap", cap)
+            if p and p_cap and ev["t_end"] - p.get("t_speech", p["t_start"]) > p_cap:
                 # merging would make the first word wait too long: send the fragment on its own
                 self._pending = None
                 self._submit(p)
@@ -342,10 +366,15 @@ class PipelineMixin:
             self._pending = None
             text = ev.get("multi") if self.lang.current == "en" else ev["ro"]
             text = text or ev["ro"] or ""
-            short = len(text.split()) < self.lc.get("hold_min_words", 4) and not text.rstrip().endswith(("?", "!"))
-            if short and not (cap and ev["t_end"] - ev.get("t_speech", ev["t_start"]) > cap):
-                self._pending = ev
-                self._timer = threading.Timer(self.lc.get("hold_s", 1.2), self._flush, args=(self._hold_gen,))
+            n, final = len(text.split()), text.rstrip().endswith(("?", "!"))
+            slow = n > 0 and not final and (n < int(self.lc.get("phrase_min_words", 0) or 0)
+                                  or (self.lc.get("hold_dangling", True) and dangling(text)))
+            short = not final and n < self.lc.get("hold_min_words", 4)
+            limit = max(cap, float(self.lc.get("hold_max_s", 10.0) or 0)) if slow and cap else cap
+            if (slow or short) and not (limit and ev["t_end"] - ev.get("t_speech", ev["t_start"]) > limit):
+                self._pending, self._pending_cap = ev, limit
+                wait = float(self.lc.get("hold_slow_s", 6.5)) if slow else self.lc.get("hold_s", 1.2)
+                self._timer = threading.Timer(wait, self._flush, args=(self._hold_gen,))
                 self._timer.daemon = True
                 self._timer.start()
                 return
@@ -519,9 +548,51 @@ class PipelineMixin:
                           features=gate.features(src, lang, gate.lexicon(), names))
         return None, lang, {}
 
+    def _trim_overlap(self, ev: dict, lang: str, text: str) -> tuple[str | None, dict]:
+        """English text without a start that repeats the end of the previous phrase (idea 16):
+        (text, log fields), or None when the whole phrase was a repeat (logged)."""
+        prev_lang, prev, prev_end = getattr(self, "_prev_src", ("", "", None))
+        self._prev_src = (lang, text, ev["t_end"])
+        if (lang != "en" or prev_lang != "en" or prev_end is None or not self.lc.get("overlap_trim", True)
+                or ev["t_start"] - prev_end >= OVERLAP_GAP_S):
+            return text, {}
+        kept, dropped = overlap.trim(prev, text, lang)
+        if not dropped:
+            return text, {}
+        with self.lock:
+            self.counts["overlap_trimmed"] += 1
+        if not kept.strip():
+            self._log_failure(ev, "overlap_repeat", lang=lang, source=text)
+            return None, {}
+        return kept, {"overlap_trimmed": dropped}
+
+    def _song_hold(self, ev: dict, lang: str, text: str) -> bool:
+        """During a song (the operator's Song key, or singing detected with live.song_detect)
+        the phrase is logged as `song` and not translated (idea 18). Every phrase feeds the
+        detector, so it knows the speech level when a song starts."""
+        inp = self._input_fields(ev)
+        det = getattr(self, "_song_det", None)
+        on, f = det.update(text, ev.get("t_speech", ev["t_start"]), ev["t_end"], inp.get("level"),
+                           inp.get("gain_db")) if det else (False, {})
+        if self.lc.get("song_detect", False) and hasattr(self, "song"):
+            if on and not self.song_on and time.time() >= getattr(self, "_song_snooze", 0.0):
+                self.song(True, auto=True)
+            elif not on and self.song_on and self.song_auto:
+                self.song(False, auto=True)
+        if not getattr(self, "song_on", False):
+            return False
+        self._log_failure(ev, "song", lang=lang, source=text, song={**f, "auto": self.song_auto})
+        return True
+
     def _handle_locked(self, ev: dict):
         lang, src_text, src_info = self._source(ev)
         src_text = apply_spellings(src_text, self.cfg.get("spellings") or {})
+        if self._song_hold(ev, lang, src_text):          # a song: not captioned (logged)
+            return
+        src_text, trimmed = self._trim_overlap(ev, lang, src_text)
+        if src_text is None:                            # all of it said in the last phrase (logged)
+            return
+        src_info.update(trimmed)
         if not src_text.strip():
             self._log_failure(ev, "empty_stt", lang=lang)
             return

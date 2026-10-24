@@ -26,7 +26,7 @@ export function baseState() {
     pp: { connected: true, since: Date.now() / 1000 - 600, last_ms: 3, error_code: null, enabled: true },
     display: { size: "large", lines: 2, colors: "white_on_black", network: false, url: null, network_error: null },
     pace: { state: "ok", behind_s: null }, backlog: { n: 0, oldest_s: null },
-    paused: false, held: false, problem: null, auto_actions: [],
+    paused: false, held: false, song: false, song_auto: false, problem: null, auto_actions: [],
     elapsed_s: null, first_word_ok_pct: null, rehearsal: false, session_terms_n: 0, corrections_n: 0, preflight: null,
   };
 }
@@ -52,6 +52,7 @@ const SCENARIOS = {
     };
   },
   paused: t => ({ ...SCENARIOS.live(t), paused: true, screen: "" }),
+  song: t => ({ ...SCENARIOS.live(t), song: true, song_auto: true, screen: "" }),
   stopping: () => ({ phase: "stopping", running: true, status: "stopping" }),
   error: () => ({ phase: "error", status: "start failed: RuntimeError: boom",
                   problem: { code: "engine_stopped", severity: "error", action: { id: "start", label: "Start again" } } }),
@@ -110,6 +111,12 @@ const MOCK_FIELDS = {
   "live.vad_threshold": { group: "advanced", type: "num", min: 0.1, max: 0.95, apply: "start" },
   "live.hold_min_words": { group: "advanced", type: "int", min: 0, max: 12, apply: "now" },
   "live.hold_s": { group: "advanced", type: "num", min: 0, max: 5, apply: "now" },
+  "live.phrase_min_words": { group: "advanced", type: "int", min: 0, max: 12, apply: "now" },
+  "live.hold_dangling": { group: "advanced", type: "bool", apply: "now" },
+  "live.hold_slow_s": { group: "advanced", type: "num", min: 0, max: 10, apply: "now" },
+  "live.overlap_trim": { group: "advanced", type: "bool", apply: "now" },
+  "live.song_detect": { group: "advanced", type: "bool", apply: "now" },
+  "live.song_symbol": { group: "advanced", type: "enum", choices: ["♪", ""], apply: "now" },
   "live.sentence_pause_s": { group: "advanced", type: "num", min: 0, max: 3, apply: "now" },
   "live.caption_min_line_s": { group: "advanced", type: "num", min: 0, max: 8, apply: "now" },
   "live.caption_reveal": { group: "advanced", type: "bool", apply: "now" },
@@ -131,7 +138,7 @@ const MOCK_DEFAULTS = {
   "propresenter.host": "127.0.0.1", "propresenter.port": 50001, "propresenter.message_id": "Live Translation",
   "propresenter.token_name": "Text", "propresenter.max_lines": 2, "propresenter.max_chars_per_line": 42,
   "propresenter.stage_message": false, "live.en_recognizer": "parakeet", "live.vad_threshold": 0.5,
-  "live.hold_min_words": 4, "live.hold_s": 1.2, "live.sentence_pause_s": 1.0, "live.caption_min_line_s": 2.5, "live.caption_reveal": true, "live.caption_reveal_wps": 3, "live.partial_every_s": 0, "live.lag_warn_s": 6.0, "live.gate_min_real": 0.6,
+  "live.hold_min_words": 4, "live.hold_s": 1.2, "live.phrase_min_words": 6, "live.hold_dangling": true, "live.hold_slow_s": 6.5, "live.overlap_trim": true, "live.song_detect": false, "live.song_symbol": "♪", "live.sentence_pause_s": 1.0, "live.caption_min_line_s": 2.5, "live.caption_reveal": true, "live.caption_reveal_wps": 3, "live.partial_every_s": 0, "live.lag_warn_s": 6.0, "live.gate_min_real": 0.6,
   "propresenter.health_every_s": 5, "live.keep_both_translators": "auto", "live.engine_restarts": 2,
   "propresenter.enabled": true, "display.size": "large", "display.lines": 2, "display.colors": "white_on_black",
   "display.network": false,
@@ -447,8 +454,9 @@ export async function mockApi(method, path, body = {}) {
       const { lines } = stateNow();
       return live({ running: false, phase: "ready", screen: "", partial: "", lines, rehearsal: false });
     }
-    case "POST pause": case "POST hold":
+    case "POST pause": case "POST hold": case "POST song":
       if (typeof body.on !== "boolean") return status(400, { error: "bad_request", detail: "on must be true or false" });
+      if (path === "song") return live({ song: body.on, song_auto: false, ...(body.on ? { screen: "" } : {}) });
       return live({ [path === "pause" ? "paused" : "held"]: body.on });
     case "POST blank": case "POST clear": case "POST reconnect": case "POST layout": return live();
     case "POST retract":

@@ -1,4 +1,4 @@
-"""What reaches the screen: clear/blank, hide (pause), hold, remove last (retract), fix last
+"""What reaches the screen: clear/blank, hide (pause), hold, song, remove last (retract), fix last
 (correct), box size (layout), language mode, profile, and the ProPresenter test, test
 caption and reconnect. Owned by S2 (`profile` calls Live.set_profile, owned by S4)."""
 from fastapi import APIRouter, Request
@@ -47,6 +47,14 @@ def router(live) -> APIRouter:
         if not isinstance(on, bool):
             return _bad("on must be true or false")
         await run(live.hold, on)
+        return live.state()
+
+    @r.post("/api/song")
+    async def song(request: Request):
+        on = (await body(request)).get("on", True)
+        if not isinstance(on, bool):
+            return _bad("on must be true or false")
+        await run(live.song, on)
         return live.state()
 
     @r.post("/api/retract")

@@ -39,7 +39,10 @@ const DECK = `
   </div>
 
   <div class="ledrow">
-    <button class="led" data-hide aria-pressed="false"><b></b><span class="label">${S.hide}</span><span class="sub">${S.hideKey}</span></button>
+    <div class="leds">
+      <button class="led" data-hide aria-pressed="false"><b></b><span class="label">${S.hide}</span><span class="sub">${S.hideKey}</span></button>
+      <button class="led" data-song aria-pressed="false" title="${S.songTitle}"><b></b><span class="label">${S.song}</span><span class="sub">${S.songKey}</span></button>
+    </div>
     <div class="pills">
       <span class="pill" data-pill="sound"><i></i><span></span></span>
       <span class="pill" data-pill="pp"><i></i><span></span></span>
@@ -140,6 +143,7 @@ export function render(el, store) {
   const say = t => { q("[data-announce]").textContent = t; };
   const DONE = {
     pause: b => (b.on ? S.toast.hidden : S.toast.shown), blank: () => S.toast.blanked,
+    song: b => (b.on ? S.toast.songOn : S.toast.songOff),
     retract: () => S.toast.removed, correct: () => S.toast.fixed, reconnect: () => S.toast.reconnecting,
     start: () => S.toast.started, stop: () => S.toast.stopped,
     mode: b => S.toast.mode(S.mode.long[b.mode]), profile: b => S.toast.quality(S.quality.long[b.profile] || b.profile),
@@ -241,6 +245,7 @@ export function render(el, store) {
   unbind.push(() => { removeEventListener("keydown", onKey); removeEventListener("keyup", onKeyUp); });
 
   q("[data-hide]").onclick = () => run("pause");
+  q("[data-song]").onclick = () => run("song");
   q("[data-banner] .bbtn").onclick = () => { const b = bannerFor(s); if (b) run(b.action.id); };
   q("[data-ppstrip] button").onclick = () => { const p = ppStrip(s); if (p) run(p.action.id); };
 
@@ -265,6 +270,9 @@ export function render(el, store) {
     const hb = q("[data-hide]");
     hb.classList.toggle("on", hidden); hb.setAttribute("aria-pressed", hidden);
     q("[data-mirror]").classList.toggle("hidden", hidden);
+    const sb = q("[data-song]"), song = !!s.song;
+    sb.classList.toggle("on", song); sb.setAttribute("aria-pressed", song);
+    sb.querySelector(".label").textContent = song && s.song_auto ? S.songAuto : S.song;
 
     // the speaker's language and the captions' language
     const srcLang = s.mode === "en-ro" ? "en" : s.mode === "ro-en" ? "ro" : s.lang || "ro";

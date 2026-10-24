@@ -4,6 +4,7 @@
 export const KEYS = {
   " ": "toggle",          // start; press twice (or hold 0.6 s) to stop
   h: "pause",
+  s: "song",              // Song: hold the captions while a song is sung; S again releases
   escape: "blank",
   "1": "mode_auto", "2": "mode_ro", "3": "mode_en",
   q: "quality",
@@ -29,6 +30,7 @@ export function callFor(intent, s, extra = {}) {
     case "start": return ["start", {}];
     case "stop": return ["stop", {}];
     case "pause": return ["pause", { on: !s.paused }];
+    case "song": return ["song", { on: !s.song }];
     case "blank": return ["blank", {}];
     case "mode_auto": return ["mode", { mode: "auto" }];
     case "mode_ro": return ["mode", { mode: "ro-en" }];

@@ -18,6 +18,13 @@ live:
   max_clause_s: 7.0           # force a commit if no pause arrives
   hold_min_words: 4           # shorter fragments (except ?/!) wait for the next clause...
   hold_s: 1.2                 # ...for at most this long
+  phrase_min_words: 0         # phrases with fewer words wait for the next one (slow speakers; 0 = off)...
+  hold_dangling: true         # ...as do phrases ending on din/de/la/și/că/of/to/and... ("aduc condoleanțe din.")...
+  hold_slow_s: 6.5            # ...for at most this long (the next phrase takes ~4-6 s to come)...
+  hold_max_s: 10.0            # ...and merged up to this span (max_chunk_s caps the short-fragment hold)
+  overlap_trim: true          # drop the start of an English chunk that repeats the end of the one before
+  song_detect: false          # hold captions by themselves while a song is sung (loud, steady, slow, repeated lines)
+  song_symbol: "♪"            # what the big screen shows during a song ("" = nothing)
   sentence_pause_s: 1.0       # a chunk's final period is shown only if the next one starts after this long a pause
   caption_min_line_s: 2.5     # a caption line stays up at least this long before it scrolls off (0 = no pacing)
   caption_reveal: true        # a long phrase's words go up a few at a time over its speaking time, not in one jump
@@ -100,6 +107,7 @@ profiles:
     min_commit_s: 3.5         # keep listening across short pauses until 3.5 s of audio: whole phrases, not
     max_commit_s: 5.5         #   2-3 word fragments, reach the translator (first word ~6.5-7 s; 5-7 s was ~8.5 s)
     hold_min_words: 4
+    phrase_min_words: 6       # at least 6 words per translation: slow speakers' 3-word pieces wait (+~1 s average delay)
     context_clauses: 4        # Gemma sees the previous 4 chunks, so short chunks still read as sentences
 
 propresenter:

@@ -60,6 +60,7 @@ export const S = {
   lang: { ro: "Romanian", en: "English" },
 
   hide: "Hide captions", hideKey: "H",
+  song: "Song", songKey: "S", songAuto: "Song · heard by itself", songTitle: "A song: lyrics aren't captioned; the big screen shows ♪. Press S again when it ends.",
   tabs: { heard: "Heard", screen: "On screen", both: "Both", hint: "V to switch", hiddenTag: "· captions hidden" },
   heardHead: lang => `Heard · ${lang}`,
   screenHead: lang => `On the big screen · ${lang}`,
@@ -136,6 +137,7 @@ export const S = {
     failed: "That didn't work. Try again, or open Help.",
     offline: "Lost contact with the app. Trying again…",
     hidden: "Captions hidden", shown: "Captions showing again",
+    songOn: "Song: captions held", songOff: "Song over: captions continue",
     blanked: "Big screen blanked until the next phrase",
     removed: "Last caption removed", fixed: "Last caption replaced",
     termsSaved: n => (n ? `${n} name${n === 1 ? "" : "s"} for today` : "Today's names cleared"),
@@ -161,6 +163,7 @@ export const S = {
   shortcuts: [
     ["Space", "Start captions · press twice (or hold) to stop"],
     ["H", "Hide or show captions (also the panic button)"],
+    ["S", "Song: hold captions while a song is sung · S again to release"],
     ["Esc", "Blank the big screen now"],
     ["1 / 2 / 3", "Speaker: Auto-detect / Romanian / English"],
     ["Q", "Quality: Quickest or Best"],

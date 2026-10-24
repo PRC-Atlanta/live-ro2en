@@ -15,6 +15,8 @@ const OUTCOMES = {
   paused: "Heard while hidden", held: "Collected while held",
   mt_loop: "Dropped: translation repeated itself", mt_overlong: "Dropped: translation far too long",
   low_confidence: "Skipped: speech not recognised clearly", gate_cut: "Garbled words left out",
+  song: "Sung (Song on): not captioned", overlap_trimmed: "Repeated words left out",
+  overlap_repeat: "Skipped: repeated the phrase before",
 };
 
 export function render(el, store) {

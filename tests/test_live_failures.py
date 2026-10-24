@@ -231,6 +231,7 @@ def test_clauses_are_shown_in_order(tmp_path):
     live = _live(tmp_path, translate=tr)
     live.lang.set_mode("ro-en")
     live.lc["max_chunk_s"] = 2.0
+    live.lc["phrase_min_words"] = 0                                     # the short-fragment hold alone
     live._on_clause(_clause(1, ago=4, ro="Dar acum"))                  # short: held
     live._on_clause(_clause(2, ago=0.5, ro="vom citi din Romani capitolul opt."))  # too far: sent apart
     live._drain()

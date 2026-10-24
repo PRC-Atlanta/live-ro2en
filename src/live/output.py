@@ -1,5 +1,5 @@
 """What is on the ProPresenter screen, and the operator's say over it: blank, hide/show
-(pause), hold, remove last (retract), fix last (correct), box size (layout), and the
+(pause), hold, song, remove last (retract), fix last (correct), box size (layout), and the
 ProPresenter health monitor, tests and reconnect. Mixed into live.app.Live (owned by S2).
 
 The pipeline puts each translation on screen through `_show(translation)`, which honours
@@ -9,16 +9,21 @@ from __future__ import annotations
 
 import collections
 import threading
+import time
 
 TEST_CAPTION = "Test caption from Live RO2EN\nIf you can read this, captions will work."
 OFF_DETAIL = "ProPresenter is turned off in Settings: captions stay in this app and the captions display."
 LAYOUT_LIMITS = {"lines": (1, 6), "chars": (10, 120)}
+SONG_SNOOZE_S = 180.0                  # the operator ended a detected song: no new one this long
 
 
 class OutputMixin:
     def _mixin_init(self):
         self.paused = False                    # Hide: nothing reaches ProPresenter
         self.held = False                      # Hold: the screen keeps the current caption
+        self.song_on = False                   # Song: lyrics are not captioned; the screen shows ♪
+        self.song_auto = False                 # ...started by the song detector (it may end it)
+        self._song_snooze = 0.0
         self._corrections: collections.Counter = collections.Counter()   # per service log
         self._out_lock = threading.RLock()
         self._pp_thread: threading.Thread | None = None
@@ -33,19 +38,22 @@ class OutputMixin:
         st = pp.status() if hasattr(pp, "status") else {
             "connected": getattr(pp, "last_error", None) is None, "since": None,
             "last_ms": getattr(pp, "last_ms", None), "error_code": None, "enabled": True}
-        return {"paused": self.paused, "held": self.held, "pp": st,
+        return {"paused": self.paused, "held": self.held, "song": self.song_on, "song_auto": self.song_auto, "pp": st,
                 "corrections_n": self._corrections[str(self.log_path)]}
 
     # --- the pipeline's way onto the screen ------------------------------------------------
     def _show(self, translation: str, close: str = "", audio_s: float | None = None) -> tuple[str, bool | None, str]:
         """Add a translation to the captions and send them, unless hidden or held.
         Returns (screen text, sent ok or None when nothing was sent, outcome) where outcome
-        is "ok", "paused" (Hide is on: not added, so Show starts clean) or "held".
+        is "ok", "paused" (Hide is on: not added, so Show starts clean), "song" (Song came on
+        while it was translated: not added) or "held".
         `close` ends the previous caption first; with its speaking time `audio_s` the rest
         of a long translation is revealed by the pace timer (RollingCaptions.add)."""
         with self._out_lock:
             if self.paused:
                 return "", None, "paused"
+            if self.song_on:
+                return "", None, "song"
             shown = self.caps.add(translation, close, audio_s=audio_s)
             self._pace()
             if self.held:
@@ -74,14 +82,15 @@ class OutputMixin:
         with self._out_lock:
             if self._pace_timer is threading.current_thread():
                 self._pace_timer = None
-            if self.caps.advance() and not (self.paused or self.held):
+            if self.caps.advance() and not (self.paused or self.held or self.song_on):
                 self.pp.show(self.caps.text)
         self._broadcast()
         self._pace()
 
     def _push(self) -> bool:
-        """Send what the captions hold now (an empty box hides the message)."""
-        text = "" if self.paused else self.caps.text
+        """Send what the captions hold now (an empty box hides the message); during a song
+        the song symbol."""
+        text = "" if self.paused else self._song_symbol() if self.song_on else self.caps.text
         return self.pp.show(text) if text else self.pp.clear()
 
     # --- operator controls -----------------------------------------------------------------
@@ -135,6 +144,34 @@ class OutputMixin:
                     self.caps.flush()
                 self._push()
         self._log_event({"event": "hold", "on": on})
+        self._broadcast()
+
+    def _song_symbol(self) -> str:
+        return str(self.lc.get("song_symbol", "♪") or "")
+
+    def song(self, on: bool = True, auto: bool = False):
+        """Song (on): the lyrics are not captioned (each phrase is logged as `song`), the
+        captions are cleared and the big screen shows the song symbol (♪, or nothing).
+        Released (off): captions start clean with the next phrase, the translator's context
+        reset. `auto`: the song detector's doing; the operator ending a detected song keeps
+        the detector quiet for SONG_SNOOZE_S, and the operator pressing Song during a
+        detected one makes it theirs (only they end it)."""
+        on = bool(on)
+        with self._out_lock:
+            if on == self.song_on:
+                if on and not auto:
+                    self.song_auto = False
+                return
+            if not on and self.song_auto and not auto:
+                self._song_snooze = time.time() + SONG_SNOOZE_S
+                if getattr(self, "_song_det", None) is not None:
+                    self._song_det.reset()
+            self.song_on, self.song_auto = on, on and auto
+            self.caps.clear()
+            self._push()                       # the symbol, or the cleared box (also over Hold)
+        if not on:
+            self._reset_translator_context()
+        self._log_event({"event": "song", "on": on, "auto": auto})
         self._broadcast()
 
     def retract(self) -> bool:
