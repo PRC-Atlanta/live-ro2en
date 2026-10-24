@@ -190,3 +190,28 @@ def test_compare_script_checks_flag_the_known_slips():
     ok = C.checks("At age 11 my dad was baptized.", "La vârsta de 11 ani tatăl meu a fost botezat.", words)
     assert not (ok["foreign"] or ok["agreement"] or ok["numbers_missing"] or ok["unknown"])
     assert ok["digits_kept"] == ["11"]
+
+
+def test_a_verse_is_captioned_when_nllb_serves_english_to_romanian():
+    """Bench 2026-10-24: with NLLB for EN→RO, 'and to die is gain' came out 'să mori e câștig';
+    the verse matcher lived only in the Gemma member. The wrapper now matches for NLLB too."""
+    class Plain:                                  # an NLLB-like member: no context, no verses
+        def __init__(self): self.calls = []
+        def translate(self, text, src, tgt, glossary=None):
+            self.calls.append(text)
+            return f"<{text}>"
+    class G(Plain):
+        context = []
+        verses = object()
+        last_verse = None
+        def translate(self, text, src, tgt, glossary=None, use_context=False):
+            return f"[{text}]"
+    nl = Plain()
+    bd = T.ByDirection({("ro", "en"): G(), ("en", "ro"): nl}, {("ro", "en"): "g", ("en", "ro"): "n"})
+    bd.verses = T.verses.Matcher(background=False)        # loaded up front (in the app: a background thread)
+    bd.translate("As the Bible says in Philippians 1 21, to live is Christ.", "en", "ro", None, use_context=True)
+    out = bd.translate("and to die is gain. Dragur says run his race.", "en", "ro", None, use_context=True)
+    assert "a muri este un câștig" in out and bd.last_verse and bd.last_verse["ref"] == "Philippians 1:21"
+    bd.translate("we will meet again", "en", "ro", None, use_context=True)
+    assert bd.last_verse is None and nl.calls[-1] == "we will meet again"
+    assert bd.translate("The time will come.", "ro", "en", None, use_context=True) == "[The time will come.]"

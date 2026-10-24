@@ -481,6 +481,11 @@ class ByDirection:
         self.trs, self.specs = dict(trs), dict(specs)
         self.last = self.trs[("ro", "en")]       # the member that ran last (truncation, guard retry)
         self.used: dict[int, float] = {}         # id(member) -> when it last translated (keep-warm)
+        # for a member without its own (NLLB): announced references, verses recognised by their
+        # words, and the English pre-steps the Gemma member does itself (numbers, name spellings)
+        self.reading = scripture.Reading()
+        self.verses = verses.Matcher()
+        self.last_verse = None
 
     def members(self) -> dict[str, object]:
         """spec -> translator, each loaded translator once."""
@@ -519,14 +524,40 @@ class ByDirection:
 
     def translate(self, text: str, src: str = "ro", tgt: str = "en", glossary=None, **kw) -> str:
         tr = self.last = self.trs[(src, tgt)]
+        live = bool(kw.get("use_context"))
         if "use_context" in kw and not hasattr(tr, "context"):
             kw.pop("use_context")                # NLLB has no context
         try:
-            return tr.translate(text, src, tgt, glossary, **kw)
+            if getattr(tr, "verses", None) is None and live:
+                return self._plain(tr, text, src, tgt, glossary)
+            out = tr.translate(text, src, tgt, glossary, **kw)
+            self.last_verse = getattr(tr, "last_verse", None)
+            return out
         finally:
             self.used[id(tr)] = time.time()
 
+    def _plain(self, tr, text: str, src: str, tgt: str, glossary) -> str:
+        """A live phrase for a member with no verse matching of its own: the same steps the Gemma
+        member takes before translating, so Philippians 1:21 still comes out as Cornilescu's
+        "a muri este un câștig" when NLLB serves English → Romanian."""
+        import guards
+        if src == "en":
+            text = guards.to_digits(text, "en")
+            if glossary is not None:
+                text = namelist.map_back(text, glossary.names)
+        self.reading.update(text)
+        verse = self.verses.match(text, src, tgt, self.reading.ref)
+        if verse is None:
+            self.last_verse = None
+            return tr.translate(text, src, tgt, glossary)
+        around = [tr.translate(t, src, tgt, glossary) if t else "" for t in (verse.before, verse.after)]
+        self.last_verse = verse.log()
+        return " ".join(x for x in (around[0], verse.caption, around[1]) if x)
+
     def reset_context(self):
+        self.reading.reset()
+        self.verses.reset()
+        self.last_verse = None
         for tr in self.members().values():
             if hasattr(tr, "reset_context"):
                 tr.reset_context()
