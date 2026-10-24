@@ -220,9 +220,22 @@ def read_audio(path: str) -> np.ndarray:
     return resample(np.ascontiguousarray(x.mean(1), dtype=np.float32), int(sr))
 
 
+def bench_clock() -> tuple[float, float] | None:
+    """(speed, t0) for a test-bench replay (scripts/bench.py), else None. LIVE_FILE_SPEED plays
+    a file that many times faster than real time; frames are stamped on the *audio* clock
+    LIVE_FILE_T0 + position, so the run's phrase times line up with the recorded service's
+    log. Everything that counts frames (pauses, phrase length) behaves as live."""
+    try:
+        speed = float(os.environ.get("LIVE_FILE_SPEED") or 0)
+        return (speed, float(os.environ.get("LIVE_FILE_T0") or time.time())) if speed > 0 else None
+    except ValueError:
+        return None
+
+
 def file_source(path: str, realtime: bool, q: queue.Queue, stop: threading.Event,
                 ctl: SourceCtl | None = None) -> None:
     x = read_audio(path)
+    bench = bench_clock()
     if ctl is not None:                          # hold: the file plays from Start, not before
         while not ctl.go.wait(0.1):
             if stop.is_set():
@@ -230,11 +243,12 @@ def file_source(path: str, realtime: bool, q: queue.Queue, stop: threading.Event
                 return
     meter = ctl.meter if ctl is not None else None
     t0 = time.time()
+    speed = bench[0] if bench else 1.0
     for i in range(0, len(x) - FRAME + 1, FRAME):
         if stop.is_set():
             break
-        if realtime:
-            due = t0 + (i + FRAME) / SR
+        if realtime or bench:
+            due = t0 + (i + FRAME) / SR / speed
             d = due - time.time()
             if d > 0:
                 time.sleep(d)
@@ -243,7 +257,7 @@ def file_source(path: str, realtime: bool, q: queue.Queue, stop: threading.Event
             fr = ctl.amp(fr)
         if meter is not None:
             meter.feed(fr)
-        q.put((time.time(), fr))
+        q.put((bench[1] + (i + FRAME) / SR if bench else time.time(), fr))
     q.put(None)
 
 
@@ -766,7 +780,7 @@ def main(make_engine=None) -> None:
     except Exception as e:                       # noqa: BLE001  shown by the app, then exit 1
         emit({"type": "error", "where": "engine", "msg": f"models failed to load: {type(e).__name__}: {e}"})
         raise
-    eng.realtime = not a.file or a.realtime      # a fast file run is not "behind"
+    eng.realtime = (not a.file or a.realtime) and bench_clock() is None   # a fast file run is not "behind"
     eng.meter = meter
     src = threading.Thread(target=file_source if a.file else mic_source,
                            args=((a.file, a.realtime) if a.file else (a.device,)) + (q, stop),
