@@ -33,6 +33,7 @@ live:
   stt_model: jackrabbit-ctc-lm-b8          # Jackrabbit CTC + 4-gram LM, beam 8 (see BENCHMARK.md)
   stt_venv: .venv-nemo
   translator: "nllb:nllb-200-distilled-1.3B"   # meets the 2 s target; quality option: "mlx:mlx-community/gemma-4-12B-it-qat-4bit"
+                              # a profile may add translator_en_ro: another translator for English → Romanian
   profile: quality            # fast | quality (switchable on the control page)
   context_s: 6.0              # each short chunk is recognised with the previous 6 s of audio (halves errors)
   lookahead_words: 0          # look-ahead (hold last word at mid-speech cuts): tested, breaks the 6 s ceiling for RO, no RO gain
@@ -93,6 +94,8 @@ profiles:
   fast:                       # NLLB: lowest delay (98% of first words <= 6 s) but translates STT slips literally
     stt_model: jackrabbit-ctc-lm-b8
     translator: "nllb:nllb-200-distilled-1.3B"
+    # translator: "mlx:mlx-community/gemma-4-12B-it-qat-4bit"   # idea 1: Gemma on the short phrases (bench first)
+    context_clauses: 4        # with Gemma: the previous 4 short phrases as context (NLLB has none)
     min_pause_ms: 250
     max_clause_s: 3.0
     max_chunk_s: 3.5
@@ -101,6 +104,7 @@ profiles:
   quality:                    # default: Gemma 4 repairs STT slips; 3.5-5.5 s phrases read as sentences
     stt_model: jackrabbit-ctc-lm-b8
     translator: "mlx:mlx-community/gemma-4-12B-it-qat-4bit"
+    # translator_en_ro: "nllb:nllb-200-distilled-1.3B"   # idea 13: English → Romanian with NLLB (bench first)
     min_pause_ms: 250
     max_clause_s: 5.5         # cut long phrases at the quietest point after 5.5 s of speech
     max_chunk_s: 5.5          # and never merge fragments beyond that span

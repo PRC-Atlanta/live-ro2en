@@ -456,7 +456,8 @@ def test_setup_downloads_are_pinned():
     lock = [l.split() for l in open(root / "requirements" / "models.lock.txt") if l.strip() and not l.startswith("#")]
     hf = {l[1] for l in lock if l[0] == "hf"}
     cfg = yaml.safe_load(open(CFG))
-    specs = {cfg["live"]["translator"]} | {p.get("translator", "") for p in cfg["profiles"].values()}
+    specs = {cfg["live"]["translator"]} | {p.get(k) or "" for p in cfg["profiles"].values()
+                                           for k in ("translator", "translator_en_ro")}
     needed = {s.split(":", 1)[1] for s in specs if s.startswith("mlx:")} | \
         {"facebook/" + s.split(":", 1)[1] for s in specs if s.startswith("nllb:")} | \
         {"surogate/jackrabbit-110m-ro", "mlx-community/parakeet-tdt-0.6b-v3"}

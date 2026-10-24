@@ -285,6 +285,13 @@ SYSTEM = {
     ("en", "ro"): ("You are a live interpreter for a Romanian evangelical church service. Translate the "
                    "English speech into natural Romanian with correct diacritics (ă â î ș ț). "
                    + _PIECES +
+                   "Write only Romanian words: never Spanish, Portuguese or Italian ones (unsprezece, "
+                   "not onze; botezat, not batizat; zel, not zelo). Make every adjective, article, "
+                   "numeral and possessive agree with its noun in gender, number and case (în aceste "
+                   "ultime zile, cei paisprezece copii, tot sufletul, rugăciunile voastre, tatăl meu); "
+                   "use the right pronoun forms (îl iubea, l-a iubit, îi mulțumea lui Dumnezeu) and the "
+                   "infinitive after poate (poate răsuna). Translate idioms by their meaning, not word "
+                   "for word. Write dates, years and numbers above ten as digits (19 mai 1963). "
                    "For Bible quotations and terms use Cornilescu-style wording. Write Tu/Te/Tău/El/Lui "
                    "with a capital only for God. People's names stay exactly as written. Output only "
                    "the Romanian translation, nothing else."),
@@ -424,6 +431,111 @@ def make_translator(spec: str):
     if kind == "mlx":
         return MLXLLMTranslator(name)
     raise ValueError(spec)
+
+
+# --- a translator per direction (idea 13) ---------------------------------------------------
+DIRECTIONS = (("ro", "en"), ("en", "ro"))
+WARMUP = {("ro", "en"): "Bună dimineața.", ("en", "ro"): "Good morning."}
+
+
+def direction_specs(lc: dict) -> dict[tuple[str, str], str]:
+    """The translator spec for each direction of profile settings `lc`: `translator`, and
+    `translator_en_ro` for English → Romanian when set (Gemma's Romanian slips into Spanish
+    and Portuguese words; NLLB's grammar is clean)."""
+    return {("ro", "en"): lc["translator"], ("en", "ro"): lc.get("translator_en_ro") or lc["translator"]}
+
+
+def translator_key(lc: dict) -> str:
+    """One string for what `lc` translates with: the spec, or both when they differ. Two
+    profiles with the same key share their loaded translator(s)."""
+    s = direction_specs(lc)
+    a, b = s[("ro", "en")], s[("en", "ro")]
+    return a if a == b else f"{a} | en_ro={b}"
+
+
+class ByDirection:
+    """Two translators behind one: each phrase goes to its direction's. The pipeline holds
+    it as its translator; the members are loaded, kept warm and kept as spares one by one
+    (a member may also serve another profile)."""
+
+    def __init__(self, trs: dict[tuple[str, str], object], specs: dict[tuple[str, str], str]):
+        self.trs, self.specs = dict(trs), dict(specs)
+        self.last = self.trs[("ro", "en")]       # the member that ran last (truncation, guard retry)
+        self.used: dict[int, float] = {}         # id(member) -> when it last translated (keep-warm)
+
+    def members(self) -> dict[str, object]:
+        """spec -> translator, each loaded translator once."""
+        return {self.specs[d]: self.trs[d] for d in DIRECTIONS}
+
+    # The pipeline and guards.check read and restore these between calls: those of the member
+    # that ran last. `context` always exists, so a phrase for the Gemma member keeps its context
+    # after one for NLLB (which has none: [] here, and setting it does nothing).
+    @property
+    def context(self) -> list:
+        return getattr(self.last, "context", [])
+
+    @context.setter
+    def context(self, value):
+        if hasattr(self.last, "context"):
+            self.last.context = value
+
+    @property
+    def last_truncated(self) -> bool:
+        return bool(getattr(self.last, "last_truncated", False))
+
+    @last_truncated.setter
+    def last_truncated(self, value):
+        self.last.last_truncated = value
+
+    @property
+    def context_clauses(self) -> int:
+        return max((tr.context_clauses for tr in self.members().values() if hasattr(tr, "context_clauses")),
+                   default=0)
+
+    @context_clauses.setter
+    def context_clauses(self, value):            # a profile setting: every member that has it
+        for tr in self.members().values():
+            if hasattr(tr, "context_clauses"):
+                tr.context_clauses = value
+
+    def translate(self, text: str, src: str = "ro", tgt: str = "en", glossary=None, **kw) -> str:
+        tr = self.last = self.trs[(src, tgt)]
+        if "use_context" in kw and not hasattr(tr, "context"):
+            kw.pop("use_context")                # NLLB has no context
+        try:
+            return tr.translate(text, src, tgt, glossary, **kw)
+        finally:
+            self.used[id(tr)] = time.time()
+
+    def reset_context(self):
+        for tr in self.members().values():
+            if hasattr(tr, "reset_context"):
+                tr.reset_context()
+            elif hasattr(tr, "context"):
+                tr.context = []
+
+
+def members(tr, lc: dict) -> dict[str, object]:
+    """spec -> loaded translator for the translator `tr` that serves profile settings `lc`."""
+    if tr is None:
+        return {}
+    if isinstance(tr, ByDirection):
+        return tr.members()
+    return {lc["translator"]: tr}
+
+
+def assemble(lc: dict, have: dict, load) -> object:
+    """The translator for profile settings `lc`: one translator when both directions use the
+    same spec, else a ByDirection. Specs in `have` (spec -> loaded) are reused; the others
+    are loaded with load(spec, direction) and added to `have`."""
+    specs = direction_specs(lc)
+    for d in DIRECTIONS:
+        if specs[d] not in have:
+            have[specs[d]] = load(specs[d], d)
+    trs = {d: have[specs[d]] for d in DIRECTIONS}
+    if trs[("ro", "en")] is trs[("en", "ro")]:
+        return trs[("ro", "en")]
+    return ByDirection(trs, specs)
 
 
 def timed(fn, *a, **k):

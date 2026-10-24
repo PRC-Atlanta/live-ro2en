@@ -27,7 +27,7 @@ import threading
 import time
 
 import paths
-from translate import make_translator
+from translate import WARMUP, assemble, direction_specs, make_translator, members, translator_key
 
 HERE = pathlib.Path(__file__).resolve().parent
 ENGINE_SCRIPT = HERE / "engine.py"       # tests point this at an engine without models
@@ -152,7 +152,7 @@ class LifecycleMixin:
             if restart:
                 self.stop()
             sp = self._spares_thread                   # it may be loading this very translator:
-            if sp is not None and sp.is_alive() and new["translator"] != self.lc["translator"]:
+            if sp is not None and sp.is_alive() and translator_key(new) != translator_key(self.lc):
                 sp.join()                              # take it, not a second copy in memory
             try:
                 info = self._swap_profile(name, new)
@@ -191,13 +191,23 @@ class LifecycleMixin:
         with self._proc_lock:                          # the warm-up uses the model too
             if self.tr is None:
                 self.status = "loading translator"
-                tr = make_translator(self.lc["translator"])
+                have = {}                              # a spare this profile uses: taken, not loaded twice
+                spares = getattr(self, "_spare_tr", None)
+                if spares:
+                    with self._spare_lock:
+                        have = {s: spares.pop(s) for s in set(direction_specs(self.lc).values()) if s in spares}
+
+                def load(spec, direction):             # one per direction when the profile says so
+                    tr = make_translator(spec)
+                    tr.translate(WARMUP[direction], *direction, self.gloss)    # warm-up
+                    return tr
+                tr = assemble(self.lc, have, load)
                 if hasattr(tr, "context_clauses"):
                     tr.context_clauses = int(self.lc.get("context_clauses", 2))
-                tr.translate("Bună dimineața.", "ro", "en", self.gloss)    # warm-up
                 self.tr = tr
                 if hasattr(self, "_start_keepalive"):
-                    self._tr_used[id(tr)] = time.time()
+                    for m in members(tr, self.lc).values():
+                        self._tr_used.setdefault(id(m), time.time())
                     self._start_keepalive()        # keeps it in memory while idle (pipeline.py)
 
     def preload(self, device=None, wait: bool = False):

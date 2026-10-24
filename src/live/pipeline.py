@@ -206,17 +206,36 @@ class PipelineMixin:
         import model_setup
         return model_setup.hardware()["ram_bytes"] >= model_setup.QUALITY_RAM
 
-    def _load_warm(self, lc: dict):
-        """A loaded, warmed-up translator for profile settings `lc` (outside _proc_lock)."""
-        tr = translate.make_translator(lc["translator"])
+    def _load_one(self, spec: str, lc: dict, direction: tuple = ("ro", "en")):
+        """Translator `spec` loaded and warmed up in the direction it serves (outside _proc_lock)."""
+        tr = translate.make_translator(spec)
         if hasattr(tr, "context_clauses"):
             tr.context_clauses = int(lc.get("context_clauses", 2))
-        tr.translate("Bună dimineața.", "ro", "en", self.gloss)    # warm-up
+        tr.translate(translate.WARMUP[direction], *direction, self.gloss)    # warm-up
         if hasattr(tr, "reset_context"):
             tr.reset_context()
         self._tr_used[id(tr)] = time.time()
         self._start_keepalive()
         return tr
+
+    def _load_warm(self, lc: dict, have: dict | None = None):
+        """A loaded, warmed-up translator for profile settings `lc` (outside _proc_lock): one,
+        or one per direction (translate.ByDirection). Members in `have` (spec -> loaded) are
+        reused, the others loaded and added to it."""
+        tr = translate.assemble(lc, {} if have is None else have, lambda spec, d: self._load_one(spec, lc, d))
+        if hasattr(tr, "context_clauses"):
+            tr.context_clauses = int(lc.get("context_clauses", 2))
+        return tr
+
+    def _live_members(self) -> dict:
+        """spec -> loaded translator of the current profile (one, or one per direction)."""
+        return translate.members(self.tr, self.lc)
+
+    def _last_used(self, tr) -> float:
+        """When the loaded translator `tr` last ran (as the live translator, a member or a spare)."""
+        live = self.tr
+        used = live.used.get(id(tr), 0) if isinstance(live, translate.ByDirection) else 0
+        return max(self._tr_used.get(id(tr), 0), used)
 
     # --- keep-warm: an idle model is paged out by macOS and its next phrase waits for it ------
     def _start_keepalive(self):
@@ -251,12 +270,14 @@ class PipelineMixin:
                 if tr in self._spare_tr.values():     # not handed over meanwhile
                     self._ping(tr)
                     n += 1
-        tr = self.tr
-        if tr is not None and now - self._tr_used.get(id(tr), 0) >= every and self._proc_lock.acquire(blocking=False):
+        tr = self.tr                                  # one, or one per direction: each on its own
+        idle = [m for m in self._live_members().values() if now - self._last_used(m) >= every]
+        if idle and self._proc_lock.acquire(blocking=False):
             try:
                 if tr is self.tr:
-                    self._ping(tr)
-                    n += 1
+                    for m in idle:
+                        self._ping(m)
+                        n += 1
             finally:
                 self._proc_lock.release()
         return n
@@ -277,16 +298,16 @@ class PipelineMixin:
             return
         for name in self.cfg.get("profiles", {}):
             lc = self._profile_cfg(name)
-            spec = lc["translator"]
-            if spec == self.lc["translator"] or spec in self._spare_tr:
-                continue
-            tr = self._load_warm(lc)
-            with self._proc_lock:
-                if spec != self.lc["translator"]:
-                    if self._keep_both_translators():  # "Never" may have been chosen while it loaded
-                        self._spare_tr.setdefault(spec, tr)
-                elif self.tr is None:            # switched to this profile while it loaded
-                    self.tr = tr
+            for d, spec in translate.direction_specs(lc).items():   # one per direction may differ
+                if spec in translate.direction_specs(self.lc).values() or spec in self._spare_tr:
+                    continue
+                tr = self._load_one(spec, lc, d)
+                with self._proc_lock:
+                    if spec not in translate.direction_specs(self.lc).values():
+                        if self._keep_both_translators():  # "Never" may have been chosen while it loaded
+                            self._spare_tr.setdefault(spec, tr)
+                    elif spec not in self._live_members():   # switched to this profile while it
+                        self._spare_tr.setdefault(spec, tr)  # loaded: load_translator takes it
 
     def _free_memory(self):
         gc.collect()
@@ -304,34 +325,47 @@ class PipelineMixin:
         is kept as a spare; otherwise (or with no spare) the old one is freed first and the
         clauses that arrive meanwhile wait in the queue (caught up after). Returns details
         for the log."""
-        old_spec, spec = self.lc["translator"], new["translator"]
+        old_key, key = translate.translator_key(self.lc), translate.translator_key(new)
+        need = set(translate.direction_specs(new).values())
         keep, loaded, t0 = self._keep_both_translators(), False, time.time()
-        tr = None
-        if spec != old_spec:
+        tr, pool = None, {}                      # pool: spec -> loaded, the new profile's members
+        if key != old_key:
             with self._spare_lock:               # waits for a keep-warm call on it to end
-                tr = self._spare_tr.pop(spec, None)
-            if tr is None and keep and self.running:
-                tr, loaded = self._load_warm(new), True      # the old one translates meanwhile
+                pool = {s: self._spare_tr.pop(s) for s in need if s in self._spare_tr}
+            pool.update({s: m for s, m in self._live_members().items() if s in need})   # shared
+            if need - set(pool) and keep and self.running:
+                tr, loaded = self._load_warm(new, pool), True    # the old one translates meanwhile
         wait_s = 0.0
         with self._proc_lock:                    # never pulled from under a translation
             t1 = time.time()
-            if spec != old_spec:
-                old, self.tr = self.tr, None
-                if old is not None and keep:
-                    self._spare_tr[old_spec] = old
+            if key != old_key:
+                old = self._live_members()
+                for m in old.values():
+                    self._tr_used[id(m)] = self._last_used(m)    # its idle time goes with it
+                self.tr = None
+                for s, m in old.items():
+                    if s in need:
+                        pool.setdefault(s, m)
+                    elif keep:
+                        self._spare_tr[s] = m
                 old = None
                 if not keep:
                     self._spare_tr.clear()
                     self._free_memory()
-                if tr is None and self.running:  # warm reload: the engine keeps listening
+                missing = need - set(pool)
+                if tr is None and (self.running or not missing):   # warm reload: the engine keeps listening
                     try:
-                        tr, loaded = self._load_warm(new), True
+                        tr, loaded = self._load_warm(new, pool), bool(missing)
                     except Exception:
-                        self.tr = self._load_warm(self.lc)   # back to the old profile, still live
+                        self.tr = self._load_warm(self.lc, pool)   # back to the old profile, still live
                         raise
+                elif tr is None:                 # idle: what is loaded waits for load_translator
+                    for s, m in pool.items():
+                        self._spare_tr.setdefault(s, m)
                 self.tr = tr
             if hasattr(self, "_profile_cfg"):    # a Settings save during the load went into cfg
-                new = {**self._profile_cfg(name), "translator": spec}
+                cur = {k: v for k, v in self._profile_cfg(name).items() if k != "translator_en_ro"}
+                new = {**cur, **{k: new[k] for k in ("translator", "translator_en_ro") if k in new}}   # as loaded
             if self.tr is not None and hasattr(self.tr, "context_clauses"):
                 self.tr.context_clauses = int(new.get("context_clauses", 2))
             if self.tr is not None and hasattr(self.tr, "reset_context"):
@@ -339,7 +373,7 @@ class PipelineMixin:
             self.profile, self.lc = name, new
             self._recent_out.clear()
             wait_s = time.time() - t1
-        return {"translator": spec, "loaded": loaded, "kept_spare": keep and spec != old_spec,
+        return {"translator": key, "loaded": loaded, "kept_spare": keep and key != old_key,
                 "load_s": round(time.time() - t0, 2), "blocked_s": round(wait_s, 2)}
 
     # --- clauses -------------------------------------------------------------------------
