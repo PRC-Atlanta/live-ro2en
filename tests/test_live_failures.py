@@ -327,7 +327,7 @@ def test_glossary_alternatives_and_optional_article():
     assert n >= 1 and ok == n
 
 
-def test_llm_context_resets_on_language_switch(monkeypatch):
+def test_llm_context_carries_over_a_language_switch(monkeypatch):
     import live.translate as T
     prompts = []
     monkeypatch.setitem(sys.modules, "mlx_lm", types.SimpleNamespace(
@@ -340,8 +340,10 @@ def test_llm_context_resets_on_language_switch(monkeypatch):
         tr.translate(t, "ro", "en", use_context=True)
     assert len(tr.context) == 2 and "Patru cinci." in prompts[-1]       # bounded, same language
     tr.translate("And now in English.", "en", "ro", use_context=True)
-    assert "Previous sentences" not in prompts[-1]                       # no Romanian context
-    assert tr.context == [("And now in English.", "out", "en")]
+    assert "Romanian: Șase șapte." in prompts[-1]                        # the last pieces carry over
+    assert tr.context[-1] == ("And now in English.", "out", "en") and len(tr.context) == 2
+    tr.translate("Fără context.", "ro", "en")
+    assert "Previous pieces" not in prompts[-1] and tr.context == []      # use_context off: none
 
 
 def test_mode_switch_does_not_wait_for_stream_tail():
