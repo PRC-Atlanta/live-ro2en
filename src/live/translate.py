@@ -19,6 +19,7 @@ from textnorm import fix_cedilla, fold_diacritics, phon_key, tokens   # noqa: E4
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import names as namelist   # noqa: E402
 import scripture   # noqa: E402
+import verses   # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 NLLB_CODES = {"ro": "ron_Latn", "en": "eng_Latn"}
@@ -309,12 +310,16 @@ class MLXLLMTranslator:
         self.context_clauses = context_clauses
         self.last_truncated = False               # the last output hit max_tokens (cut off)
         self.reading = scripture.Reading()        # a Bible reference announced a few chunks back
+        self.verses = verses.Matcher()            # a verse recognised by its words: the published text
+        self.last_verse = None                    # the last piece's verse match (log record)
 
     def reset_context(self):
         """Forget the previous sentences (after Show, a profile switch or a new service)."""
         self.context = []
         if getattr(self, "reading", None) is not None:
             self.reading.reset()
+        if getattr(self, "verses", None) is not None:
+            self.verses.reset()
 
     def _prompt(self, text, src, tgt, glossary, hint: str = ""):
         lines = []
@@ -369,6 +374,11 @@ class MLXLLMTranslator:
         hint = ""
         if use_context and reading is not None:
             hint = reading.hint(reading.update(text), src, tgt)
+        verse = self.verses.match(text, src, tgt, reading.ref) \
+            if use_context and reading is not None and getattr(self, "verses", None) is not None else None
+        if verse is not None:
+            return self._verse(verse, text, src, tgt, glossary)
+        self.last_verse = None
         small, ctx = tiny(text), self.context
         if small:
             self.context, hint = [], ""          # translated alone, the context kept for later
@@ -385,6 +395,15 @@ class MLXLLMTranslator:
         out = postedit(out, tgt)
         if use_context and not small:
             self.context = (self.context + [(text, out, src)])[-max(self.context_clauses, 1):]
+        return out
+
+    def _verse(self, verse, text: str, src: str, tgt: str, glossary) -> str:
+        """A piece that is part of a verse: the published text, the words around it translated alone."""
+        ctx = self.context
+        around = [self.translate(t, src, tgt, glossary) if t else "" for t in (verse.before, verse.after)]
+        out = " ".join(x for x in (around[0], verse.caption, around[1]) if x)
+        self.context = (ctx + [(text, out, src)])[-max(self.context_clauses, 1):]
+        self.last_truncated, self.last_verse = False, verse.log()
         return out
 
     def _suppress(self) -> list:

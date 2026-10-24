@@ -640,13 +640,16 @@ class PipelineMixin:
         if ev.get("caught_up"):                           # catching up: few calls, each bounded
             parts = pack_parts(parts, int(self.lc.get("catchup_max_words", 60)))
         t0 = time.time()
-        out, truncated = [], False
+        out, truncated, verse = [], False, []
         for p in parts:
             out.append(self.tr.translate(p, lang, tgt, self.gloss, use_context=True)
                        if hasattr(self.tr, "context") else self.tr.translate(p, lang, tgt, self.gloss))
             truncated |= bool(getattr(self.tr, "last_truncated", False))
+            verse += [getattr(self.tr, "last_verse", None)] if getattr(self.tr, "last_verse", None) else []
         translation = " ".join(o for o in out if o)
-        translation, guard = guards.check(self.tr, src_text, translation, lang, tgt, self.gloss)
+        # a published verse is not checked for numbers/negations ("nu voi duce lipsă" = "I shall lack nothing")
+        translation, guard = (translation, {}) if verse else \
+            guards.check(self.tr, src_text, translation, lang, tgt, self.gloss)
         t_tr = time.time() - t0
         self._tr_used[id(self.tr)] = time.time()
         if not translation.strip():                     # nothing new to show: not a success
@@ -695,7 +698,7 @@ class PipelineMixin:
                "caught_up": ev.get("caught_up", 1), "mt_truncated": truncated, "passthrough": passthrough,
                "pp_error": self.pp.last_error, "audio_s": ev["audio_s"], "glossary": [n_g, ok_g],
                **self._input_fields(ev),
-               **safety, **guard,
+               **safety, **guard, **({"verse": verse[0] if len(verse) == 1 else verse} if verse else {}),
                "time": dt.datetime.now().isoformat(timespec="milliseconds")}
         warn_s = float(self.lc.get("lag_warn_s", 6.0))
         late = bool(warn_s) and latency > warn_s
