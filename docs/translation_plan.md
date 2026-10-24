@@ -105,3 +105,53 @@ About half of the meaning changes today came from a sentence cut in two.
 | 4 | EN→RO choice, Quickest on Gemma, automatic gain | 2 days | the weaker direction, speed, level |
 
 Each step: one branch, tests, the replay score before/after, then a restart between services.
+
+---
+
+## Running steps 1-4 in parallel
+
+**Two limits shape it.** (1) Code can be written in parallel, but the Mac can run only one
+bench replay at a time: a quality run holds Gemma (~7 GB) plus the recognisers on the GPU, and
+two at once swap and slow each other (36 GB, swap already in use on service days). (2) Several
+steps edit the same two files, `src/live/pipeline.py` and `src/live/translate.py`; each
+workstream owns specific functions so merges stay mechanical.
+
+### Workstreams (each its own git worktree + branch, its own session)
+
+| Stream | Ideas | Owns (files / functions) | Needs from others |
+|---|---|---|---|
+| **A. Clean output & guards** | 8, 22, 5 | `translate.py` `MLXLLMTranslator.translate` post-processing; new `src/live/guards.py`; one call in `pipeline._handle_locked` after translation | none |
+| **B. Confidence gate & language votes** | 17, 12, 10, 15 | `pipeline._handle_locked` before translation; `langid.py`; the echo handling in `pipeline` | none |
+| **C. Phrase cuts, overlap, song switch** | 20, 16, 18 | `pipeline._on_clause` hold logic; `output.py` song hold; `live.js` song key; English overlap trim | B's gate (to judge songs fairly) |
+| **D. Prompt, context, vocabulary** | 4, 11, 3 (step 1), 6, 14, 9 | `translate.py` `SYSTEM` + `_prompt` + context; `glossary.csv`; Bible book table; terms → do-not-translate | none |
+| **E. EN→RO model, Quickest on Gemma** | 13, 1 | `make_translator` / translator per direction; `config.yaml` profiles | A (clean output) before judging Gemma |
+| **F. Automatic gain** | 19 | `engine.py` capture side (`SourceCtl`); gain knob "Auto" in `gainknob.js` / `live.js` | none |
+| **G. Names in the Romanian decoder** | 2 | engine STT decoding (research) | later |
+
+### Waves
+
+1. **Wave 1, now (4 in parallel): A, B, D, F.** They touch different functions and none needs
+   another's result. Each writes code + unit tests and runs only the unit suite (no bench).
+2. **Bench queue (one at a time, run by the coordinating session):** each finished branch is
+   replayed on the same material as the baseline (`base-quality-g15`) and scored with
+   `bench.py compare`. Quick checks on a 10-minute stretch rich in that stream's errors
+   (A/B: 12:49-12:57 mixed speaker; D: 13:18-13:30 sermon + 12:42-12:45 readings; F: whole run
+   at two gains), then a full run before merging.
+3. **Wave 2, as wave 1 lands (2 in parallel): C and E.** C after B (song lines are judged after
+   the gate), E after A (Gemma judged without junk). G stays a research item.
+4. **Integration:** an `integration` branch; merge in the order A → B → D → F → C → E, a full
+   bench run after each merge, keep a change only if the score improves (or holds with a clear
+   reason). Then one restart of the app between services and a monitored service.
+
+### Rough timeline (working sessions, not days of waiting)
+
+| Time | Coding sessions | Bench (serial) |
+|---|---|---|
+| T0 | A, B, D, F start | baseline finishing |
+| T0+1-2 h | A, B, D, F hand back | A, B quick stretches → D → F |
+| T0+3 h | C, E start | full runs of merged A+B, then +D |
+| T0+5 h | C, E hand back | C, E stretches, full integration run |
+
+Each session brief names: its stream, the files it owns, the ideas and their evidence lines,
+the bench stretch it will be judged on, "unit tests only, no bench runs, no app on 8765",
+and "commit on your branch, don't merge or push".
