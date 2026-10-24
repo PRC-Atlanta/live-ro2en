@@ -14,6 +14,7 @@ const OUTCOMES = {
   stt_error: "Listening error", error: "Error", late: "Too late to show", pp_error: "ProPresenter error",
   paused: "Heard while hidden", held: "Collected while held",
   mt_loop: "Dropped: translation repeated itself", mt_overlong: "Dropped: translation far too long",
+  low_confidence: "Skipped: speech not recognised clearly", gate_cut: "Garbled words left out",
 };
 
 export function render(el, store) {

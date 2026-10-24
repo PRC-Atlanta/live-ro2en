@@ -68,6 +68,7 @@ FIELDS: dict[str, dict] = {
     "live.caption_reveal_wps": {"group": "advanced", "type": "num", "min": 1, "max": 8, "apply": "now"},
     "live.partial_every_s":    {"group": "advanced", "type": "num", "min": 0, "max": 5, "apply": "start"},
     "live.lag_warn_s":         {"group": "advanced", "type": "num", "min": 2, "max": 30, "apply": "now"},
+    "live.gate_min_real":      {"group": "advanced", "type": "num", "min": 0, "max": 0.9, "apply": "now"},
     "live.keep_both_translators": {"group": "advanced", "type": "enum", "choices": ["auto", True, False], "apply": "now"},
     "live.engine_restarts":    {"group": "advanced", "type": "int", "min": 0, "max": 5, "apply": "now"},
     "ui.show_latency":         {"group": "advanced", "type": "bool", "apply": "now", "default": False},

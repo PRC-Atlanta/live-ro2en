@@ -74,9 +74,10 @@ def captions(recs: list[dict]) -> list[dict]:
 
 
 # outcomes that are not failures: the operator's Hide/Hold, and output the safety filter dropped
-# on purpose (a translator loop or an overlong answer; counted as `filtered`)
+# on purpose (a translator loop or an overlong answer, or garbled recognition the confidence
+# gate kept from the translator; counted as `filtered`)
 OPERATOR = ("paused", "held")
-FILTERED = ("mt_loop", "mt_overlong")
+FILTERED = ("mt_loop", "mt_overlong", "low_confidence")
 
 
 def summary(recs: list[dict], start: float | None = None, first_word_ok_s: float = FIRST_WORD_OK_S) -> dict:

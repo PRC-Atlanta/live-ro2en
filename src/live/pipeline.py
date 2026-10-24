@@ -14,6 +14,7 @@ import threading
 import time
 import unicodedata
 
+import gate
 import paths
 import translate
 from captions import tidy_clause
@@ -31,6 +32,13 @@ def is_echo(src: str, out: str, min_words: int = 4) -> bool:
     Short clauses are exempt: a name or 'Amin' may legitimately be the same."""
     s, o = [fold_diacritics(t) for t in tokens(src)], [fold_diacritics(t) for t in tokens(out)]
     return len(s) >= min_words and s == o
+
+
+def is_name_list(text: str) -> bool:
+    """Mostly capitalised words ("Despina, Carmen, Dan, David, Cecilia."): names, which the
+    translator rightly leaves as they are (idea 15). Needs at least two words."""
+    words = re.findall(r"[^\W\d_]+", text)
+    return len(words) >= 2 and sum(w[0].isupper() for w in words) >= 0.75 * len(words)
 
 
 def pack_parts(parts: list[str], max_words: int) -> list[str]:
@@ -135,6 +143,7 @@ class PipelineMixin:
         self._recent_out: collections.deque = collections.deque(maxlen=2)   # (source key, output key)
         self._current: dict | None = None      # the clause the worker is on (backlog)
         self._block: tuple = (None, None)      # (words, compiled pattern)
+        threading.Thread(target=gate.lexicon, daemon=True).start()   # the gate's word lists (~0.2 s)
         self.register_state(self._pipeline_state)
 
     # --- pace, backlog, auto actions -----------------------------------------------------
@@ -441,18 +450,82 @@ class PipelineMixin:
             with open(self.log_path, "a") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
-    def _handle_locked(self, ev: dict):
-        # language: in auto mode decide from the multilingual transcript
-        probe = ev.get("multi") or ev.get("ro") or ""
-        lang = self.lang.update(probe)
+    def _source(self, ev: dict) -> tuple[str, str, dict]:
+        """(language, text to translate, log fields). In auto mode the multilingual transcript
+        decides, with the Romanian recogniser's own transcript as a second vote (langid).
+        Romanian with nothing from the Romanian recogniser: the multilingual text, unless it
+        reads as English (idea 10); clean English there is translated EN→RO this once (idea 12)."""
+        ro, multi = ev.get("ro") or "", ev.get("multi") or ""
+        auto = self.lang.mode == "auto"
+        lang = self.lang.update(multi or ro, ro=ro if multi else None)
         # English text: Whistle when configured (ev["en"]), else the Parakeet text (A/B switch)
-        src_text = ev["ro"] if lang == "ro" else (ev.get("en") or ev.get("multi") or ev["ro"])
-        if lang == "ro" and not src_text.strip() and lang_score(ev.get("multi") or "") > 0:
-            src_text = ev["multi"]                      # the RO model heard nothing, the multilingual one did
+        english = ev.get("en") or multi
+        if lang == "en":
+            return "en", english or ro, {}
+        if ro.strip() or not multi.strip():
+            return "ro", ro, {}
+        s = lang_score(multi)
+        if auto and s <= 0 and self._gate_ok(english, "en") and not self._gate_ok(multi, "ro"):
+            return "en", english, {"fallback": "english"}   # an English sentence the RO model missed
+        if s >= 0:
+            return "ro", multi, {"fallback": "multi"}   # the RO model heard nothing ("binecuvinteze.")
+        return "ro", "", {}
+
+    def _gate_names(self) -> set:
+        rows = getattr(self.gloss, "rows", None) or []
+        if getattr(self, "_gate_rows", None) is not rows:
+            self._gate_rows, self._gate_name_set = rows, gate.names_from(rows)
+        return self._gate_name_set
+
+    def _gate_min_real(self) -> float:
+        return float(self.lc.get("gate_min_real", 0.6) or 0)
+
+    def _gate_ok(self, text: str, lang: str) -> bool:
+        if not self._gate_min_real():
+            return lang == "ro"                         # gate off: no English rescue, as before
+        return gate.check(text, lang, gate.lexicon(), self._gate_names(), self._gate_min_real())[0]
+
+    def _gate(self, ev: dict, src: str, lang: str) -> tuple[str | None, str, dict]:
+        """The confidence gate (idea 17): (text to translate or None, language, log fields).
+        Garbled sentences are cut; a phrase with nothing reliable left is logged as
+        `low_confidence` and not translated. When the other recogniser's transcript of the same
+        audio is clean in its own language, that one is translated instead (in auto mode):
+        English heard by the Romanian model as "Gay va polua...", "Slavă lui Dumnezeu" heard by
+        the English one as "slava ludum nezukum tum"."""
+        min_real = self._gate_min_real()
+        if not min_real:
+            return src, lang, {}
+        names = self._gate_names()
+        kept, why, cut = gate.screen(src, lang, gate.lexicon(), names, min_real)
+        if kept and not cut:
+            return src, lang, {}
+        other = "en" if lang == "ro" else "ro"
+        alt = ((ev.get("en") or ev.get("multi")) if other == "en" else ev.get("ro")) or ""
+        alt = apply_spellings(alt, self.cfg.get("spellings") or {})
+        if (not kept and self.lang.mode == "auto" and alt.strip() and alt.strip() != src.strip()
+                and (lang_score(alt) < -0.15 if other == "en" else lang_score(alt) > 0.15)
+                and gate.screen(alt, other, gate.lexicon(), names, min_real) == (alt.strip(), "", [])):
+            return alt, other, {"gate_switched": src}
+        if not kept and gate.screen(src, other, gate.lexicon(), names, min_real) == (src.strip(), "", []):
+            return src, lang, {}                        # clean speech in the other language: a quote, shown as is
+        if kept:
+            with self.lock:
+                self.counts["gate_cut"] += 1
+            return kept, lang, {"gate_cut": cut}
+        self._log_failure(ev, "low_confidence", lang=lang, source=src, reason=why,
+                          features=gate.features(src, lang, gate.lexicon(), names))
+        return None, lang, {}
+
+    def _handle_locked(self, ev: dict):
+        lang, src_text, src_info = self._source(ev)
         src_text = apply_spellings(src_text, self.cfg.get("spellings") or {})
         if not src_text.strip():
             self._log_failure(ev, "empty_stt", lang=lang)
             return
+        src_text, lang, gated = self._gate(ev, src_text, lang)
+        if src_text is None:                            # unreliable recognition (logged)
+            return
+        src_info.update(gated)
         tgt = "en" if lang == "ro" else "ro"
         clauses, tail = split_clauses(src_text)
         parts = clauses + ([tail] if tail else [])        # at a pause everything is committed
@@ -473,8 +546,8 @@ class PipelineMixin:
         passthrough = False
         if is_echo(src_text, translation):
             s = lang_score(src_text)
-            if (tgt == "en" and s < -0.15) or (tgt == "ro" and s > 0.15):
-                passthrough = True                      # e.g. an English quote in RO→EN: show it
+            if (tgt == "en" and s < -0.15) or (tgt == "ro" and s > 0.15) or is_name_list(src_text):
+                passthrough = True                      # an English quote in RO→EN, or a list of names: show it
                 with self.lock:
                     self.counts["passthrough"] += 1
             else:                                       # untranslated source is not a caption
@@ -502,7 +575,7 @@ class PipelineMixin:
         latency = t_disp - ev["t_end"]
         n_g, ok_g = self.gloss.adherence(src_text, translation, lang)
         rec = {"id": ev["id"], "outcome": outcome, "t_start": ev["t_start"], "t_end": ev["t_end"], "t_display": t_disp,
-               "lang": lang, "source": src_text,
+               "lang": lang, "source": src_text, "ro": ev.get("ro", ""), "multi": ev.get("multi", ""), **src_info,
                "en_recognizer": (ev.get("source") or ("whistle" if ev.get("en") else "parakeet")) if lang == "en" else None, "translation": translation, "latency_s": round(latency, 3),
                # average delay per word, approximating words as evenly spread over the commit
                "word_lag_s": round(latency + (ev["t_end"] - ev["t_start"]) / 2, 3), "profile": self.profile,

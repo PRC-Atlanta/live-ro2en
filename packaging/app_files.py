@@ -22,8 +22,9 @@ import sys
 #   keywords_en.txt         Whistle keywords (defaults.yaml whistle.keywords_file)
 #   terms.txt               STT hot words (stt_run.terms, defaults.yaml paths.terms)
 #   requirements/models.lock.txt   model pins (src/model_lock.py), read by the first-run download
+#   data/lexicon/*.txt      word lists of the confidence gate (src/live/gate.py)
 DATA = ["defaults.yaml", "glossary.csv", "keywords_en.txt", "terms.txt",
-        "requirements/models.lock.txt"]
+        "requirements/models.lock.txt", "data/lexicon/ro.txt", "data/lexicon/en.txt"]
 SKIP_PARTS = {"__pycache__", ".pytest_cache", "tests"}
 SKIP_SUFFIX = {".pyc", ".pyo"}
 
