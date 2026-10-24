@@ -637,3 +637,12 @@ def test_old_reader_does_not_touch_a_new_run(tmp_path):
     live._drain = drain_while_new_run_starts
     live._reader(old)
     assert live.running and "ENGINE STOPPED" not in live.status
+
+
+def test_empty_ro_transcript_falls_back_to_the_multilingual_one(tmp_path):
+    live = _live(tmp_path)
+    live.lang.set_mode("ro-en")
+    live._handle(_clause(1, ro="", multi="neprihănirea."))          # RO model heard nothing
+    live._handle(_clause(2, ro="", multi="and then"))               # not Romanian: still dropped
+    assert [r["outcome"] for r in _log(live)] == ["ok", "empty_stt"]
+    assert "EN: neprihănirea" in live.caps.text

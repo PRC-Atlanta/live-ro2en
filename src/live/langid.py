@@ -26,13 +26,23 @@ def score(text: str) -> float:
 
 
 class LangTracker:
+    """`initial` is the home language (the church's usual one). Leaving it takes more than
+    coming back: a garbled home-language phrase that the multilingual model writes as the
+    other language must not flip the captions. Away: `confirm_away` clauses in a row, or one
+    clause of at least `strong_words` words that is clearly (`strong_away`) the other language.
+    Back home: `confirm` clauses, or one clause of `strong`."""
+
     def __init__(self, mode: str = "auto", initial: str = "ro", confirm: int = 2, margin: float = 0.15,
-                 strong: float = 0.35):
+                 strong: float = 0.35, confirm_away: int = 3, strong_away: float = 0.5, strong_words: int = 10):
         self.mode = mode          # auto | ro-en | en-ro
         self.current = initial
+        self.home = initial
         self.confirm = confirm
         self.margin = margin
         self.strong = strong      # a clause this clearly in the other language switches at once
+        self.confirm_away = confirm_away
+        self.strong_away = strong_away
+        self.strong_words = strong_words
         self._streak = 0
         self.set_mode(mode)       # a lock given at start-up must set the language too
 
@@ -51,8 +61,13 @@ class LangTracker:
         guess = "ro" if s > self.margin else "en" if s < -self.margin else None
         if guess is None or guess == self.current:
             self._streak = 0
+            return self.current
+        self._streak += 1
+        if guess == self.home:
+            switch = self._streak >= self.confirm or abs(s) >= self.strong
         else:
-            self._streak += 1
-            if self._streak >= self.confirm or abs(s) >= self.strong:
-                self.current, self._streak = guess, 0
+            switch = self._streak >= self.confirm_away or (
+                abs(s) >= self.strong_away and len(_TOK.findall(text.lower())) >= self.strong_words)
+        if switch:
+            self.current, self._streak = guess, 0
         return self.current

@@ -748,6 +748,8 @@ def main(make_engine=None) -> None:
     ap.add_argument("--hold", action="store_true", help="load, meter the input, transcribe only after listen")
     a = ap.parse_args()
     protect_stdout()
+    import awake
+    awake.hold("Live RO2EN speech recognition")   # a napped engine fell minutes behind
     cfg = json.loads(a.cfg)
     if a.no_partials:
         cfg["partial_every_s"] = 0

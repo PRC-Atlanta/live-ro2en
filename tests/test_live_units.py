@@ -43,9 +43,12 @@ def test_rolling_captions_keep_whole_lines():
 
 def test_langid_hysteresis():
     assert score("Și Dumnezeu a zis să fie lumină") > 0 > score("And God said let there be light")
-    lt = LangTracker("auto", initial="ro", confirm=2, strong=9)   # hysteresis path only
+    lt = LangTracker("auto", initial="ro", confirm=2, strong=9, strong_away=9)   # hysteresis path only
     assert lt.update("And God said let there be light") == "ro"
-    assert lt.update("and the light was good and he saw it") == "en"
+    assert lt.update("and the light was good and he saw it") == "ro"   # leaving home takes 3
+    assert lt.update("and he called the light day") == "en"
+    assert lt.update("Și Dumnezeu a zis să fie lumină") == "en"
+    assert lt.update("și a fost seară și a fost dimineață") == "ro"    # coming back takes 2
     lt.set_mode("ro-en")
     assert lt.update("And the evening and the morning were the first day") == "ro"
 
@@ -78,6 +81,17 @@ def test_langid_strong_switch_is_immediate():
     assert lt.update("For God so loved the world, that he gave his only begotten Son") == "en"
 
 
+def test_langid_short_garbled_phrase_does_not_leave_home():
+    # from a service log: Romanian speech the multilingual model wrote as English
+    lt = LangTracker("auto", initial="ro")
+    for t in ("nine, so not the chairs of name.", "Aia înseamnă să n-ai nimic cu nimeni.",
+              "So the paraskiver.", "could you have to be able to do that."):
+        assert lt.update(t) == "ro"
+    lt = LangTracker("auto", initial="en")                 # home English: short Romanian does not leave it either
+    assert lt.update("Și Dumnezeu a zis să fie lumină") == "en"
+    assert lt.update("Dumnezeu este bun") == "en"
+
+
 def test_postedit_ro():
     from live.translate import postedit
     assert postedit("Iisus i-a zis: Eu sunt calea. Şi viaţa.", "ro") == "Isus i-a zis: Eu sunt calea. Și viața."
@@ -89,7 +103,7 @@ def test_profiles_override_live_settings():
     cfg = yaml.safe_load(open(pathlib.Path(__file__).resolve().parents[1] / "config.yaml"))
     cfg["live"]["profile"] = "fast"
     live = Live(cfg, types.SimpleNamespace(file=None))
-    assert live.lc["translator"].startswith("nllb") and live.lc["min_commit_s"] == 0
+    assert live.lc["translator"].startswith("nllb") and live.lc["min_commit_s"] == 2.0
     q = live._profile_cfg("quality")
     assert q["translator"].startswith("mlx:") and q["max_chunk_s"] > 0 and live.lc["max_chunk_s"] > 0
     live.set_profile("quality")          # not running: just swaps settings, drops the loaded translator

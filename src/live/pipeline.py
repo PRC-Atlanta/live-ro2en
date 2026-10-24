@@ -379,6 +379,8 @@ class PipelineMixin:
         lang = self.lang.update(probe)
         # English text: Whistle when configured (ev["en"]), else the Parakeet text (A/B switch)
         src_text = ev["ro"] if lang == "ro" else (ev.get("en") or ev.get("multi") or ev["ro"])
+        if lang == "ro" and not src_text.strip() and lang_score(ev.get("multi") or "") > 0:
+            src_text = ev["multi"]                      # the RO model heard nothing, the multilingual one did
         src_text = apply_spellings(src_text, self.cfg.get("spellings") or {})
         if not src_text.strip():
             self._log_failure(ev, "empty_stt", lang=lang)

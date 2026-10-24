@@ -38,6 +38,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
+import awake                                         # noqa: E402
 import paths                                         # noqa: E402
 if os.environ.get("LIVE_HOME"):        # loaders and the model downloader share one cache
     os.environ.setdefault("HF_HOME", str(paths.hf_home()))
@@ -146,6 +147,7 @@ def main():
     ap.add_argument("--hold", action="store_true",
                     help="preload and wait for Start (the default with the web page; with --file the file plays from Start)")
     a = ap.parse_args()
+    awake.hold("Live RO2EN captions")      # no App Nap / timer throttling, also when run from a terminal
     cfg, a.settings_base, a.settings_notes = settings.load_config(a.config, a.settings, ROOT)
     if a.pp_port:
         cfg["propresenter"]["port"] = a.pp_port
