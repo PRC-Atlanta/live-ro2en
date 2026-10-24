@@ -105,6 +105,14 @@ Each phrase record: `source`, `translation`, `lang`, `profile`, `outcome`
 
 ## Known behaviour (so it is not rediscovered)
 
+- **Since 2026-10-24 (translation plan, `docs/translation_plan.md`):** Best = Gemma RO→EN +
+  NLLB EN→RO; automatic gain on by default (knob "Auto"); phrases need ≥ 6 words in Best; a
+  confidence gate drops recognition garbage (`low_confidence` outcome); Bible verses recognised
+  by their words are captioned with WEB / Cornilescu (`verse` in the log); a **Song** key holds
+  captions during singing; today's names (Names & words) matter more than ever: they feed the
+  prompt's keep-as-written list, the Romanian decoder boost and the spelling repair — enter them
+  before each service. Bench: `docs/bench.md` (`scripts/bench.py`, 52 known errors, 21 → 47 right).
+
 - **Best** (quality, Gemma 12B via MLX): 3.5-5.5 s phrases, first word ~6.5-7 s, much better
   meaning. **Quickest** (fast, NLLB on CPU): ≥2 s phrases, first word ~3-4 s, mistranslates
   fragments and names ("Dragoș" → "Sweetie").
