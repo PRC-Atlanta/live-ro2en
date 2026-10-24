@@ -26,8 +26,11 @@ change in `docs/translation_plan.md` on the same material.
 .venv-mt/bin/python scripts/bench.py compare base after-step1
 ```
 
-`run` options: `--from/--to HH:MM:SS` (a stretch, wall clock), `--gain DB`, `--profile`,
-`--mode`, `--speed N` (default 2), `--set live.key=value`, `--name`. Each run gets
+`run` options: `--from/--to HH:MM:SS` (a stretch, wall clock), `--gain DB` (the starting gain;
+automatic gain is on by default), `--profile`, `--mode`, `--speed N` (default 2),
+`--set live.key=value` (also `profiles.quality.key=value`), `--terms FILE` (today's names, one per
+line, as an operator types them in Names & words: `logs/bench/terms_2026-10-24.txt`), `--code DIR`
+(run a branch's worktree; `models/` and the venvs are linked in), `--name`. Each run gets
 `logs/bench/runs/<name>/` with its config, `run.json` (settings, git commit), `app.log`,
 `engine.log` and the service log.
 
@@ -42,8 +45,12 @@ change in `docs/translation_plan.md` on the same material.
 - Metrics: phrases, shown / not shown by reason, median words per caption, share under 5 words,
   `model_junk` (tokens, "(Note:", bracketed guesses), language switches, median translation time,
   median speech level.
-- Translation output varies a little between runs (thread timing); look at differences of more
-  than one or two errors.
+- Translation output varies a little between runs (thread timing): two runs of the same code
+  differed by one error (42 vs 41 of 52); look at differences of more than one or two errors.
+- Pass `--terms` for anything that touches names (the name list, the decoder boost and the
+  spelling repair all use today's names; an empty list understates them).
+- Each phrase's `level` (speech dB) is recorded in replays too: level readings carry their
+  capture time on the recording's clock.
 
 ## How the replay works
 
