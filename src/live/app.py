@@ -160,6 +160,9 @@ def main():
     if a.profile:
         cfg["live"]["profile"] = a.profile
     live = Live(cfg, a)
+    terms = os.environ.get("LIVE_TERMS_FILE")       # test bench: today's names, as an operator types them
+    if terms and pathlib.Path(terms).is_file():
+        live.set_terms({"lines": [ln.strip() for ln in pathlib.Path(terms).read_text().splitlines() if ln.strip()]})
     live.claim_pidfiles()      # end an engine a crashed earlier launch left behind
     live.start_pp_monitor()
     if not a.headless:
