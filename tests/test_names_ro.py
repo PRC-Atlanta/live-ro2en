@@ -120,6 +120,9 @@ def test_keywords_command_carries_the_romanian_names():
     assert e.stt.got == [(["Dragoș", "Puha"], 1.0)]
     assert e.apply_cfg({"ro_names": ["Puha"]}) == []      # a restarted engine's cfg: applied live
     assert e.stt.got[-1] == (["Puha"], 1.0)
+    e.stt.names = ["Puha"]
+    assert e.apply_cfg({"ro_name_boost": 0}) == []          # live.ro_name_boost: 0 switches it off
+    assert e.stt.got[-1] == (["Puha"], 0.0) and e.name_boost == 0.0
 
 
 def test_stdin_keywords_with_and_without_ro(monkeypatch):

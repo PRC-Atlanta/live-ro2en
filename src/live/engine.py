@@ -626,6 +626,12 @@ class Engine:
                     pass                  # the capture side's: the `gain`/`agc` commands set them live
                 elif k == "ro_names":
                     self.set_ro_names(v if isinstance(v, list) else [])
+                elif k == "ro_name_boost":
+                    self.name_boost = float(v)
+                    names = list(getattr(getattr(self, "stt", None), "names", None) or [])
+                    if hasattr(getattr(self, "stt", None), "names"):
+                        self.stt.names = None                   # rebuilt with the new weight
+                    self.set_ro_names(names)
                 elif k in ("whistle", "parakeet_stream"):
                     pass                  # recognizer options: names come by `keywords`, the rest at the next start
                 else:

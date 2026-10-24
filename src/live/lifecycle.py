@@ -34,7 +34,7 @@ ENGINE_SCRIPT = HERE / "engine.py"       # tests point this at an engine without
 ENGINE_CFG_KEYS = ("vad_threshold", "min_pause_ms", "max_clause_s", "partial_every_s", "min_commit_s",
                    "max_commit_s", "en_recognizer", "context_s", "lookahead_words", "audio_watchdog_s",
                    "digital_silence_s", "stt_backlog_s", "catchup_max_s", "level_hz", "input_gain_db",
-                   "input_gain_auto", "input_gain_target_db")
+                   "input_gain_auto", "input_gain_target_db", "ro_name_boost")
 RESTARTS, RESTART_WINDOW_S = 2, 600.0    # automatic engine restarts allowed per window (long
                                          # enough to catch a crash on every model load, ~30 s)
 RESTART_WAIT_S = 180.0                   # a crash while a switch/Start holds _control waits this long
