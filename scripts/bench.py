@@ -10,6 +10,7 @@ known errors, so each translation change is measured on the same material.
       --speed N                                     replay N times faster (default 2; 1 = real time)
       --set live.key=value ...                      any other config override
       --name NAME                                   run folder name (default: time + settings)
+      --terms FILE                                  today's names, one per line (as typed in Names & words)
       --code DIR                                    run another checkout's code (a branch worktree;
                                                     models/ and the venvs are linked in if missing)
   scripts/bench.py score RUN|LOG [--errors FILE]  per-error status + overall numbers
@@ -184,6 +185,9 @@ def run(args) -> pathlib.Path:
             "started": dt.datetime.now().isoformat(timespec="seconds")}
     (rdir / "run.json").write_text(json.dumps(info, indent=1))
     env = {**os.environ, "LIVE_LOG_DIR": str(rdir), "LIVE_FILE_SPEED": str(speed), "LIVE_FILE_T0": repr(seg_t0)}
+    if args.terms:
+        env["LIVE_TERMS_FILE"] = str(pathlib.Path(args.terms).resolve())
+        info["terms"] = env["LIVE_TERMS_FILE"]
     env.pop("LIVE_HOME", None)
     cmd = [str(APP_PY), str(code / "src" / "live" / "app.py"), "--config", str(rdir / "config.yaml"),
            "--settings", str(rdir / "settings.yaml"), "--file", str(seg), "--autostart",
@@ -348,6 +352,7 @@ def main() -> None:
     r.add_argument("--set", action="append")
     r.add_argument("--name")
     r.add_argument("--code")
+    r.add_argument("--terms")
     s = sub.add_parser("score")
     s.add_argument("run")
     s.add_argument("--errors")
