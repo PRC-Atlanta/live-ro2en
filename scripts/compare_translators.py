@@ -17,7 +17,8 @@ again by each candidate translator, next to what the service showed, with simple
 Checks per output: words outside the Romanian list (foreign or invented: "onze", "botezit"),
 a list of known wrong-language words, agreement / pronoun patterns ("tata meu", "cele
 paisprezece copii", "un încurajare", "l-iubea"), numbers of the source missing as digits or
-words (guards.numbers), empty or echoed output."""
+words (guards.numbers), empty or echoed output, words added to a short fragment ("Amen." ->
+"Amintește-mi.", "Thank you." -> "- Mulțumesc, domnule.": NLLB's weakness)."""
 from __future__ import annotations
 
 import argparse
@@ -63,7 +64,7 @@ AGREEMENT = [
     ("un + feminine noun", r"\bun (?:\w+(?:are|ere|ire|ție|țiune|iune|tate|ură))\b"),
     ("o + masculine/neuter noun", r"\bo (?:copil|frate|tată|suflet|cuvânt|lucru|timp|an|om)\b"),
     ("acești + feminine / câteva", r"\bacești (?:\w+ )?(?:câteva|zile|clipe|vremuri)\b"),
-    ("toată + masculine/neuter", r"\btoată (?:sufletul|inima ta|cugetul|timpul|neamul)\b|\btoată sufletul\b"),
+    ("toată + masculine/neuter", r"\btoată (?:sufletul|cugetul|timpul|neamul)\b"),
     ("ale + voastră/noastră", r"\bale \w+ (?:voastră|noastră)\b|\b\w+i ale (?:voastră|noastră)\b"),
     ("l-iubea / i-a iubit pe", r"\bl-(?:iubea|iubeau)\b|\bi-a iubit pe\b"),
     ("mulțumea pe Dumnezeu", r"\bmulțume\w* pe Dumnezeu\b"),
@@ -158,6 +159,10 @@ def checks(src: str, out: str, words: set[str]) -> dict:
     return {"unknown": unknown, "foreign": foreign, "agreement": agree,
             "numbers_missing": sorted(a - b), "digits_kept": sorted(digits_src & set(re.findall(r"\d+", out))),
             "digits_src": sorted(digits_src), "empty": not out.strip(),
+            # NLLB on fragments: "Amen." -> "Amintește-mi.", "Thank you." -> "- Mulțumesc, domnule."
+            "added": bool(re.match(r"\s*[-–—]\s", out) or re.search(r"[.!?]\s+[-–—]\s", out)
+                          or (len(src.split()) <= 4 and len(toks) > 2 * len(src.split()) + 1)
+                          or (fold(src.strip(" .!")) == "amen" and fold(out.strip(" .!")) != "amin")),
             "echo": [w.lower() for w in _WORD.findall(src)] == [w.lower() for w in toks] and len(toks) > 2}
 
 
@@ -179,6 +184,7 @@ def summarize(rows: list[dict], cols: list[str], words: set[str]) -> dict:
             n["digits_kept"] += len(k["digits_kept"])
             n["empty"] += k["empty"]
             n["echo"] += k["echo"]
+            n["added"] += k["added"]
             pats.update(k["agreement"])
             pats.update(f"foreign:{fold(w)}" for w in k["foreign"])
         summ[c] = {**n, "patterns": dict(pats.most_common())}
@@ -233,7 +239,7 @@ def write_side(rows: list[dict], cols: list[str], summ: dict, path: pathlib.Path
     md = [f"# English → Romanian side by side ({len(rows)} phrases)", "",
           "| check | " + " | ".join(cols) + " |", "|---|" + "---|" * len(cols)]
     keys = ["with_unknown_word", "unknown_words", "foreign_words", "agreement_hits", "numbers_missing",
-            "src_digit_numbers", "digits_kept", "empty", "echo"]
+            "src_digit_numbers", "digits_kept", "empty", "echo", "added"]
     for k in keys:
         md.append(f"| {k} | " + " | ".join(str(summ[c].get(k, 0)) for c in cols) + " |")
     for c in cols:
@@ -244,7 +250,7 @@ def write_side(rows: list[dict], cols: list[str], summ: dict, path: pathlib.Path
         for c in cols:
             k = r["checks"][c]
             flag = k["foreign"] + k["agreement"] + [f"?{w}" for w in k["unknown"][:3]] + \
-                [f"#{n}" for n in k["numbers_missing"]]
+                [f"#{n}" for n in k["numbers_missing"]] + (["added?"] if k["added"] else [])
             cells.append((r.get(c) or "").replace("|", "/") + (f" ⚠ {', '.join(map(str, flag))}" if flag else ""))
         md.append(f"| {(r.get('time') or '')[11:19]} | {r['source'].replace('|', '/')} | " + " | ".join(cells) + " |")
     path.with_suffix(".md").write_text("\n".join(md) + "\n", encoding="utf-8")
@@ -276,7 +282,7 @@ def main() -> int:
     if a.cmd == "check":
         side = pathlib.Path(a.side) if a.side else side
         rows = [json.loads(l) for l in side.read_text(encoding="utf-8").splitlines() if l.strip()]
-        cols = [k for k in rows[0] if k == "logged" or k.startswith(("nllb", "mlx"))]
+        cols = [k for k in rows[0] if k == "logged" or (k.startswith(("nllb", "mlx")) and not k.endswith(" s"))]
     else:
         rows = [json.loads(l) for l in src.read_text(encoding="utf-8").splitlines() if l.strip()]
         if a.no_rehearsal:
