@@ -18,7 +18,7 @@
   body { font: 600 var(--size)/1.25 -apple-system, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
          display: flex; align-items: flex-end; justify-content: center; cursor: default; }
   body.idle { cursor: none; }
-  #text { box-sizing: border-box; width: 100%; padding: 0 6vw 8vh; text-align: center; white-space: pre-line; }
+  #text { box-sizing: border-box; width: 100%; padding: 0 6vw 8vh; text-align: center; white-space: pre; }
   #hint { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); padding: 8px 16px; border-radius: 18px;
           font: 500 14px -apple-system, system-ui, sans-serif; color: rgba(255,255,255,.8); background: rgba(128,128,128,.28);
           transition: opacity .6s; white-space: nowrap; }
@@ -37,14 +37,55 @@
   const hint = document.getElementById("hint"), dot = document.getElementById("dot");
   let shown = "", heldText = null, lostTimer = 0;
 
-  // newest N lines of the caption box (the operator's box can hold more than the room needs)
-  const lastLines = (s, n) => s.split("\n").filter(Boolean).slice(-n).join("\n");
+  // This window lays out its own lines. The caption box breaks lines at ProPresenter's length
+  // (42 characters), but at this window's font size fewer fit, so the browser broke them again
+  // and left a word like "the" alone on a line. Here the words are measured in the window's own
+  // font and width; new words extend the last line, finished lines never change (so the roll-up
+  // below still works), and anything that is not "more words" (Remove last, Fix last, Blank, a
+  // resize) is laid out afresh.
+  const words = t => (t || "").split(/\s+/).filter(Boolean);
+  const ctx = document.createElement("canvas").getContext("2d");
+  let lines = [], fed = [], fitW = 0, fitFont = "";
+  function room() {
+    const cs = getComputedStyle(text);
+    const font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    const w = (text.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) * 0.97;
+    if (font !== fitFont || Math.abs(w - fitW) > 1) { fitFont = font; fitW = w; ctx.font = font; return true; }
+    return false;
+  }
+  function extend(ws) {
+    for (const w of ws) {
+      const last = lines.length ? lines[lines.length - 1] : null;
+      if (last !== null && ctx.measureText(last + " " + w).width <= fitW) lines[lines.length - 1] = last + " " + w;
+      else lines.push(w);
+    }
+    if (lines.length > 12) lines = lines.slice(-12);
+  }
+  function follow(t) {
+    const now = words(t);
+    let start = -1;
+    if (room()) start = -1;                                  // new size or width: lay out again
+    else if (now.length >= fed.length && fed.every((w, i) => w === now[i])) start = fed.length;   // more words
+    else {                                                   // the box dropped lines from the top
+      const least = Math.min(3, fed.length, now.length);    // a lone shared word ("the") is no overlap
+      for (let k = Math.min(fed.length, now.length); k >= least && k > 0; k--) {
+        if (fed.slice(-k).every((w, i) => w === now[i])) { start = k; break; }
+      }
+    }
+    if (start < 0) { lines = []; extend(now); } else extend(now.slice(start));
+    fed = now;
+  }
+  const lastLines = n => lines.slice(-n).join("\n");
 
+  let lastState = null;
+  window.addEventListener("resize", () => { if (lastState) render(lastState); });
   function render(s) {
+    lastState = s;
     const d = s.display || {};
     root.dataset.size = d.size || "large";
     root.dataset.colors = d.colors || "white_on_black";
-    let want = s.paused ? "" : lastLines(s.screen || "", Math.max(1, Math.min(3, d.lines || 2)));
+    follow(s.paused ? "" : s.screen || "");
+    let want = s.paused ? "" : lastLines(Math.max(1, Math.min(3, d.lines || 2)));
     if (s.held && !s.paused) {               // Hold: the screen keeps what it had
       if (heldText === null) heldText = shown;
       want = heldText;
@@ -94,7 +135,7 @@
       dot.hidden = false;
       // a stale caption must not stay up for long: 5 s from the first drop, whatever the
       // retries (each failed one closes again; they must not restart the countdown)
-      if (!lostTimer) lostTimer = setTimeout(() => { shown = ""; heldText = null; settle(""); }, 5000);
+      if (!lostTimer) lostTimer = setTimeout(() => { shown = ""; heldText = null; lines = []; fed = []; settle(""); }, 5000);
       setTimeout(connect, 1000);
     };
   }
