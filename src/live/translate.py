@@ -13,6 +13,7 @@ import sys
 import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))      # guards
 from textnorm import fix_cedilla, fold_diacritics, phon_key, tokens   # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -42,6 +43,73 @@ def postedit(text: str, tgt: str) -> str:
     for a, b in POSTEDIT.get(tgt, {}).items():
         text = re.sub(rf"\b{re.escape(a)}\b", b, text)
     return fix_cedilla(text) if tgt == "ro" else modernize(text)
+
+
+# Chat/control tokens: Gemma 4 (<image|>, <|channel>, <turn|>, <|"|>), Gemma 2/3 (<start_of_turn>)
+_CTRL_RE = re.compile(r"(?:<\|[^<>\s]{1,24}>|<[^<>\s|]{1,24}\|>|<(?:start|end)_of_[a-z_]+>"
+                      r"|<(?:eos|bos|pad|unk|mask)>)+")
+# Gemma's notes to the reader: "*(Note: The source text ...)*", "Note: ...", "Translation: ..."
+_NOTE_RE = re.compile(r"[*_\s]*[(\[][*_\s]*(?:note|notă|nota|n\.b\.)\b.*", re.I | re.S)
+_LABEL_RE = re.compile(r"(?<![^\W\d_])(note|notă|explanation|explicație|translation|traducere)"
+                       r"[*_]*\s*:[*_]*", re.I)
+# short words: a token before one of these stood where a space belongs, not inside a word
+_SHORT_WORDS = set("a o e i ai al am au ca că ce cu da de din el ea ei eu fi în la le lor lui mai "
+                   "ne nu pe sa să se și ta tu un va vă zi bun rău tot cum cât sau are era fie "
+                   "an and are as at be but by do for go he her him his if in is it me my no "
+                   "not of on or our out so the to up us was we who you all can god".split())
+# two consonants that start Romanian or English words; any other pair starts a word piece ("ctori")
+_ONSETS = set("bl br ch cl cr dr fl fr gl gr kn ph pl pr ps sc sh sk sl sm sn sp st sv sw th tr "
+              "tw wh wr șt șc șp șm șn șl șv".split())
+
+
+def _ctrl_sub(m: re.Match) -> str:
+    """A control token stands where a space or a word piece belongs ("în<image|>eternitate",
+    "năde<image|>jde"): between words keep a space, inside a word join the pieces. Inside means
+    a right-hand piece of 1-3 letters that is not a word ("jde"), a 1-2 letter left piece that
+    is not a word, or a right-hand piece starting with two consonants no word starts with."""
+    s = m.string
+    left = re.search(r"[^\W\d_]*$", s[:m.start()]).group(0)
+    right = re.match(r"[^\W\d_]*", s[m.end():]).group(0)
+    before = s[m.start() - 1] if m.start() else ""
+    if not left or not right:
+        return " " if before in ",.;:!?)" and right else ""
+    if right[0].isupper():
+        return " "
+    r2 = right[:2].lower()
+    if (len(right) <= 3 and right.lower() not in _SHORT_WORDS) or \
+            (len(left) <= 2 and left.lower() not in _SHORT_WORDS) or \
+            (len(r2) == 2 and not set(r2) & set("aeiouăâîy") and r2 not in _ONSETS):
+        return ""
+    return " "
+
+
+def clean_output(out: str) -> str:
+    """What reaches the screen from an LLM: the answer, without thinking, control tokens or
+    notes to the reader. Gemma 4 sometimes reopened its thinking channel mid-answer
+    ("...ale vo<image|><|channel>thought\\n<channel|>în urma ...") and then gave the whole
+    answer again: the text after the last <channel|> is that answer."""
+    out = re.sub(r"<think>.*?</think>", "", out, flags=re.S)
+    if "<channel|>" in out:
+        after = out.rsplit("<channel|>", 1)[1]
+        out = after if re.search(r"[^\W\d_]", _CTRL_RE.sub("", after)) else out.split("<|channel>")[0]
+    elif "<|channel>" in out:                           # a thought that never closed
+        out = out.split("<|channel>")[0]
+    out = _NOTE_RE.sub("", out)
+    m = _LABEL_RE.search(out)
+    if m:
+        lead = not out[:m.start()].strip(" *_\"\n")
+        if lead and m.group(1).lower() in ("translation", "traducere"):
+            out = out[m.end():]                         # "Translation: ..." -> the translation
+        else:
+            out = out[:m.start()].rstrip(" *_([")       # a note, alone or after the translation
+    out = _CTRL_RE.sub(_ctrl_sub, out)
+    out = re.sub(r"[ \t]{2,}", " ", out).strip().strip('"').strip()
+    return out.split("\n\n")[0].strip()
+
+
+def tiny(text: str) -> bool:
+    """A 1-2 character fragment ("T."): with context, Gemma translated the context instead."""
+    return sum(c.isalnum() for c in text) <= 2
 
 
 def _fk(text: str) -> list[str]:
@@ -214,17 +282,63 @@ class MLXLLMTranslator:
                   use_context: bool = False) -> str:
         from mlx_lm import generate
         from mlx_lm.sample_utils import make_sampler
+        import guards
         if not use_context or (self.context and self.context[-1][2] != src):
             self.context = []                     # a language switch starts a fresh context
-        out = generate(self.model, self.tok, prompt=self._prompt(text, src, tgt, glossary),
-                       max_tokens=self.max_tokens, sampler=make_sampler(temp=0.0), verbose=False)
+        if src == "en":
+            text = guards.to_digits(text, "en")   # "October fifteenth" came back as "fifty"
+        small, ctx = tiny(text), self.context
+        if small:
+            self.context = []                     # translated alone, the context kept for later
+        try:
+            out = generate(self.model, self.tok, prompt=self._prompt(text, src, tgt, glossary),
+                           max_tokens=self.max_tokens, sampler=make_sampler(temp=0.0), verbose=False,
+                           logits_processors=self._suppress())
+        finally:
+            self.context = ctx
         self.last_truncated = len(self.tok.encode(out)) >= self.max_tokens - 1
-        out = re.sub(r"<think>.*?</think>", "", out, flags=re.S).strip().strip('"').strip()
-        out = out.split("\n\n")[0].strip()
+        out = clean_output(out)
+        if small and len(out.split()) > 3:
+            out = ""                              # "T." -> two sentences: not a translation of it
         out = postedit(out, tgt)
-        if use_context:
+        if use_context and not small:
             self.context = (self.context + [(text, out, src)])[-max(self.context_clauses, 1):]
         return out
+
+    def _suppress(self) -> list:
+        """Logits processors that forbid the tokenizer's special tokens other than end-of-turn.
+        Gemma 4's generation_config.json lists <image|> and <audio|> in `suppress_tokens`, but
+        mlx-lm (0.32) reads only `eos_token_id` from it, so greedy decoding picked <image|>
+        where a space or a word piece belonged ("năde<image|>jde"), and <|channel> reopened
+        the thinking channel mid-answer. Nothing a translation needs is a special token."""
+        if getattr(self, "_suppressors", None) is None:
+            ids = banned_ids(self.tok)
+            self._suppressors = [_ban_processor(ids)] if ids else []
+        return self._suppressors
+
+
+def banned_ids(tok) -> list[int]:
+    """The special-token ids a translation must never contain: all of them except end-of-turn."""
+    try:
+        special = set(tok.all_special_ids)
+    except Exception:                             # a tokenizer without special-token lists
+        return []
+    return sorted(special - set(getattr(tok, "eos_token_ids", None) or []))
+
+
+def _ban_processor(ids: list[int]):
+    import mlx.core as mx
+    import numpy as np
+    masks = {}
+
+    def ban(tokens, logits):
+        n = logits.shape[-1]
+        if n not in masks:
+            m = np.zeros(n, np.float32)
+            m[[i for i in ids if i < n]] = -np.inf
+            masks[n] = mx.array(m)
+        return logits + masks[n].astype(logits.dtype)
+    return ban
 
 
 def make_translator(spec: str):

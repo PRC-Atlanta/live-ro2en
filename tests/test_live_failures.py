@@ -291,7 +291,7 @@ def test_control_api_end_to_end(tmp_path):
 
 def test_backlog_is_merged_into_one_translation(tmp_path):
     calls = []
-    live = _live(tmp_path, translate=lambda t, *a, **k: calls.append(t) or "Translated text here now.")
+    live = _live(tmp_path, translate=lambda t, *a, **k: calls.append(t) or "Translated text, chapter 8.")
     live.lang.set_mode("ro-en")
     texts = ["Frați și surori, astăzi", "citim din epistola către Romani,", "capitolul opt,", "versetul unu."]
     for i, t in enumerate(texts[1:], 2):
