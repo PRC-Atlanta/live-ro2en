@@ -16,6 +16,7 @@ import unicodedata
 
 import paths
 import translate
+from captions import tidy_clause
 from langid import score as lang_score
 from segmenter import split_clauses
 from textnorm import apply_spellings, fold_diacritics, tokens
@@ -415,8 +416,16 @@ class PipelineMixin:
         if truncated:                                   # shown (better than nothing), but counted
             with self.lock:
                 self.counts["mt_truncated"] += 1
+        # one running caption, not a sentence per chunk: the chunk's period waits for the
+        # next chunk, and is shown only if a sentence-length pause came first
+        start = ev.get("t_speech", ev["t_start"])
+        prev_end, prev_open = getattr(self, "_cap_end", None), getattr(self, "_cap_open", False)
+        continues = prev_open and prev_end is not None and \
+            start - prev_end < float(self.lc.get("sentence_pause_s", 1.0))
+        screen_text, self._cap_open = tidy_clause(translation, continues, tgt, src_text)
+        self._cap_end = ev["t_end"]
         t1 = time.time()
-        shown, ok, outcome = self._show(translation)    # honours Hide/Hold (OutputMixin)
+        shown, ok, outcome = self._show(screen_text, close="." if prev_open and not continues else "")
         t_disp = time.time()
         latency = t_disp - ev["t_end"]
         n_g, ok_g = self.gloss.adherence(src_text, translation, lang)

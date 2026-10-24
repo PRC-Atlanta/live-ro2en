@@ -86,11 +86,12 @@ export const S = {
   meter: {
     sound: device => `Sound · ${device || "no input chosen"}`,
     speech: "Speech", clip: "Clip",
+    gain: "Input gain", gainKeys: "Drag · double-click = 0", gainDb: db => `${db > 0 ? "+" : ""}${db} dB`,
     good: "GOOD", quiet: "TOO QUIET", loud: "TOO LOUD", last30: "LAST 30 S",
     verdict: {
       idle: ["", ""],
       good: ["Level good", ""],
-      quiet: ["Too quiet", "Raise the mixer send for this input."],
+      quiet: ["Too quiet", "Turn up the Input gain knob, or the mixer send for this input."],
       loud: ["Very loud", "Lower the mixer send a little."],
       clip: ["Clipping", "Too loud: lower the gain on the mixer send."],
       none: ["No sound", "Check the cable and that the mixer send is up."],

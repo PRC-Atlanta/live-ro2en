@@ -17,6 +17,7 @@ export const TABS = [
 export const FIELDS = {
   basic: [
     { key: "live.input_device", label: "Sound input", kind: "device", hint: "The input that carries the preacher's microphone." },
+    { key: "live.input_gain_db", label: "Input gain (dB)", kind: "number", min: -12, max: 30, step: 1, hint: "Also the fader under the sound meter on the live screen." },
     { key: "live.language_mode", label: "Usual language", kind: "choice", options: MODES },
     { key: "live.profile", label: "Quality when starting", kind: "choice", options: PROFILES },
     { key: "live.autostart", label: "Start captions automatically when the app opens", kind: "toggle" },
@@ -51,6 +52,8 @@ export const FIELDS = {
       options: [[0.35, "Gentle", "Keeps quiet speech"], [0.5, "Normal"], [0.65, "Strong", "Skips more music"]] },
     { key: "live.hold_min_words", label: "Wait for phrases shorter than (words)", kind: "number", min: 1, max: 10 },
     { key: "live.hold_s", label: "…for at most (seconds)", kind: "number", min: 0, max: 3, step: 0.1 },
+    { key: "live.caption_min_line_s", label: "Keep each caption line up at least (seconds)", kind: "number", min: 0, max: 8, step: 0.5 },
+    { key: "live.sentence_pause_s", label: "Pause that ends a sentence (seconds)", kind: "number", min: 0, max: 3, step: 0.1 },
     { key: "live.partial_every_s", label: "Show interim words on the Live screen", kind: "toggle", on: 0.5, off: 0 },
     { key: "live.keep_both_translators", label: "Keep both qualities ready", kind: "choice",
       options: [["auto", "Automatic", "When this Mac has enough memory"], [true, "Always", "Switching is instant"],

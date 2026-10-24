@@ -37,7 +37,7 @@ def test_rolling_captions_keep_whole_lines():
     rc.add("In the beginning")
     assert rc.text == "In the beginning"
     rc.add("God created the heaven and the earth.")
-    assert rc.text.split("\n") == ["heaven and the", "earth."]
+    assert rc.text.split("\n") == ["created the heaven", "and the earth."]   # the first line filled up
     assert all(len(l) <= 20 for l in rc.text.split("\n"))
 
 

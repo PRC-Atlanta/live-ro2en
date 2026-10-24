@@ -69,7 +69,8 @@ class Live(LifecycleMixin, PipelineMixin, OutputMixin, DisplayMixin, SessionMixi
         self.lc = self._profile_cfg(self.profile)
         self.args = args
         self.pp = make_pp(cfg["propresenter"])          # ProPresenterOff when propresenter.enabled is false
-        self.caps = RollingCaptions(cfg["propresenter"]["max_chars_per_line"], cfg["propresenter"]["max_lines"])
+        self.caps = RollingCaptions(cfg["propresenter"]["max_chars_per_line"], cfg["propresenter"]["max_lines"],
+                                    min_line_s=float(cfg["live"].get("caption_min_line_s", 0) or 0))
         self.lang = LangTracker(self.lc.get("language_mode", "auto"))
         self.gloss = Glossary(paths.resource(cfg["paths"]["glossary"], ROOT))
         self.tr = None

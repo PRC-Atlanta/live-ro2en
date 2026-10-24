@@ -35,17 +35,39 @@ class OutputMixin:
                 "corrections_n": self._corrections[str(self.log_path)]}
 
     # --- the pipeline's way onto the screen ------------------------------------------------
-    def _show(self, translation: str) -> tuple[str, bool | None, str]:
+    def _show(self, translation: str, close: str = "") -> tuple[str, bool | None, str]:
         """Add a translation to the captions and send them, unless hidden or held.
         Returns (screen text, sent ok or None when nothing was sent, outcome) where outcome
-        is "ok", "paused" (Hide is on: not added, so Show starts clean) or "held"."""
+        is "ok", "paused" (Hide is on: not added, so Show starts clean) or "held".
+        `close` ends the previous caption first (RollingCaptions.add)."""
         with self._out_lock:
             if self.paused:
                 return "", None, "paused"
-            shown = self.caps.add(translation)
+            shown = self.caps.add(translation, close)
+            self._pace()
             if self.held:
                 return shown, None, "held"
             return shown, self.pp.show(shown), "ok"
+
+    def _pace(self):
+        """Lines waiting for the one above to have been read (captions.min_line_s) go up
+        from a timer, one at a time."""
+        with self._out_lock:
+            due = self.caps.next_due() if hasattr(self.caps, "next_due") else None
+            t = getattr(self, "_pace_timer", None)
+            if due is None or (t is not None and t.is_alive()):
+                return
+            self._pace_timer = threading.Timer(max(0.05, due - self.caps.clock()), self._pace_tick)
+            self._pace_timer.daemon = True
+            self._pace_timer.start()
+
+    def _pace_tick(self):
+        with self._out_lock:
+            self._pace_timer = None
+            if self.caps.advance() and not (self.paused or self.held):
+                self.pp.show(self.caps.text)
+        self._broadcast()
+        self._pace()
 
     def _push(self) -> bool:
         """Send what the captions hold now (an empty box hides the message)."""

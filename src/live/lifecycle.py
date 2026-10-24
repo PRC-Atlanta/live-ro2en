@@ -32,7 +32,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 ENGINE_SCRIPT = HERE / "engine.py"       # tests point this at an engine without models
 ENGINE_CFG_KEYS = ("vad_threshold", "min_pause_ms", "max_clause_s", "partial_every_s", "min_commit_s",
                    "max_commit_s", "en_recognizer", "context_s", "lookahead_words", "audio_watchdog_s",
-                   "digital_silence_s", "stt_backlog_s", "catchup_max_s", "level_hz")
+                   "digital_silence_s", "stt_backlog_s", "catchup_max_s", "level_hz", "input_gain_db")
 RESTARTS, RESTART_WINDOW_S = 2, 600.0    # automatic engine restarts allowed per window (long
                                          # enough to catch a crash on every model load, ~30 s)
 RESTART_WAIT_S = 180.0                   # a crash while a switch/Start holds _control waits this long
@@ -564,6 +564,8 @@ class LifecycleMixin:
             sup(changed)
         if "live.input_device" in changed:
             self._follow_input()
+        if "live.input_gain_db" in changed:            # the fader: live, in hold and in service
+            self._send({"cmd": "gain", "db": self.lc.get("input_gain_db", 0.0)})
         if "live.language_mode" in changed and not self.running:
             self._send({"cmd": "mode", "mode": self.lang.mode})   # a warm engine listens for it at Start
         if not self.running and self._warm_alive() and self._engine_spec != self._spec():
@@ -888,7 +890,8 @@ class LifecycleMixin:
                 "speech": bool(lv.get("speech")),
                 "last_voice_s": round(now - self._last_voice_t, 1) if self._last_voice_t else None,
                 "ok": not alive or (self._audio_kind is None and self.audio_fault is None),   # no known fault
-                "engine": alive}                        # false: nothing listens, so no level is no news
+                "engine": alive,                        # false: nothing listens, so no level is no news
+                "gain_db": float(self.lc.get("input_gain_db", 0) or 0)}
 
     def _mic_status(self) -> str:
         """The microphone permission (permissions.microphone), re-asked at most every 2 s."""

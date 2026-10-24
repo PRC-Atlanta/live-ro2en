@@ -84,7 +84,7 @@
     "phase":          {"type": "@phase", "built": true, "owner": "S1"},
     "progress":       {"type": {"object": {"label": "str", "pct": "num"}}, "nullable": true, "built": true, "owner": "S1"},
     "audio":          {"type": {"object": {"device": "str|null", "rms_db": "num|null", "peak_db": "num|null", "speech": "bool",
-                                           "last_voice_s": "num|null", "ok": "bool", "engine": "bool"}}, "built": true, "owner": "S1"},
+                                           "last_voice_s": "num|null", "ok": "bool", "engine": "bool", "gain_db": "num"}}, "built": true, "owner": "S1"},
     "pp":             {"type": {"object": {"connected": "bool", "since": "num|null", "last_ms": "num|null",
                                            "error_code": {"enum": ["unreachable", "auth", "message_missing", null]}, "enabled": "bool"}},
                        "built": true, "owner": "S2"},
@@ -208,6 +208,8 @@
                    "about": "hot: vad_threshold min_pause_ms max_clause_s partial_every_s min/max_commit_s audio_watchdog_s digital_silence_s stt_backlog_s catchup_max_s context_s lookahead_words; others answer warn 'applied at the next start'"},
       "device":   {"built": true, "owner": "S1", "fields": {"device": "int|str|null"},
                    "about": "switch the mic without a restart (the orchestrator sends it when live.input_device changes while idle)"},
+      "gain":     {"built": true, "owner": "S1", "fields": {"db": "num"},
+                   "about": "input gain in dB (-12..+30), applied to every frame from the next one (the control page's fader, live.input_gain_db)"},
       "keywords": {"built": true, "owner": "S1", "fields": {"words": {"list": "str"}}, "about": "sent by S3: the user's + today's additions; the engine calls WhistleSTT.set_keywords(words) (bundled file + these, replacing earlier additions)"}
     }
   },

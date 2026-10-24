@@ -9,12 +9,15 @@ paths:
 
 live:
   input_device: null          # null = system default; name or index
+  input_gain_db: 0            # input gain in dB (-12..+30), the fader on the control page
   language_mode: auto         # auto | ro-en | en-ro
   vad_threshold: 0.5
   min_pause_ms: 350           # pause that may close a clause
   max_clause_s: 7.0           # force a commit if no pause arrives
   hold_min_words: 4           # shorter fragments (except ?/!) wait for the next clause...
   hold_s: 1.2                 # ...for at most this long
+  sentence_pause_s: 1.0       # a chunk's final period is shown only if the next one starts after this long a pause
+  caption_min_line_s: 2.5     # a caption line stays up at least this long before it scrolls off (0 = no pacing)
   partial_every_s: 0           # >0 shows interim text on the control page (adds load)
   stt_model: jackrabbit-ctc-lm-b8          # Jackrabbit CTC + 4-gram LM, beam 8 (see BENCHMARK.md)
   stt_venv: .venv-nemo
@@ -82,14 +85,14 @@ profiles:
     max_chunk_s: 2.5
     min_commit_s: 0
     max_commit_s: 0
-  quality:                    # default: Gemma 4 repairs STT slips; first word on screen <= 6 s for ~92% of chunks
+  quality:                    # default: Gemma 4 repairs STT slips; 5-7 s phrases read as sentences
     stt_model: jackrabbit-ctc-lm-b8
     translator: "mlx:mlx-community/gemma-4-12B-it-qat-4bit"
     min_pause_ms: 250
-    max_clause_s: 2.5         # cut long phrases at the quietest point after 2.5 s of speech
-    max_chunk_s: 2.5          # and never merge fragments beyond that span
-    min_commit_s: 0
-    max_commit_s: 0
+    max_clause_s: 7.0         # cut long phrases at the quietest point after 7 s of speech
+    max_chunk_s: 7.0          # and never merge fragments beyond that span
+    min_commit_s: 5.0         # keep listening across short pauses until 5 s of audio: whole phrases, not
+    max_commit_s: 7.0         #   2-3 word fragments, reach the translator (costs ~3 s of delay)
     hold_min_words: 4
     context_clauses: 4        # Gemma sees the previous 4 chunks, so short chunks still read as sentences
 

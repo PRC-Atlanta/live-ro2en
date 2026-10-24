@@ -79,7 +79,7 @@ def test_overlong_output_is_dropped(tmp_path):
     live.tr = types.SimpleNamespace(translate=lambda t, *a, **k: "Amen, amen.")
     live._handle(_clause(2, "Amin."))                                  # short outputs are never judged
     assert _outcomes(live) == ["mt_overlong", "ok"] and live.counts["mt_overlong"] == 1
-    assert live.caps.text == "Amen, amen."
+    assert live.caps.text == "Amen, amen"
 
 
 def test_blocklist_masks_words(tmp_path):
@@ -88,7 +88,7 @@ def test_blocklist_masks_words(tmp_path):
     live._handle(_clause(1, "Frați și surori, astăzi citim."))
     rec = _log(live)[-1]
     assert rec["outcome"] == "ok" and rec["masked"] == 2
-    assert live.caps.text.replace("\n", " ") == "This *** thing, said the *** man."
+    assert live.caps.text.replace("\n", " ") == "This *** thing, said the *** man"
     assert live.counts["masked"] == 2
 
 
@@ -194,7 +194,7 @@ def test_hot_switch_keeps_the_engine_and_sends_cfg(tmp_path, monkeypatch):
     assert live.tr.context == [] and live.tr.context_clauses == 4             # the profile's context size
     cmds = engine.cmds()
     assert [c["cmd"] for c in cmds] == ["cfg"]
-    assert cmds[0]["cfg"]["min_pause_ms"] == 250 and cmds[0]["cfg"]["max_clause_s"] == 2.5
+    assert cmds[0]["cfg"]["min_pause_ms"] == 250 and cmds[0]["cfg"]["max_clause_s"] == 7.0
     assert "stt_model" not in cmds[0]["cfg"] and "en_recognizer" not in cmds[0]["cfg"]
     assert all(isinstance(v, (int, float, str, bool)) for v in cmds[0]["cfg"].values())   # contract: map num|str|bool
     live._handle(_clause(1, "Frați și surori, astăzi citim."))

@@ -20,12 +20,28 @@ NLLB_CODES = {"ro": "ron_Latn", "en": "eng_Latn"}
 # Post-edits for the target language (whole words). NLLB writes the Orthodox "Iisus";
 # Romanian evangelical usage (and Cornilescu) is "Isus".
 POSTEDIT = {"ro": {"Iisus": "Isus", "Iisuse": "Isuse", "lui Iisus": "lui Isus"}, "en": {}}
+# Archaic English the translator falls back on for biblical register: modern forms only
+# (case kept). Verb endings like "knoweth" are left to the prompt.
+MODERN_EN = {"thee": "you", "thou": "you", "ye": "you", "thy": "your", "thine": "your",
+             "thyself": "yourself", "hath": "has", "hast": "have", "doth": "does", "dost": "do",
+             "art thou": "are you", "thou art": "you are", "shalt": "shall",
+             "unto": "to", "saith": "says", "spake": "spoke"}
+_MODERN_RE = re.compile(r"\b(" + "|".join(sorted(map(re.escape, MODERN_EN), key=len, reverse=True)) + r")\b",
+                        re.IGNORECASE)
+
+
+def modernize(text: str) -> str:
+    def sub(m):
+        w = m.group(0)
+        new = MODERN_EN[w.lower()]
+        return new[0].upper() + new[1:] if w[0].isupper() else new
+    return _MODERN_RE.sub(sub, text)
 
 
 def postedit(text: str, tgt: str) -> str:
     for a, b in POSTEDIT.get(tgt, {}).items():
         text = re.sub(rf"\b{re.escape(a)}\b", b, text)
-    return fix_cedilla(text) if tgt == "ro" else text
+    return fix_cedilla(text) if tgt == "ro" else modernize(text)
 
 
 def _fk(text: str) -> list[str]:
@@ -147,9 +163,12 @@ class NLLBTranslator:
 
 SYSTEM = {
     ("ro", "en"): ("You are a live interpreter for a Romanian evangelical church service. Translate the "
-                   "Romanian text into natural, faithful English. For Bible quotations and biblical "
-                   "terms use traditional KJV/NKJV-style wording. Keep names in their standard English "
-                   "Bible form. Output only the English translation, nothing else."),
+                   "Romanian text into natural, faithful, modern English, as a preacher speaks today. "
+                   "For Bible quotations use NKJV/ESV-style wording. Never use archaic English: no "
+                   "thee, thou, thy, thine, ye, hath, doth, unto, or -eth/-est verb endings. The text "
+                   "is a piece of continuous speech and may start or end mid-sentence: translate it "
+                   "as a piece, without completing it. Keep names in their standard English Bible "
+                   "form. Output only the English translation, nothing else."),
     ("en", "ro"): ("You are a live interpreter for a Romanian evangelical church service. Translate the "
                    "English text into natural Romanian with correct diacritics (ă â î ș ț). For Bible "
                    "quotations and terms use Cornilescu-style wording. Output only the Romanian "

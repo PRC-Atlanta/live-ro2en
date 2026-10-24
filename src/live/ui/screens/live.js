@@ -5,6 +5,7 @@ import { S } from "../i18n/strings.en.js";
 import { frame } from "../components/frame.js";
 import { mountMeter } from "../components/meter.js";
 import { knob } from "../components/knob.js";
+import { gainKnob } from "../components/gainknob.js";
 import { intentFor, callFor, spaceGate, isLive } from "../components/keys.js";
 import { dialFor, stateLine, delayOf, pillsFor, bannerFor, heardLines, ppStrip } from "../components/status.js";
 import { send, messageFor, routeFor } from "../components/actions.js";
@@ -49,7 +50,10 @@ const DECK = `
   <div class="banner" data-banner role="alert"><p></p><button class="bbtn"></button></div>
 
   <div class="deck">
-    <div class="ctl" data-k-mode></div>
+    <div class="ctlstack">
+      <div class="ctl" data-k-gain></div>
+      <div class="ctl" data-k-mode></div>
+    </div>
     <div class="ctl center">
       <div class="bigwrap">
         <svg viewBox="0 0 260 230" aria-hidden="true">
@@ -82,6 +86,19 @@ export function render(el, store) {
   </div>${DECK}`;
   const q = sel => f.panel.querySelector(sel);
   const meter = mountMeter(q("[data-meterbox]"));
+
+  // input gain knob: saved as live.input_gain_db; the engine applies it from the next frame
+  let gainTimer = null;
+  const saveGain = async v => {
+    clearTimeout(gainTimer); gainTimer = null;
+    const r = await settingsCall("PUT", "settings", { values: { "live.input_gain_db": v } });
+    if (!r.ok) toast(S.toast.failed, "warn");
+  };
+  const gain = gainKnob(q("[data-k-gain]"), {
+    label: S.meter.gain, keys: S.meter.gainKeys, min: -12, max: 30, fmt: S.meter.gainDb,
+    onChange: v => { clearTimeout(gainTimer); gainTimer = setTimeout(() => saveGain(v), 150); },   // the meter follows while turning
+    onCommit: saveGain,
+  });
 
   let view = "screen";
   try { view = localStorage.getItem("lt.view") || "screen"; } catch { /* private mode */ }
@@ -306,6 +323,7 @@ export function render(el, store) {
   unbind.push(store.subscribe(next => {
     s = next || {};
     if (s.audio) meter.update(s.audio);
+    if (s.audio && typeof s.audio.gain_db === "number" && !gainTimer) gain.set(s.audio.gain_db);
     paint();
   }));
   // the elapsed clock and the pills follow the meter between state updates

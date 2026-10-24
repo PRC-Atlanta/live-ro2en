@@ -22,7 +22,7 @@ export function baseState() {
     pp_error: null, warnings: [], counts: {}, alerts: [],
     translator: "nllb:nllb-200-distilled-1.3B", stt: "jackrabbit-ctc-lm-b8",
     phase: "ready", progress: null,
-    audio: { device: "Behringer UMC204HD", rms_db: -60, peak_db: -60, speech: false, last_voice_s: null, ok: true, engine: true },
+    audio: { device: "Behringer UMC204HD", rms_db: -60, peak_db: -60, speech: false, last_voice_s: null, ok: true, engine: true, gain_db: 0 },
     pp: { connected: true, since: Date.now() / 1000 - 600, last_ms: 3, error_code: null, enabled: true },
     display: { size: "large", lines: 2, colors: "white_on_black", network: false, url: null, network_error: null },
     pace: { state: "ok", behind_s: null }, backlog: { n: 0, oldest_s: null },
@@ -91,6 +91,7 @@ const MOCK_DEVICES = [
 // src/live/settings.py FIELDS, as GET /api/settings lists them
 const MOCK_FIELDS = {
   "live.input_device": { group: "basic", type: "device", apply: "start" },
+  "live.input_gain_db": { group: "basic", type: "num", min: -12, max: 30, apply: "now", default: 0 },
   "live.language_mode": { group: "basic", type: "enum", choices: ["auto", "ro-en", "en-ro"], apply: "launch" },
   "live.profile": { group: "basic", type: "enum", choices: ["fast", "quality"], apply: "launch" },
   "live.autostart": { group: "basic", type: "bool", apply: "launch", default: false },
@@ -107,6 +108,8 @@ const MOCK_FIELDS = {
   "live.vad_threshold": { group: "advanced", type: "num", min: 0.1, max: 0.95, apply: "start" },
   "live.hold_min_words": { group: "advanced", type: "int", min: 0, max: 12, apply: "now" },
   "live.hold_s": { group: "advanced", type: "num", min: 0, max: 5, apply: "now" },
+  "live.sentence_pause_s": { group: "advanced", type: "num", min: 0, max: 3, apply: "now" },
+  "live.caption_min_line_s": { group: "advanced", type: "num", min: 0, max: 8, apply: "now" },
   "live.partial_every_s": { group: "advanced", type: "num", min: 0, max: 5, apply: "start" },
   "live.lag_warn_s": { group: "advanced", type: "num", min: 2, max: 30, apply: "now" },
   "live.keep_both_translators": { group: "advanced", type: "enum", choices: ["auto", true, false], apply: "now" },
@@ -119,11 +122,11 @@ const MOCK_FIELDS = {
   "ui.show_counts": { group: "advanced", type: "bool", apply: "now", default: false },
 };
 const MOCK_DEFAULTS = {
-  "live.input_device": null, "live.language_mode": "auto", "live.profile": "quality", "live.autostart": false,
+  "live.input_device": null, "live.input_gain_db": 0, "live.language_mode": "auto", "live.profile": "quality", "live.autostart": false,
   "propresenter.host": "127.0.0.1", "propresenter.port": 50001, "propresenter.message_id": "Live Translation",
   "propresenter.token_name": "Text", "propresenter.max_lines": 2, "propresenter.max_chars_per_line": 42,
   "propresenter.stage_message": false, "live.en_recognizer": "parakeet", "live.vad_threshold": 0.5,
-  "live.hold_min_words": 4, "live.hold_s": 1.2, "live.partial_every_s": 0, "live.lag_warn_s": 6.0,
+  "live.hold_min_words": 4, "live.hold_s": 1.2, "live.sentence_pause_s": 1.0, "live.caption_min_line_s": 2.5, "live.partial_every_s": 0, "live.lag_warn_s": 6.0,
   "propresenter.health_every_s": 5, "live.keep_both_translators": "auto", "live.engine_restarts": 2,
   "propresenter.enabled": true, "display.size": "large", "display.lines": 2, "display.colors": "white_on_black",
   "display.network": false,
@@ -261,7 +264,7 @@ export const mockBackend = {
     else if (dev === MOCK_DEVICES[0].name) { rms = -44 + 4 * Math.sin(t * 3); speech = Math.sin(t / 2) > -0.3; }
     else if (this.now() - this.selT > 3000) { speech = Math.sin(t / 1.6) > -0.4; rms = speech ? -22 + 5 * Math.sin(t * 4) : -54; }
     return { device: dev, rms_db: rms, peak_db: rms == null ? null : rms + 8, speech,
-             last_voice_s: speech ? 0 : 1, ok: rms != null, engine: true };
+             last_voice_s: speech ? 0 : 1, ok: rms != null, engine: true, gain_db: this.value("live.input_gain_db") ?? 0 };
   },
 };
 

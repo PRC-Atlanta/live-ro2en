@@ -363,3 +363,14 @@ def test_saved_lists_stay_editable(home, monkeypatch):
     assert live.user_keywords() == ["Name1b", "Name2a", "Name2b"]               # newest kept, max 3
     assert live.put_keywords({"user": live.user_keywords()[:-1]})[0] == 200
     assert S.parse_terms(["X = #Y"]) == []
+
+
+def test_input_gain_applies_live_and_reaches_the_engine(home):
+    live = make_live(home, running=True)
+    sent = []
+    live._send = lambda cmd: sent.append(cmd) or True
+    r = client(live).put("/api/settings", json={"values": {"live.input_gain_db": 12}}, headers=ME).json()
+    assert r["restart_required"] is False
+    assert sent == [{"cmd": "gain", "db": 12.0}]
+    assert live.state()["audio"]["gain_db"] == 12.0           # the knob follows the saved value
+    assert live._engine_cfg()["input_gain_db"] == 12.0        # and the next engine starts with it

@@ -11,7 +11,7 @@ stdout events (one JSON per line; docs/app_contract.md has the full list):
   {"type":"partial","text":...}                                  (UI only)
   {"type":"clause","id":n,"ro":..,"multi":..,"t_start":..,"t_end":..,"t_emit":..,"stt_s":..}
   {"type":"eof"} when a --file source ends
-stdin commands: mode, stop, listen {on}, cfg {cfg}, keywords {words}, device {device}.
+stdin commands: mode, stop, listen {on}, cfg {cfg}, keywords {words}, device {device}, gain {db}.
 --hold: load and warm up, open the input for the level meter only, and transcribe nothing
 until {"cmd":"listen","on":true} (a --file source waits to play until then).
 The engine exits on stdin EOF and when its parent dies, so it never outlives the app.
@@ -48,6 +48,7 @@ from vad import FRAME, SileroVAD            # noqa: E402
 
 SR = 16000
 LEVEL_FLOOR_DB = -120.0                     # "minus infinity" for the meter (JSON has no -inf)
+GAIN_MIN_DB, GAIN_MAX_DB = -12.0, 30.0      # the input gain fader's range
 _OUT = sys.stdout
 
 
@@ -168,11 +169,14 @@ class LevelMeter:
 class SourceCtl:
     """What the capture thread should do: the input device to use (switched live with the
     `device` command, e.g. while the Setup wizard tries inputs), when a file in hold may
-    start playing (`go`), and the level meter it feeds."""
+    start playing (`go`), the input gain (the `gain` command, the operator's fader) and the
+    level meter it feeds."""
 
-    def __init__(self, device=None, meter: LevelMeter | None = None, hold: bool = False):
+    def __init__(self, device=None, meter: LevelMeter | None = None, hold: bool = False,
+                 gain_db: float = 0.0):
         self.device = device
         self.meter = meter
+        self.set_gain(gain_db)
         self.changed = threading.Event()
         self.go = threading.Event()
         if not hold:
@@ -181,6 +185,19 @@ class SourceCtl:
     def switch(self, device) -> None:
         self.device = device
         self.changed.set()
+
+    def set_gain(self, db) -> None:
+        try:
+            db = min(GAIN_MAX_DB, max(GAIN_MIN_DB, float(db)))
+        except (TypeError, ValueError):
+            return
+        self.gain = 10.0 ** (db / 20.0)
+
+    def amp(self, fr: np.ndarray) -> np.ndarray:
+        """The frame with the input gain applied (clipped to full scale, as an interface would).
+        The meter, the voice detector and the recogniser all hear the gained signal."""
+        g = self.gain
+        return fr if g == 1.0 else np.clip(fr * g, -1.0, 1.0).astype(np.float32)
 
 
 def resample(x: np.ndarray, sr: int) -> np.ndarray:
@@ -222,6 +239,8 @@ def file_source(path: str, realtime: bool, q: queue.Queue, stop: threading.Event
             if d > 0:
                 time.sleep(d)
         fr = x[i:i + FRAME]
+        if ctl is not None:
+            fr = ctl.amp(fr)
         if meter is not None:
             meter.feed(fr)
         q.put((time.time(), fr))
@@ -277,6 +296,8 @@ def mic_source(device, q: queue.Queue, stop: threading.Event, stall_s: float = 2
     def cb(indata, frames, t, status):
         last["t"] = time.time()
         fr = indata[:, 0].copy()
+        if ctl is not None:
+            fr = ctl.amp(fr)
         if meter is not None:
             meter.feed(fr, last["t"])
         q.put((last["t"], fr))
@@ -431,6 +452,8 @@ class Engine:
                         c.ctx_n, c.max_ctx_words = int(float(v) * SR), max(1, int(float(v) * 3))
                 elif k == "en_recognizer" and v == getattr(self, "en_rec", v):
                     pass                                          # unchanged: nothing to do
+                elif k == "input_gain_db":
+                    pass                  # the capture side's: the `gain` command sets it live
                 elif k in ("whistle", "parakeet_stream"):
                     pass                  # recognizer options: names come by `keywords`, the rest at the next start
                 else:
@@ -731,7 +754,7 @@ def main(make_engine=None) -> None:
     stop = threading.Event()
     q: queue.Queue = queue.Queue()
     meter = LevelMeter(float(cfg.get("level_hz", 10)))
-    ctl = SourceCtl(a.device, meter, hold=bool(a.hold and a.file))
+    ctl = SourceCtl(a.device, meter, hold=bool(a.hold and a.file), gain_db=cfg.get("input_gain_db", 0.0))
     # commands and the exit watch run from the start: an app that dies while the models are
     # still loading must not leave the engine behind
     threading.Thread(target=stdin_loop, args=(sys.stdin, q, stop, ctl), daemon=True).start()
@@ -785,6 +808,8 @@ def stdin_loop(stdin, q: queue.Queue, stop: threading.Event, ctl: SourceCtl, gra
             q.put({"keywords": [w for w in c.get("words") or [] if isinstance(w, str)]})
         elif c.get("cmd") == "device":
             ctl.switch(c.get("device"))          # the mic thread reopens on the new input
+        elif c.get("cmd") == "gain":
+            ctl.set_gain(c.get("db", 0.0))       # from the next frame: no reopen, no restart
         elif c.get("cmd") == "stop":
             q.put(None); stop.set(); return      # sentinel first: buffered speech is still committed
     _exit_soon(q, stop, grace_s)

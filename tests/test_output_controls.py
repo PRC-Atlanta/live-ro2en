@@ -79,8 +79,8 @@ def test_retract_and_replace_last_reshow_previous_lines():
     c.add("one two three")
     c.add("four five six seven")
     c.add("eight nine ten")
-    assert c.text == "four five six seven\neight nine ten"
-    assert c.retract() == "one two three\nfour five six seven"       # the line that scrolled off is back
+    assert c.text == "five six seven eight\nnine ten"
+    assert c.retract() == "one two three four\nfive six seven"       # the line that scrolled off is back
     assert c.replace_last("FOUR") == "one two three FOUR"
     assert c.retract() == "one two three"
     assert c.retract() == ""
@@ -154,14 +154,14 @@ def test_hold_keeps_the_screen_until_released(tmp_path, mock):
 
 def test_retract_reshows_previous_lines_and_is_logged(tmp_path, mock):
     live = _live(tmp_path, mock.port)
-    live.caps.max_chars, live.caps.max_lines = 20, 2
+    live.caps.max_chars, live.caps.max_lines, live.caps.min_line_s = 20, 2, 0
     for t in ("one two three", "four five six seven", "eight nine ten"):
         live._show(t)
     assert live.retract() is True
-    assert mock.visible["Live Translation"] == "one two three\nfour five six seven"
+    assert mock.visible["Live Translation"] == "one two three four\nfive six seven"
     assert live.state()["corrections_n"] == 1
     rec = [r for r in _log(live) if r.get("event") == "correction"][-1]
-    assert rec["kind"] == "retract" and rec["removed"].endswith("eight nine ten")
+    assert rec["kind"] == "retract" and rec["removed"].replace("\n", " ").endswith("eight nine ten")
 
 
 def test_correct_replaces_last_caption(tmp_path, mock):

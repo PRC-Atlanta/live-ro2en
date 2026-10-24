@@ -19,6 +19,6 @@ body { background: var(--bg-0); color: var(--ink); font: 15px/1.4 var(--font); }
 .conn { margin: 0; padding: 6px 16px; font-size: 13px; text-align: center; color: #04161c; background: var(--amber); }
 .conn[data-kind="mock"] { color: var(--mute); background: none; padding-bottom: 0; font-size: 12px; }
 .conn[hidden] { display: none; }
-main { padding: 16px; max-width: 760px; margin: 0 auto; }
+main { padding: 16px; max-width: 988px; margin: 0 auto; }   /* 760 px + 30% */
 .placeholder { border: 1px dashed var(--edge); padding: 16px; color: var(--label); }
 .placeholder pre { color: var(--mute); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -38,6 +38,7 @@ _HOST = r"[A-Za-z0-9][A-Za-z0-9.\-]*"          # a name or IPv4; the port is its
 FIELDS: dict[str, dict] = {
     # Basic
     "live.input_device":       {"group": "basic", "type": "device", "apply": "start"},
+    "live.input_gain_db":      {"group": "basic", "type": "num", "min": -12, "max": 30, "apply": "now", "default": 0},
     "live.language_mode":      {"group": "basic", "type": "enum", "choices": ["auto", "ro-en", "en-ro"], "apply": "launch"},
     "live.profile":            {"group": "basic", "type": "enum", "choices": "@profiles", "apply": "launch"},
     "live.autostart":          {"group": "basic", "type": "bool", "apply": "launch", "default": False},
@@ -61,6 +62,8 @@ FIELDS: dict[str, dict] = {
     "live.vad_threshold":      {"group": "advanced", "type": "num", "min": 0.1, "max": 0.95, "apply": "start"},
     "live.hold_min_words":     {"group": "advanced", "type": "int", "min": 0, "max": 12, "apply": "now"},
     "live.hold_s":             {"group": "advanced", "type": "num", "min": 0, "max": 5, "apply": "now"},
+    "live.sentence_pause_s":   {"group": "advanced", "type": "num", "min": 0, "max": 3, "apply": "now"},
+    "live.caption_min_line_s": {"group": "advanced", "type": "num", "min": 0, "max": 8, "apply": "now"},
     "live.partial_every_s":    {"group": "advanced", "type": "num", "min": 0, "max": 5, "apply": "start"},
     "live.lag_warn_s":         {"group": "advanced", "type": "num", "min": 2, "max": 30, "apply": "now"},
     "live.keep_both_translators": {"group": "advanced", "type": "enum", "choices": ["auto", True, False], "apply": "now"},
@@ -399,6 +402,8 @@ class SettingsMixin:
                 self.lc[sub] = prof[sub] if sub in prof else get(eff, k)
         if "live.language_mode" in changed and not self.running:
             self.lang.set_mode(get(self.cfg, "live.language_mode"))
+        if "live.caption_min_line_s" in changed and hasattr(self.caps, "min_line_s"):
+            self.caps.min_line_s = float(get(self.cfg, "live.caption_min_line_s") or 0)
         if any(k.startswith("display.") for k in changed) and hasattr(self, "_display_changed"):
             self._display_changed(changed)
         if "propresenter.enabled" in changed and hasattr(self, "_set_pp_enabled"):
