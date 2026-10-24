@@ -11,7 +11,7 @@ stdout events (one JSON per line; docs/app_contract.md has the full list):
   {"type":"partial","text":...}                                  (UI only)
   {"type":"clause","id":n,"ro":..,"multi":..,"t_start":..,"t_end":..,"t_emit":..,"stt_s":..}
   {"type":"eof"} when a --file source ends
-stdin commands: mode, stop, listen {on}, cfg {cfg}, keywords {words}, device {device}, gain {db},
+stdin commands: mode, stop, listen {on}, cfg {cfg}, keywords {words, ro}, device {device}, gain {db},
   agc {on, target_db}: automatic input gain (AutoGain) on/off and its target speech level.
 --hold: load and warm up, open the input for the level meter only, and transcribe nothing
 until {"cmd":"listen","on":true} (a --file source waits to play until then).
@@ -52,6 +52,7 @@ SR = 16000
 LEVEL_FLOOR_DB = -120.0                     # "minus infinity" for the meter (JSON has no -inf)
 GAIN_MIN_DB, GAIN_MAX_DB = -12.0, 30.0      # the input gain fader's range
 AGC_TARGET_DB = -20.0                       # the middle of the meter's good band (-30..-10 dBFS)
+NAME_BOOST = 1.0                            # weight of today's names in the Romanian beam search (0 = off)
 _OUT = sys.stdout
 
 
@@ -88,11 +89,41 @@ class NemoSTT:
         self.m.preprocessor.to(self.dev)
         self.m.encoder.to(self.dev)
         self.ctc = getattr(self.m, "cur_decoder", "rnnt") == "ctc"
+        self.lock = threading.Lock()                     # a names change swaps the beam search's models
+        self.names: list[str] = []
+        self._fusion = None                              # the beam search's own models (the 4-gram LM)
         self(np.zeros(SR, dtype=np.float32))            # warm-up (MPS kernels compile)
+
+    def set_names(self, names: list[str], alpha: float = NAME_BOOST) -> bool:
+        """Today's names boosted in the CTC beam search (idea 2): NeMo's phrase-boosting tree
+        (GPU-PB) fused next to the 4-gram LM, rebuilt when the names change (a few ms for a
+        few dozen names). False where the decoder has no fusion (greedy, TDT)."""
+        sa = getattr(getattr(getattr(self.m, "ctc_decoding", None), "decoding", None), "search_algorithm", None)
+        if not self.ctc or not hasattr(sa, "fusion_models"):
+            return False
+        names = list(dict.fromkeys(n.strip() for n in names or [] if n and n.strip()))
+        if names == self.names:
+            return True
+        tree = None
+        if names and alpha > 0:
+            from nemo.collections.asr.parts.context_biasing.boosting_graph_batched import (
+                BoostingTreeModelConfig, GPUBoostingTreeModel)
+            tree = GPUBoostingTreeModel.from_config(
+                BoostingTreeModelConfig(key_phrases_list=names, use_triton=False, context_score=1.0,
+                                        depth_scaling=2.0), tokenizer=self.m.tokenizer)
+        with self.lock:
+            if self._fusion is None:
+                self._fusion = (list(sa.fusion_models or []), list(sa.fusion_models_alpha or []))
+            models, alphas = self._fusion
+            if tree is not None:
+                models, alphas = models + [tree], alphas + [alpha]
+            sa.fusion_models, sa.fusion_models_alpha = (models or None), (alphas or None)
+            self.names = names
+        return True
 
     def __call__(self, audio: np.ndarray) -> str:
         torch, m = self.torch, self.m
-        with torch.inference_mode():
+        with self.lock, torch.inference_mode():
             sig = torch.from_numpy(np.ascontiguousarray(audio, dtype=np.float32)).unsqueeze(0).to(self.dev)
             ln = torch.tensor([len(audio)], device=self.dev)
             p, pl = m.preprocessor(input_signal=sig, length=ln)
@@ -490,6 +521,8 @@ class Engine:
         self.mode = mode
         loading("Loading speech recognition", 5)
         self.stt = make_stt(stt_name)
+        self.name_boost = float(cfg.get("ro_name_boost", NAME_BOOST))
+        self.set_ro_names(cfg.get("ro_names") or [])
         self.multi = None
         if stt_name != "parakeet-mlx":
             loading("Loading language detection", 45)
@@ -591,6 +624,14 @@ class Engine:
                     pass                                          # unchanged: nothing to do
                 elif k in ("input_gain_db", "input_gain_auto", "input_gain_target_db"):
                     pass                  # the capture side's: the `gain`/`agc` commands set them live
+                elif k == "ro_names":
+                    self.set_ro_names(v if isinstance(v, list) else [])
+                elif k == "ro_name_boost":
+                    self.name_boost = float(v)
+                    names = list(getattr(getattr(self, "stt", None), "names", None) or [])
+                    if hasattr(getattr(self, "stt", None), "names"):
+                        self.stt.names = None                   # rebuilt with the new weight
+                    self.set_ro_names(names)
                 elif k in ("whistle", "parakeet_stream"):
                     pass                  # recognizer options: names come by `keywords`, the rest at the next start
                 else:
@@ -599,11 +640,23 @@ class Engine:
                 later.append(k)
         return later
 
-    def set_keywords(self, words: list[str]) -> None:
-        """`{"cmd":"keywords"}`: the user's and today's names for the English recognizer."""
+    def set_keywords(self, words: list[str], ro: list[str] | None = None) -> None:
+        """`{"cmd":"keywords"}`: the user's and today's names for the English recognizer, and
+        (`ro`) as Romanian speech has them, for the Romanian one."""
         w = getattr(self, "whistle", None)
         if w is not None and hasattr(w, "set_keywords"):
             w.set_keywords([str(x) for x in words or [] if str(x).strip()])
+        if ro is not None:
+            self.set_ro_names(ro)
+
+    def set_ro_names(self, names: list[str]) -> None:
+        stt = getattr(self, "stt", None)
+        if stt is None or not hasattr(stt, "set_names"):
+            return
+        try:
+            stt.set_names([str(x) for x in names or [] if str(x).strip()], self.name_boost)
+        except Exception as e:                           # noqa: BLE001  recognition goes on unboosted
+            emit({"type": "warn", "msg": f"names not boosted in Romanian recognition: {type(e).__name__}: {e}"})
 
     def _next_id(self) -> int:
         with self._id_lock:
@@ -782,7 +835,7 @@ class Engine:
                         emit({"type": "warn", "msg": f"applied at the next start: {', '.join(sorted(later))}"})
                     continue
                 if "keywords" in item:
-                    self.set_keywords(item["keywords"])
+                    self.set_keywords(item["keywords"], item.get("ro"))
                     continue
                 if "fault" in item:                      # from the capture thread
                     denied = item["fault"] == "mic_denied"
@@ -950,7 +1003,10 @@ def stdin_loop(stdin, q: queue.Queue, stop: threading.Event, ctl: SourceCtl, gra
         elif c.get("cmd") == "cfg":
             q.put({"cfg": c.get("cfg") if isinstance(c.get("cfg"), dict) else {}})
         elif c.get("cmd") == "keywords":
-            q.put({"keywords": [w for w in c.get("words") or [] if isinstance(w, str)]})
+            item = {"keywords": [w for w in c.get("words") or [] if isinstance(w, str)]}
+            if isinstance(c.get("ro"), list):            # the names as Romanian speech has them
+                item["ro"] = [w for w in c["ro"] if isinstance(w, str)]
+            q.put(item)
         elif c.get("cmd") == "device":
             ctl.switch(c.get("device"))          # the mic thread reopens on the new input
         elif c.get("cmd") == "gain":

@@ -16,6 +16,7 @@ import unicodedata
 
 import gate
 import guards
+import names as namelist
 import overlap
 import paths
 import song
@@ -543,6 +544,16 @@ class PipelineMixin:
             self._gate_rows, self._gate_name_set = rows, gate.names_from(rows)
         return self._gate_name_set
 
+    def _repair_names(self, text: str, lang: str, info: dict) -> str:
+        """The Romanian recogniser's near-misses of today's names, back to the name (idea 2):
+        'familia Pha' → 'familia Puha', 'Drago' → 'Dragoș'; logged as `names_fixed`."""
+        if lang != "ro" or getattr(self, "gloss", None) is None:
+            return text
+        text, fixed = namelist.repair_ro(text, namelist.ro_names(self.gloss), gate.lexicon()["ro"])
+        if fixed:
+            info["names_fixed"] = [list(f) for f in fixed]
+        return text
+
     def _gate_min_real(self) -> float:
         return float(self.lc.get("gate_min_real", 0.6) or 0)
 
@@ -627,6 +638,7 @@ class PipelineMixin:
         if src_text is None:                            # all of it said in the last phrase (logged)
             return
         src_info.update(trimmed)
+        src_text = self._repair_names(src_text, lang, src_info)
         if not src_text.strip():
             self._log_failure(ev, "empty_stt", lang=lang)
             return

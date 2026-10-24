@@ -37,6 +37,7 @@ live:
   profile: quality            # fast | quality (switchable on the control page)
   context_s: 6.0              # each short chunk is recognised with the previous 6 s of audio (halves errors)
   lookahead_words: 0          # look-ahead (hold last word at mid-speech cuts): tested, breaks the 6 s ceiling for RO, no RO gain
+  ro_name_boost: 1.0          # today's names boosted in the Romanian beam search (0 = off; 2+ writes names into garbled audio)
   en_recognizer: parakeet     # English speech (EN→RO): parakeet | parakeet-stream | whistle  — A/B switch
   context_clauses: 2          # previous commits shown to an LLM translator as context
   audio_watchdog_s: 2.0       # no frames from the input device this long -> NO AUDIO alert

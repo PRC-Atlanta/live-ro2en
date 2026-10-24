@@ -26,6 +26,7 @@ import time
 
 import yaml
 
+import names as namelist
 import paths
 from textnorm import merge_spellings, name_variants
 from translate import read_glossary
@@ -570,8 +571,9 @@ class SettingsMixin:
 
     def _apply_lists(self):
         """Push the merged lists into the running service: glossary session layer, the
-        spellings the pipeline applies, and the Whistle keywords (next engine start via
-        whistle.keywords_extra, the running engine via the `keywords` command)."""
+        spellings the pipeline applies, the Whistle keywords and the names the Romanian
+        recogniser boosts (next engine start via whistle.keywords_extra and ro_names, the
+        running engine via the `keywords` command)."""
         self.gloss.set_session(self.session_terms)
         self.cfg["spellings"] = merge_spellings(self._base_cfg.get("spellings"), self._user.get("spellings"),
                                                 term_spellings(self.session_terms))
@@ -579,10 +581,11 @@ class SettingsMixin:
         if not isinstance(self.cfg.get("whistle"), dict):
             self.cfg["whistle"] = {}
         self.cfg["whistle"]["keywords_extra"] = words
+        ro = self.cfg["ro_names"] = namelist.ro_names(self.gloss)
         eng = getattr(self, "engine", None)
         if eng is not None and eng.poll() is None:
             try:
-                eng.stdin.write(json.dumps({"cmd": "keywords", "words": words}) + "\n")
+                eng.stdin.write(json.dumps({"cmd": "keywords", "words": words, "ro": ro}) + "\n")
                 eng.stdin.flush()
             except (OSError, ValueError):
                 pass                               # the engine is exiting; the next start has them
