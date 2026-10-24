@@ -10,6 +10,8 @@ known errors, so each translation change is measured on the same material.
       --speed N                                     replay N times faster (default 2; 1 = real time)
       --set live.key=value ...                      any other config override
       --name NAME                                   run folder name (default: time + settings)
+      --code DIR                                    run another checkout's code (a branch worktree;
+                                                    models/ and the venvs are linked in if missing)
   scripts/bench.py score RUN|LOG [--errors FILE]  per-error status + overall numbers
   scripts/bench.py compare RUN_A RUN_B            the two scores side by side
   scripts/bench.py check [--errors FILE]          validate the error list against the live logs
@@ -148,7 +150,11 @@ def run(args) -> pathlib.Path:
     seg_t0 = cut(audio, t_from, t_to, seg)
 
     import yaml  # noqa: PLC0415 - in .venv-mt; fine when run as `.venv-mt/bin/python scripts/bench.py`
-    cfg = yaml.safe_load((REPO / "config.yaml").read_text())
+    code = pathlib.Path(args.code).resolve() if args.code else REPO
+    for need in ("models", ".venv-mt", ".venv-nemo"):          # git-ignored, so absent in a worktree
+        if not (code / need).exists() and (REPO / need).exists():
+            (code / need).symlink_to(REPO / need)
+    cfg = yaml.safe_load((code / "config.yaml").read_text())
     speed = max(0.25, float(args.speed))
     overrides = {
         "propresenter.enabled": False, "propresenter.health_every_s": 0,
@@ -168,24 +174,24 @@ def run(args) -> pathlib.Path:
         _set(cfg, k, v)
     (rdir / "config.yaml").write_text(yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False))
     (rdir / "settings.yaml").write_text("schema_version: 1\n")
-    git = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--short", "HEAD"],
+    git = subprocess.run(["git", "-C", str(code), "rev-parse", "--short", "HEAD"],
                          capture_output=True, text=True).stdout.strip()
-    dirty = bool(subprocess.run(["git", "-C", str(REPO), "status", "--porcelain", "src", "config.yaml"],
+    dirty = bool(subprocess.run(["git", "-C", str(code), "status", "--porcelain", "src", "config.yaml"],
                                 capture_output=True, text=True).stdout.strip())
     info = {"audio": str(audio), "from": args.t_from, "to": args.t_to, "segment_start_wall": seg_t0,
             "gain": args.gain, "profile": args.profile, "mode": args.mode, "speed": speed,
-            "overrides": overrides, "git": git + ("+dirty" if dirty else ""),
+            "overrides": overrides, "git": git + ("+dirty" if dirty else ""), "code": str(code),
             "started": dt.datetime.now().isoformat(timespec="seconds")}
     (rdir / "run.json").write_text(json.dumps(info, indent=1))
     env = {**os.environ, "LIVE_LOG_DIR": str(rdir), "LIVE_FILE_SPEED": str(speed), "LIVE_FILE_T0": repr(seg_t0)}
     env.pop("LIVE_HOME", None)
-    cmd = [str(APP_PY), str(REPO / "src" / "live" / "app.py"), "--config", str(rdir / "config.yaml"),
+    cmd = [str(APP_PY), str(code / "src" / "live" / "app.py"), "--config", str(rdir / "config.yaml"),
            "--settings", str(rdir / "settings.yaml"), "--file", str(seg), "--autostart",
            "--exit-on-eof", "--headless", "--profile", args.profile, "--mode", args.mode]
     print(f"run {name}: {args.profile}, gain {args.gain:+g} dB, x{speed:g} -> {rdir}", flush=True)
     t = time.time()
     with open(rdir / "app.log", "w") as out:
-        rc = subprocess.run(cmd, cwd=str(REPO), env=env, stdout=out, stderr=subprocess.STDOUT).returncode
+        rc = subprocess.run(cmd, cwd=str(code), env=env, stdout=out, stderr=subprocess.STDOUT).returncode
     logs = sorted((rdir / "services").glob("*.jsonl"))
     info.update({"returncode": rc, "wall_s": round(time.time() - t, 1), "log": str(logs[-1]) if logs else None})
     (rdir / "run.json").write_text(json.dumps(info, indent=1))
@@ -341,6 +347,7 @@ def main() -> None:
     r.add_argument("--speed", type=float, default=2.0)
     r.add_argument("--set", action="append")
     r.add_argument("--name")
+    r.add_argument("--code")
     s = sub.add_parser("score")
     s.add_argument("run")
     s.add_argument("--errors")
