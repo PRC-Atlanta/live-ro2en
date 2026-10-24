@@ -10,6 +10,8 @@ paths:
 live:
   input_device: null          # null = system default; name or index
   input_gain_db: 0            # input gain in dB (-12..+30), the fader on the control page
+  input_gain_auto: false      # automatic gain: level each speaker toward input_gain_target_db
+  input_gain_target_db: -20   # its target speech level, dBFS (-30..-10, the meter's good band)
   language_mode: auto         # auto | ro-en | en-ro
   vad_threshold: 0.5
   min_pause_ms: 350           # pause that may close a clause

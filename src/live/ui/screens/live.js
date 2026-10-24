@@ -87,18 +87,30 @@ export function render(el, store) {
   const q = sel => f.panel.querySelector(sel);
   const meter = mountMeter(q("[data-meterbox]"));
 
-  // input gain knob: saved as live.input_gain_db; the engine applies it from the next frame
-  let gainTimer = null;
+  // input gain knob: saved as live.input_gain_db; the engine applies it from the next frame.
+  // A hand turn switches the automatic gain off (saved with the value), so the knob never
+  // fights the engine; switching Auto off keeps the gain it reached (no jump).
+  let gainTimer = null, gainAuto = !!(s.audio && s.audio.gain_auto), gainNow = 0, autoT = 0;   // autoT: our last switch
   const saveGain = async v => {
     clearTimeout(gainTimer); gainTimer = null;
-    const r = await settingsCall("PUT", "settings", { values: { "live.input_gain_db": v } });
+    const values = { "live.input_gain_db": v };
+    if (gainAuto) { values["live.input_gain_auto"] = false; gainAuto = false; gain.setAuto(false); autoT = Date.now(); }
+    const r = await settingsCall("PUT", "settings", { values });
     if (!r.ok) toast(S.toast.failed, "warn");
   };
   const gain = gainKnob(q("[data-k-gain]"), {
     label: S.meter.gain, keys: S.meter.gainKeys, min: -12, max: 30, fmt: S.meter.gainDb,
     onChange: v => { clearTimeout(gainTimer); gainTimer = setTimeout(() => saveGain(v), 150); },   // the meter follows while turning
     onCommit: saveGain,
+    auto: { label: S.meter.auto, title: S.meter.autoTitle, onToggle: async on => {
+      gainAuto = on; gain.setAuto(on); autoT = Date.now();
+      const values = { "live.input_gain_auto": on };
+      if (!on) values["live.input_gain_db"] = Math.round(gainNow);
+      const r = await settingsCall("PUT", "settings", { values });
+      if (!r.ok) toast(S.toast.failed, "warn");
+    } },
   });
+  gain.setAuto(gainAuto);
 
   let view = "screen";
   try { view = localStorage.getItem("lt.view") || "screen"; } catch { /* private mode */ }
@@ -323,7 +335,12 @@ export function render(el, store) {
   unbind.push(store.subscribe(next => {
     s = next || {};
     if (s.audio) meter.update(s.audio);
-    if (s.audio && typeof s.audio.gain_db === "number" && !gainTimer) gain.set(s.audio.gain_db);
+    if (s.audio && typeof s.audio.gain_db === "number" && !gainTimer) { gainNow = s.audio.gain_db; gain.set(s.audio.gain_db); }
+    // the switch follows the saved setting, but not a state sent before our own switch landed
+    if (s.audio && typeof s.audio.gain_auto === "boolean" && !gainTimer && s.audio.gain_auto !== gainAuto
+        && Date.now() - autoT > 2000) {
+      gainAuto = s.audio.gain_auto; gain.setAuto(gainAuto);
+    }
     paint();
   }));
   // the elapsed clock and the pills follow the meter between state updates

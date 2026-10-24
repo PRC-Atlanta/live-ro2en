@@ -1,11 +1,12 @@
 // A continuous knob (unlike knob.js, which clicks between positions): drag up/down or
 // scroll to turn it, arrow keys step 1 dB (Page Up/Down 6 dB), double-click goes back to 0.
-// gainKnob(el, {label, keys, min, max, fmt, onChange, onCommit}) -> {set(value), busy()}.
+// gainKnob(el, {label, keys, min, max, fmt, onChange, onCommit, auto}) -> {set(value), setAuto(on), busy()}.
 // onChange fires while turning, onCommit when the turn ends (pointer up, a key, a pause in
-// scrolling).
+// scrolling). auto = {label, title, onToggle(on)} adds a small Auto switch beside the label:
+// while it is on, the knob follows the engine's automatic gain (set) and shows it in cyan.
 const SWEEP = 270;                                       // degrees from min to max
 
-export function gainKnob(el, { label, keys, min, max, fmt, onChange, onCommit }) {
+export function gainKnob(el, { label, keys, min, max, fmt, onChange, onCommit, auto }) {
   el.innerHTML = `
     <div class="knobwrap gk">
       <svg viewBox="0 0 120 120" aria-hidden="true">
@@ -16,13 +17,21 @@ export function gainKnob(el, { label, keys, min, max, fmt, onChange, onCommit })
       <div class="knob" role="slider" tabindex="0" aria-label="${label}" aria-valuemin="${min}" aria-valuemax="${max}"
            title="${keys}"><span class="ptr"></span><span class="val"></span></div>
     </div>
-    <div class="label">${label}</div>`;
+    <div class="gk-foot"><span class="label">${label}</span>${auto
+      ? `<button type="button" class="gk-auto" aria-pressed="false" title="${auto.title}">${auto.label}</button>` : ""}</div>`;
   const k = el.querySelector(".knob"), ptr = k.querySelector(".ptr"), val = k.querySelector(".val");
   const fill = el.querySelector("[data-fill]");
   const frac = v => (v - min) / (max - min);
   const z = polar(frac(0)), zi = polar(frac(0), 46);
   Object.entries({ x1: zi.x, y1: zi.y, x2: z.x, y2: z.y }).forEach(([a, n]) => el.querySelector("[data-zero]").setAttribute(a, n));
   let cur = null, turning = false, wheelT = null;
+  const autoBtn = el.querySelector(".gk-auto");
+  const setAuto = on => {
+    if (!autoBtn) return;
+    autoBtn.setAttribute("aria-pressed", String(!!on));
+    el.querySelector(".gk").classList.toggle("auto", !!on);
+  };
+  if (autoBtn) autoBtn.addEventListener("click", () => auto.onToggle(autoBtn.getAttribute("aria-pressed") !== "true"));
 
   function show(v) {
     cur = v;
@@ -72,7 +81,8 @@ export function gainKnob(el, { label, keys, min, max, fmt, onChange, onCommit })
 
   show(0);
   return {
-    set(v) { if (!turning && document.activeElement !== k && v !== cur) show(v); },
+    set(v) { if (!turning && document.activeElement !== k && v !== cur) show(Math.round(v)); },
+    setAuto,
     busy: () => turning,
   };
 }
