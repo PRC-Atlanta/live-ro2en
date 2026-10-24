@@ -5,13 +5,14 @@
 stdout events (one JSON per line; docs/app_contract.md has the full list):
   {"type":"loading","label":..,"pct":..}                         while the models load
   {"type":"ready", ..., "hold": bool}
-  {"type":"level","rms_db":..,"peak_db":..,"speech":..}          ~10 Hz, for the sound meter
+  {"type":"level","rms_db":..,"peak_db":..,"speech":..,"gain_db":..,"auto":..}  ~10 Hz, the sound meter
   {"type":"input","device":name}                                 each time the mic is opened
   {"type":"listen","on":bool}                                    hold <-> live acknowledged
   {"type":"partial","text":...}                                  (UI only)
   {"type":"clause","id":n,"ro":..,"multi":..,"t_start":..,"t_end":..,"t_emit":..,"stt_s":..}
   {"type":"eof"} when a --file source ends
-stdin commands: mode, stop, listen {on}, cfg {cfg}, keywords {words}, device {device}, gain {db}.
+stdin commands: mode, stop, listen {on}, cfg {cfg}, keywords {words}, device {device}, gain {db},
+  agc {on, target_db}: automatic input gain (AutoGain) on/off and its target speech level.
 --hold: load and warm up, open the input for the level meter only, and transcribe nothing
 until {"cmd":"listen","on":true} (a --file source waits to play until then).
 The engine exits on stdin EOF and when its parent dies, so it never outlives the app.
@@ -25,6 +26,7 @@ import os
 import pathlib
 import queue
 import sys
+from collections import OrderedDict, deque
 import threading
 import time
 
@@ -49,6 +51,7 @@ from vad import FRAME, SileroVAD            # noqa: E402
 SR = 16000
 LEVEL_FLOOR_DB = -120.0                     # "minus infinity" for the meter (JSON has no -inf)
 GAIN_MIN_DB, GAIN_MAX_DB = -12.0, 30.0      # the input gain fader's range
+AGC_TARGET_DB = -20.0                       # the middle of the meter's good band (-30..-10 dBFS)
 _OUT = sys.stdout
 
 
@@ -143,6 +146,7 @@ class LevelMeter:
         self._lock = threading.Lock()
         self._sq, self._n, self._peak, self._t = 0.0, 0, 0.0, None
         self._voiced = self._last = False
+        self.gain_db, self.auto = 0.0, False       # set by SourceCtl: the knob follows the AGC
 
     def voice(self, on: bool) -> None:
         self._last = on
@@ -160,10 +164,84 @@ class LevelMeter:
             self._peak = max(self._peak, float(np.abs(x).max()) if len(x) else 0.0)
             if now - self._t >= self.every:
                 rms = (self._sq / self._n) ** 0.5 if self._n else 0.0
-                ev = {"rms_db": to_db(rms), "peak_db": to_db(self._peak), "speech": self._voiced or self._last}
+                ev = {"rms_db": to_db(rms), "peak_db": to_db(self._peak), "speech": self._voiced or self._last,
+                      "gain_db": round(self.gain_db, 1), "auto": self.auto}
                 self._sq, self._n, self._peak, self._t, self._voiced = 0.0, 0, 0.0, now, False
         if ev:
             emit({"type": "level", **ev})
+
+
+class AutoGain:
+    """Automatic input gain (idea 19): one fixed gain cannot suit a quiet reader (-41 dBFS)
+    and a duet near clipping (-5 dBFS), so the gain follows the speech level.
+
+    The level it steers by is the *raw* input (before the gain), so moving the gain never
+    moves its own measure: the capture thread notes each frame's raw rms (`raw`), the
+    processing loop says which frames the voice detector called speech (`step`). Only speech
+    frames count and only they advance the clock, so the gain freezes while nobody speaks
+    (no pumping up the room noise between speakers). Clock = the frames' own timestamps, so a
+    fast bench replay behaves as live and tests pass any times they like.
+    Not thread-safe by itself: SourceCtl holds its lock around every call."""
+
+    def __init__(self, target_db: float = AGC_TARGET_DB, window_s: float = 20.0, rate_db_s: float = 1.0,
+                 min_speech_s: float = 2.0, deadband_db: float = 1.0, limit_db: float = -1.0,
+                 limit_hold_s: float = 10.0, floor_db: float = -80.0):
+        self.on = False
+        self.target_db = target_db
+        self.window_s = window_s                 # running median over this much speech time
+        self.rate = rate_db_s                    # the slow part: at most this many dB per second of speech
+        self.min_n = int(min_speech_s * SR / FRAME)   # no verdict on less speech than this
+        self.deadband = deadband_db              # closer than this to the target: leave it
+        self.limit = 10.0 ** (limit_db / 20.0)   # the fast part: a peak past this cuts at once
+        self.limit_hold_s = limit_hold_s         # and the gain may not creep back up for a while
+        self.floor_db = floor_db                 # digital silence called speech: ignored
+        self._raw: OrderedDict = OrderedDict()   # ts -> raw rms dB, waiting for the VAD's verdict
+        self._win: deque = deque()               # (ts, raw dB) of recent speech frames
+        self._last_t = None
+        self._hold_until = float("-inf")
+
+    def raw(self, ts: float, fr: np.ndarray) -> None:
+        """Capture thread: the raw frame's level, kept until the loop reaches that frame."""
+        x = np.asarray(fr, dtype=np.float32)
+        self._raw[ts] = to_db(float(np.sqrt(np.dot(x, x) / len(x)))) if len(x) else LEVEL_FLOOR_DB
+        while len(self._raw) > 4000:             # ~2 min of frames: a long backlog just loses them
+            self._raw.popitem(last=False)
+
+    def median(self) -> float | None:
+        if len(self._win) < self.min_n:
+            return None
+        return float(np.median([d for _, d in self._win]))
+
+    def step(self, ts: float, speech: bool, gain_db: float) -> float | None:
+        """Processing loop, once per frame: the new gain in dB, or None to keep it."""
+        db = self._raw.pop(ts, None)
+        while self._raw and next(iter(self._raw)) < ts:      # frames the loop never asked about
+            self._raw.popitem(last=False)
+        if not speech or db is None or db <= self.floor_db:
+            return None
+        self._win.append((ts, db))
+        while self._win and self._win[0][0] < ts - self.window_s:
+            self._win.popleft()
+        dt = 0.0 if self._last_t is None else min(max(0.0, ts - self._last_t), 2 * FRAME / SR)
+        self._last_t = ts                        # silence in between does not count as time
+        med = self.median()
+        if not self.on or med is None:
+            return None
+        want = min(GAIN_MAX_DB, max(GAIN_MIN_DB, self.target_db - med))
+        err = want - gain_db
+        if abs(err) <= self.deadband or (err > 0 and ts < self._hold_until):
+            return None
+        return gain_db + max(-self.rate * dt, min(self.rate * dt, err))
+
+    def limited(self, ts: float | None, raw_peak: float, gain_db: float) -> float | None:
+        """Capture thread, before the frame is gained: a lower gain in dB when this frame would
+        peak past the limit (applied to this very frame, so clipping never reaches the
+        recogniser), else None."""
+        if not self.on or raw_peak <= 0 or raw_peak * 10.0 ** (gain_db / 20.0) <= self.limit:
+            return None
+        if ts is not None:
+            self._hold_until = ts + self.limit_hold_s
+        return max(GAIN_MIN_DB, 20.0 * float(np.log10(self.limit / raw_peak)))
 
 
 class SourceCtl:
@@ -173,10 +251,14 @@ class SourceCtl:
     level meter it feeds."""
 
     def __init__(self, device=None, meter: LevelMeter | None = None, hold: bool = False,
-                 gain_db: float = 0.0):
+                 gain_db: float = 0.0, auto: bool = False, target_db: float = AGC_TARGET_DB):
         self.device = device
         self.meter = meter
+        self._lock = threading.Lock()            # the gain moves from three threads (stdin, capture, loop)
+        self.agc = AutoGain()
+        self.gain_db, self.gain = 0.0, 1.0
         self.set_gain(gain_db)
+        self.set_auto(auto, target_db)
         self.changed = threading.Event()
         self.go = threading.Event()
         if not hold:
@@ -186,17 +268,56 @@ class SourceCtl:
         self.device = device
         self.changed.set()
 
+    def _put(self, db: float) -> None:
+        """Under the lock: the new gain, also told to the meter (the knob follows it)."""
+        self.gain_db = min(GAIN_MAX_DB, max(GAIN_MIN_DB, float(db)))
+        self.gain = 10.0 ** (self.gain_db / 20.0)
+        if self.meter is not None:
+            self.meter.gain_db = self.gain_db
+
     def set_gain(self, db) -> None:
         try:
-            db = min(GAIN_MAX_DB, max(GAIN_MIN_DB, float(db)))
+            db = float(db)
         except (TypeError, ValueError):
             return
-        self.gain = 10.0 ** (db / 20.0)
+        with self._lock:
+            self._put(db)
 
-    def amp(self, fr: np.ndarray) -> np.ndarray:
+    def set_auto(self, on, target_db=None) -> None:
+        """`agc` command: automatic gain on/off (off keeps the gain it reached: no jump) and
+        its target speech level, clamped to the meter's good band."""
+        with self._lock:
+            self.agc.on = bool(on)
+            try:
+                if target_db is not None:
+                    self.agc.target_db = min(-10.0, max(-30.0, float(target_db)))
+            except (TypeError, ValueError):
+                pass
+            if self.meter is not None:
+                self.meter.auto = self.agc.on
+
+    def voiced(self, ts: float, speech: bool) -> None:
+        """From the processing loop, per frame: the voice detector's verdict on the frame
+        captured at ts. The controller may move the gain; the capture thread applies it from
+        its next frame."""
+        with self._lock:
+            db = self.agc.step(ts, speech, self.gain_db)
+            if db is not None:
+                self._put(db)
+
+    def amp(self, fr: np.ndarray, ts: float | None = None) -> np.ndarray:
         """The frame with the input gain applied (clipped to full scale, as an interface would).
-        The meter, the voice detector and the recogniser all hear the gained signal."""
-        g = self.gain
+        The meter, the voice detector and the recogniser all hear the gained signal. With a
+        timestamp, the raw level is noted for the automatic gain, and its limiter may lower
+        the gain for this very frame."""
+        with self._lock:
+            if ts is not None:
+                self.agc.raw(ts, fr)
+            if self.agc.on and len(fr):
+                db = self.agc.limited(ts, float(np.abs(fr).max()), self.gain_db)
+                if db is not None:
+                    self._put(db)
+            g = self.gain
         return fr if g == 1.0 else np.clip(fr * g, -1.0, 1.0).astype(np.float32)
 
 
@@ -253,11 +374,12 @@ def file_source(path: str, realtime: bool, q: queue.Queue, stop: threading.Event
             if d > 0:
                 time.sleep(d)
         fr = x[i:i + FRAME]
+        ts = bench[1] + (i + FRAME) / SR if bench else time.time()
         if ctl is not None:
-            fr = ctl.amp(fr)
+            fr = ctl.amp(fr, ts)
         if meter is not None:
             meter.feed(fr)
-        q.put((bench[1] + (i + FRAME) / SR if bench else time.time(), fr))
+        q.put((ts, fr))
     q.put(None)
 
 
@@ -311,7 +433,7 @@ def mic_source(device, q: queue.Queue, stop: threading.Event, stall_s: float = 2
         last["t"] = time.time()
         fr = indata[:, 0].copy()
         if ctl is not None:
-            fr = ctl.amp(fr)
+            fr = ctl.amp(fr, last["t"])
         if meter is not None:
             meter.feed(fr, last["t"])
         q.put((last["t"], fr))
@@ -362,6 +484,7 @@ def loading(label: str, pct: float) -> None:
 
 class Engine:
     meter: LevelMeter | None = None                      # set by main(); tests run without one
+    ctl: SourceCtl | None = None                         # set by main(): the automatic gain hears the VAD
 
     def __init__(self, stt_name: str, mode: str, cfg: dict):
         self.mode = mode
@@ -466,8 +589,8 @@ class Engine:
                         c.ctx_n, c.max_ctx_words = int(float(v) * SR), max(1, int(float(v) * 3))
                 elif k == "en_recognizer" and v == getattr(self, "en_rec", v):
                     pass                                          # unchanged: nothing to do
-                elif k == "input_gain_db":
-                    pass                  # the capture side's: the `gain` command sets it live
+                elif k in ("input_gain_db", "input_gain_auto", "input_gain_target_db"):
+                    pass                  # the capture side's: the `gain`/`agc` commands set them live
                 elif k in ("whistle", "parakeet_stream"):
                     pass                  # recognizer options: names come by `keywords`, the rest at the next start
                 else:
@@ -598,6 +721,7 @@ class Engine:
         listening = not hold
         denied = False                                   # macOS refused the mic: silence is expected
         meter = getattr(self, "meter", None)
+        ctl = getattr(self, "ctl", None)
         frames: list[np.ndarray] = []
         probs: list[float] = []
         times: list[float] = []
@@ -695,6 +819,8 @@ class Engine:
             p = self.vad(fr)
             if meter is not None:
                 meter.voice(p >= self.pt.threshold)
+            if ctl is not None:
+                ctl.voiced(ts, p >= self.pt.threshold)      # the automatic gain steers by speech only
             if not listening:                            # hold: meter only; keep the pre-roll
                 pre = (pre + [(ts, fr)])[-self.pre_roll:]
                 continue
@@ -770,7 +896,9 @@ def main(make_engine=None) -> None:
     stop = threading.Event()
     q: queue.Queue = queue.Queue()
     meter = LevelMeter(float(cfg.get("level_hz", 10)))
-    ctl = SourceCtl(a.device, meter, hold=bool(a.hold and a.file), gain_db=cfg.get("input_gain_db", 0.0))
+    ctl = SourceCtl(a.device, meter, hold=bool(a.hold and a.file), gain_db=cfg.get("input_gain_db", 0.0),
+                    auto=bool(cfg.get("input_gain_auto", False)),
+                    target_db=cfg.get("input_gain_target_db", AGC_TARGET_DB))
     # commands and the exit watch run from the start: an app that dies while the models are
     # still loading must not leave the engine behind
     threading.Thread(target=stdin_loop, args=(sys.stdin, q, stop, ctl), daemon=True).start()
@@ -782,6 +910,7 @@ def main(make_engine=None) -> None:
         raise
     eng.realtime = (not a.file or a.realtime) and bench_clock() is None   # a fast file run is not "behind"
     eng.meter = meter
+    eng.ctl = ctl
     src = threading.Thread(target=file_source if a.file else mic_source,
                            args=((a.file, a.realtime) if a.file else (a.device,)) + (q, stop),
                            kwargs={"ctl": ctl}, daemon=True)
@@ -826,6 +955,8 @@ def stdin_loop(stdin, q: queue.Queue, stop: threading.Event, ctl: SourceCtl, gra
             ctl.switch(c.get("device"))          # the mic thread reopens on the new input
         elif c.get("cmd") == "gain":
             ctl.set_gain(c.get("db", 0.0))       # from the next frame: no reopen, no restart
+        elif c.get("cmd") == "agc":
+            ctl.set_auto(c.get("on", False), c.get("target_db"))
         elif c.get("cmd") == "stop":
             q.put(None); stop.set(); return      # sentinel first: buffered speech is still committed
     _exit_soon(q, stop, grace_s)

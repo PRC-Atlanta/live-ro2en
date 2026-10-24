@@ -168,6 +168,13 @@ main:has(> .unit) { padding: 12px 16px; }
 .gk .knob { cursor: ns-resize; touch-action: none; user-select: none; }
 .gk .knob .ptr { transition: none; }
 .gk .knob .val { font-size: 12px; }
+.gk-foot { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.gk-auto { font-family: inherit; font-size: 10px; font-weight: 600; line-height: 1; letter-spacing: .08em; text-transform: uppercase; color: var(--label);
+           background: none; border: 1px solid #1d4450; border-radius: 9px; padding: 3px 7px; cursor: pointer;
+           min-height: 22px; }
+.gk-auto[aria-pressed="true"] { color: var(--cyan-hi); border-color: var(--cyan); box-shadow: 0 0 6px rgba(70,214,236,.45); }
+.gk-auto:focus-visible { outline: 2px solid var(--cyan-hi); outline-offset: 2px; }
+.gk.auto .gk-fill { stroke: var(--cyan); }
 
 /* big dial */
 .bigwrap { position: relative; width: 260px; height: 230px; margin: 0 auto; }

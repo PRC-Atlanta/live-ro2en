@@ -39,6 +39,7 @@ FIELDS: dict[str, dict] = {
     # Basic
     "live.input_device":       {"group": "basic", "type": "device", "apply": "start"},
     "live.input_gain_db":      {"group": "basic", "type": "num", "min": -12, "max": 30, "apply": "now", "default": 0},
+    "live.input_gain_auto":    {"group": "basic", "type": "bool", "apply": "now", "default": False},
     "live.language_mode":      {"group": "basic", "type": "enum", "choices": ["auto", "ro-en", "en-ro"], "apply": "launch"},
     "live.profile":            {"group": "basic", "type": "enum", "choices": "@profiles", "apply": "launch"},
     "live.autostart":          {"group": "basic", "type": "bool", "apply": "launch", "default": False},
@@ -59,6 +60,7 @@ FIELDS: dict[str, dict] = {
     "display.network":         {"group": "propresenter", "type": "bool", "apply": "now"},
     # Advanced
     "live.en_recognizer":      {"group": "advanced", "type": "enum", "choices": ["parakeet", "parakeet-stream", "whistle"], "apply": "start"},
+    "live.input_gain_target_db": {"group": "advanced", "type": "num", "min": -30, "max": -10, "apply": "now", "default": -20},
     "live.vad_threshold":      {"group": "advanced", "type": "num", "min": 0.1, "max": 0.95, "apply": "start"},
     "live.hold_min_words":     {"group": "advanced", "type": "int", "min": 0, "max": 12, "apply": "now"},
     "live.hold_s":             {"group": "advanced", "type": "num", "min": 0, "max": 5, "apply": "now"},

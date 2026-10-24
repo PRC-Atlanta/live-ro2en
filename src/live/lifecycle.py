@@ -33,7 +33,8 @@ HERE = pathlib.Path(__file__).resolve().parent
 ENGINE_SCRIPT = HERE / "engine.py"       # tests point this at an engine without models
 ENGINE_CFG_KEYS = ("vad_threshold", "min_pause_ms", "max_clause_s", "partial_every_s", "min_commit_s",
                    "max_commit_s", "en_recognizer", "context_s", "lookahead_words", "audio_watchdog_s",
-                   "digital_silence_s", "stt_backlog_s", "catchup_max_s", "level_hz", "input_gain_db")
+                   "digital_silence_s", "stt_backlog_s", "catchup_max_s", "level_hz", "input_gain_db",
+                   "input_gain_auto", "input_gain_target_db")
 RESTARTS, RESTART_WINDOW_S = 2, 600.0    # automatic engine restarts allowed per window (long
                                          # enough to catch a crash on every model load, ~30 s)
 RESTART_WAIT_S = 180.0                   # a crash while a switch/Start holds _control waits this long
@@ -120,6 +121,7 @@ class LifecycleMixin:
         self._level_hist: collections.deque = collections.deque(maxlen=1200)   # (t, rms, peak, speech): ~2 min
         self._last_voice_t: float | None = None
         self._last_level_push = 0.0
+        self._eng_gain: float | None = None      # the gain the engine's automatic gain chose
         self.input_name: str | None = None       # the input the engine opened (its name)
         self._run_src: str | None = None         # what this service listens to (for a restart)
         self._run_device = None
@@ -339,6 +341,7 @@ class LifecycleMixin:
 
     def _engine_cfg(self) -> dict:
         return {**{k: self.lc[k] for k in ENGINE_CFG_KEYS if k in self.lc},
+                "input_gain_db": self._gain_now(),     # a restarted engine carries on from the auto gain
                 "parakeet_stream": self.cfg.get("parakeet_stream") or {},
                 "whistle": {**(self.cfg.get("whistle") or {}),   # whistle_<key> in live/profile overrides
                             **{k[len("whistle_"):]: v for k, v in self.lc.items() if k.startswith("whistle_")}}}
@@ -569,6 +572,11 @@ class LifecycleMixin:
             sup(changed)
         if "live.input_device" in changed:
             self._follow_input()
+        if "live.input_gain_auto" in changed or "live.input_gain_target_db" in changed:
+            if "live.input_gain_auto" in changed:      # until the engine reports, the knob shows the saved gain
+                self._eng_gain = None
+            self._send({"cmd": "agc", "on": self._gain_auto(),          # before `gain`: a hand turn
+                        "target_db": float(self.lc.get("input_gain_target_db", -20) or -20)})   # turns auto off first
         if "live.input_gain_db" in changed:            # the fader: live, in hold and in service
             self._send({"cmd": "gain", "db": self.lc.get("input_gain_db", 0.0)})
         if "live.language_mode" in changed and not self.running:
@@ -830,6 +838,8 @@ class LifecycleMixin:
                                      bool(ev.get("speech"))))
         if ev.get("speech"):
             self._last_voice_t = now
+        if ev.get("auto") and isinstance(ev.get("gain_db"), (int, float)):
+            self._eng_gain = float(ev["gain_db"])
         if now - self._last_level_push >= 0.05:        # the meter moves at the engine's rate (≤ 20 Hz)
             self._last_level_push = now
             self._broadcast()
@@ -912,7 +922,18 @@ class LifecycleMixin:
                 "last_voice_s": round(now - self._last_voice_t, 1) if self._last_voice_t else None,
                 "ok": not alive or (self._audio_kind is None and self.audio_fault is None),   # no known fault
                 "engine": alive,                        # false: nothing listens, so no level is no news
-                "gain_db": float(self.lc.get("input_gain_db", 0) or 0)}
+                "gain_db": self._gain_now(), "gain_auto": self._gain_auto()}
+
+    def _gain_auto(self) -> bool:
+        return bool(self.lc.get("input_gain_auto", False))
+
+    def _gain_now(self) -> float:
+        """The input gain in use: the automatic gain's latest choice while it is on (the knob
+        and the phrase log follow it), else the saved fader value."""
+        eng = getattr(self, "_eng_gain", None)
+        if self._gain_auto() and eng is not None:
+            return eng
+        return float(self.lc.get("input_gain_db", 0) or 0)
 
     def _mic_status(self) -> str:
         """The microphone permission (permissions.microphone), re-asked at most every 2 s."""

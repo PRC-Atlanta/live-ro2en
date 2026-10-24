@@ -18,6 +18,8 @@ export const FIELDS = {
   basic: [
     { key: "live.input_device", label: "Sound input", kind: "device", hint: "The input that carries the preacher's microphone." },
     { key: "live.input_gain_db", label: "Input gain (dB)", kind: "number", min: -12, max: 30, step: 1, hint: "Also the fader under the sound meter on the live screen." },
+    { key: "live.input_gain_auto", label: "Automatic gain", kind: "toggle",
+      hint: "Levels each speaker to a steady volume. Also the Auto switch on the gain knob; turning the knob switches it off." },
     { key: "live.language_mode", label: "Usual language", kind: "choice", options: MODES },
     { key: "live.profile", label: "Quality when starting", kind: "choice", options: PROFILES },
     { key: "live.autostart", label: "Start captions automatically when the app opens", kind: "toggle" },
@@ -48,6 +50,8 @@ export const FIELDS = {
     { key: "live.en_recognizer", label: "English listener", kind: "choice",
       options: [["parakeet", "Standard", "Most accurate"], ["parakeet-stream", "Streaming", "Words appear sooner"],
                 ["whistle", "Light", "Streaming, least memory"]] },
+    { key: "live.input_gain_target_db", label: "Automatic gain: speech level (dBFS)", kind: "number", min: -30, max: -10, step: 1,
+      hint: "The level the automatic gain aims for. -20 is the middle of the meter's good band." },
     { key: "live.vad_threshold", label: "Ignore music & singing", kind: "choice",
       options: [[0.35, "Gentle", "Keeps quiet speech"], [0.5, "Normal"], [0.65, "Strong", "Skips more music"]] },
     { key: "live.hold_min_words", label: "Wait for phrases shorter than (words)", kind: "number", min: 1, max: 10 },

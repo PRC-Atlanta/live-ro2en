@@ -431,7 +431,9 @@ class PipelineMixin:
         lvl = None
         if hasattr(self, "_level_over") and ev.get("t_start") is not None and ev.get("t_end") is not None:
             lvl = self._level_over(ev["t_start"], ev["t_end"])
-        return {"gain_db": float(self.lc.get("input_gain_db", 0) or 0), "level": lvl}
+        if hasattr(self, "_gain_now"):
+            return {"gain_db": self._gain_now(), "gain_auto": self._gain_auto(), "level": lvl}
+        return {"gain_db": float(self.lc.get("input_gain_db", 0) or 0), "gain_auto": False, "level": lvl}
 
     def _log_event(self, rec: dict):
         self._write_log({**rec, "time": dt.datetime.now().isoformat(timespec="milliseconds")})
