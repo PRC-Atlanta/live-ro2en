@@ -93,7 +93,7 @@ const MOCK_DEVICES = [
 const MOCK_FIELDS = {
   "live.input_device": { group: "basic", type: "device", apply: "start" },
   "live.input_gain_db": { group: "basic", type: "num", min: -12, max: 30, apply: "now", default: 0 },
-  "live.input_gain_auto": { group: "basic", type: "bool", apply: "now", default: false },
+  "live.input_gain_auto": { group: "basic", type: "bool", apply: "now", default: true },
   "live.language_mode": { group: "basic", type: "enum", choices: ["auto", "ro-en", "en-ro"], apply: "launch" },
   "live.profile": { group: "basic", type: "enum", choices: ["fast", "quality"], apply: "launch" },
   "live.autostart": { group: "basic", type: "bool", apply: "launch", default: false },
@@ -134,7 +134,7 @@ const MOCK_FIELDS = {
   "ui.show_counts": { group: "advanced", type: "bool", apply: "now", default: false },
 };
 const MOCK_DEFAULTS = {
-  "live.input_device": null, "live.input_gain_db": 0, "live.input_gain_auto": false, "live.input_gain_target_db": -20, "live.language_mode": "auto", "live.profile": "quality", "live.autostart": false,
+  "live.input_device": null, "live.input_gain_db": 0, "live.input_gain_auto": true, "live.input_gain_target_db": -20, "live.language_mode": "auto", "live.profile": "quality", "live.autostart": false,
   "propresenter.host": "127.0.0.1", "propresenter.port": 50001, "propresenter.message_id": "Live Translation",
   "propresenter.token_name": "Text", "propresenter.max_lines": 2, "propresenter.max_chars_per_line": 42,
   "propresenter.stage_message": false, "live.en_recognizer": "parakeet", "live.vad_threshold": 0.5,

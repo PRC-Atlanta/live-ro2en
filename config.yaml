@@ -43,7 +43,7 @@ bible_testset:
 live:
   input_device: null          # null = system default; name or index
   input_gain_db: 0            # input gain in dB (-12..+30), the fader on the control page
-  input_gain_auto: false      # automatic gain: level each speaker toward input_gain_target_db
+  input_gain_auto: true       # automatic gain: level each speaker toward input_gain_target_db (bench: 26 vs 21 of 52)
   input_gain_target_db: -20   # its target speech level, dBFS (-30..-10, the meter's good band)
   language_mode: auto         # auto | ro-en | en-ro
   vad_threshold: 0.5
@@ -137,7 +137,7 @@ profiles:
   quality:                    # default: Gemma 4 repairs STT slips; 3.5-5.5 s phrases read as sentences
     stt_model: jackrabbit-ctc-lm-b8
     translator: "mlx:mlx-community/gemma-4-12B-it-qat-4bit"
-    # translator_en_ro: "nllb:nllb-200-distilled-1.3B"   # idea 13: English → Romanian with NLLB (bench first)
+    translator_en_ro: "nllb:nllb-200-distilled-1.3B"   # English → Romanian: cleaner Romanian, 1.5 s (bench 2026-10-24)
     min_pause_ms: 250
     max_clause_s: 5.5         # cut long phrases at the quietest point after 5.5 s of speech
     max_chunk_s: 5.5          # and never merge fragments beyond that span

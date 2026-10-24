@@ -22,7 +22,10 @@ CFG = ROOT / "config.yaml"
 
 
 def _live(tmp_path, translate=lambda t, *a, **k: f"EN: {t}"):
-    live = Live(yaml.safe_load(open(CFG)), types.SimpleNamespace(file=None))
+    cfg = yaml.safe_load(open(CFG))
+    for prof in cfg["profiles"].values():          # these tests switch one translator per profile;
+        prof.pop("translator_en_ro", None)         # per-direction loading: test_translator_directions
+    live = Live(cfg, types.SimpleNamespace(file=None))
     live.log_path = tmp_path / "log.jsonl"
     live.tr = types.SimpleNamespace(translate=translate)
     live.pp = types.SimpleNamespace(show=lambda text: True, clear=lambda: True, last_error=None)

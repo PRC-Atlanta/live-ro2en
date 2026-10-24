@@ -279,6 +279,8 @@ def sandbox(tmp_path, monkeypatch):
 
 def _live(tmp_path, file=None):
     cfg = yaml.safe_load(open(ROOT / "config.yaml"))
+    for prof in cfg["profiles"].values():          # one translator per profile here (directions:
+        prof.pop("translator_en_ro", None)         # test_translator_directions)
     live = Live(cfg, types.SimpleNamespace(file=file, settings=str(tmp_path / "settings.yaml")))
     live.tr = types.SimpleNamespace(translate=lambda t, *a, **k: "Brothers and sisters, today we read from Romans.")
     live.pp = types.SimpleNamespace(show=lambda text: True, clear=lambda: True, last_error=None)

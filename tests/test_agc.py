@@ -186,6 +186,8 @@ def test_auto_setting_reaches_the_engine_and_the_knob_follows_it(home):
     live = make_live(home, running=True)
     sent = []
     live._send = lambda cmd: sent.append(cmd) or True
+    client(live).put("/api/settings", json={"values": {"live.input_gain_auto": False}}, headers=ME)   # on by default
+    sent.clear()
     r = client(live).put("/api/settings", json={"values": {"live.input_gain_auto": True}}, headers=ME).json()
     assert r["restart_required"] is False
     assert sent == [{"cmd": "agc", "on": True, "target_db": -20.0}]

@@ -40,7 +40,7 @@ FIELDS: dict[str, dict] = {
     # Basic
     "live.input_device":       {"group": "basic", "type": "device", "apply": "start"},
     "live.input_gain_db":      {"group": "basic", "type": "num", "min": -12, "max": 30, "apply": "now", "default": 0},
-    "live.input_gain_auto":    {"group": "basic", "type": "bool", "apply": "now", "default": False},
+    "live.input_gain_auto":    {"group": "basic", "type": "bool", "apply": "now", "default": True},
     "live.language_mode":      {"group": "basic", "type": "enum", "choices": ["auto", "ro-en", "en-ro"], "apply": "launch"},
     "live.profile":            {"group": "basic", "type": "enum", "choices": "@profiles", "apply": "launch"},
     "live.autostart":          {"group": "basic", "type": "bool", "apply": "launch", "default": False},

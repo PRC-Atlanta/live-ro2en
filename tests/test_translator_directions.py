@@ -165,7 +165,7 @@ def test_keepalive_pings_each_idle_member(tmp_path, monkeypatch):
 def test_quality_with_one_line_more_still_names_known_models():
     for name in ("config.yaml", "defaults.yaml"):
         text = (ROOT / name).read_text()
-        assert '# translator_en_ro: "nllb:nllb-200-distilled-1.3B"' in text
+        assert '\n    translator_en_ro: "nllb:nllb-200-distilled-1.3B"' in text   # Best: NLLB for EN→RO (bench)
         assert '# translator: "mlx:mlx-community/gemma-4-12B-it-qat-4bit"' in text
         cfg = yaml.safe_load(text)
         assert "translator_en_ro" not in cfg["live"]        # a profile setting, never every profile's
