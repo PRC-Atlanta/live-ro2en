@@ -14,6 +14,7 @@ import threading
 import time
 import unicodedata
 
+import guards
 import paths
 import translate
 from captions import tidy_clause
@@ -465,6 +466,7 @@ class PipelineMixin:
                        if hasattr(self.tr, "context") else self.tr.translate(p, lang, tgt, self.gloss))
             truncated |= bool(getattr(self.tr, "last_truncated", False))
         translation = " ".join(o for o in out if o)
+        translation, guard = guards.check(self.tr, src_text, translation, lang, tgt, self.gloss)
         t_tr = time.time() - t0
         self._tr_used[id(self.tr)] = time.time()
         if not translation.strip():                     # nothing new to show: not a success
@@ -513,7 +515,7 @@ class PipelineMixin:
                "caught_up": ev.get("caught_up", 1), "mt_truncated": truncated, "passthrough": passthrough,
                "pp_error": self.pp.last_error, "audio_s": ev["audio_s"], "glossary": [n_g, ok_g],
                **self._input_fields(ev),
-               **safety,
+               **safety, **guard,
                "time": dt.datetime.now().isoformat(timespec="milliseconds")}
         warn_s = float(self.lc.get("lag_warn_s", 6.0))
         late = bool(warn_s) and latency > warn_s
