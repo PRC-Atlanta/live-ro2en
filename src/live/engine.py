@@ -196,7 +196,7 @@ class LevelMeter:
             if now - self._t >= self.every:
                 rms = (self._sq / self._n) ** 0.5 if self._n else 0.0
                 ev = {"rms_db": to_db(rms), "peak_db": to_db(self._peak), "speech": self._voiced or self._last,
-                      "gain_db": round(self.gain_db, 1), "auto": self.auto}
+                      "gain_db": round(self.gain_db, 1), "auto": self.auto, "t": round(now, 3)}
                 self._sq, self._n, self._peak, self._t, self._voiced = 0.0, 0, 0.0, now, False
         if ev:
             emit({"type": "level", **ev})
@@ -409,7 +409,7 @@ def file_source(path: str, realtime: bool, q: queue.Queue, stop: threading.Event
         if ctl is not None:
             fr = ctl.amp(fr, ts)
         if meter is not None:
-            meter.feed(fr)
+            meter.feed(fr, ts if bench else None)      # bench: level times on the recording's clock
         q.put((ts, fr))
     q.put(None)
 

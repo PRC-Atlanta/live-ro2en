@@ -9,7 +9,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
 
 ---
 
-## 1. Quickest: use Gemma with short phrases instead of NLLB — `next`
+## 1. Quickest: use Gemma with short phrases instead of NLLB — `dropped` — benched 2026-10-24: Gemma on Quickest 3/4 vs NLLB 4/4 on the sermon stretch and 4× slower; Quickest stays on NLLB (the option remains, stream E)
 
 - **Evidence (2026-10-23_203552):** almost every nonsense line came from NLLB on correct
   Romanian fragments: "Cântări au fost foarte" → "Weights were very"; "La revedere, frate
@@ -23,7 +23,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   first-word time and read both transcripts.
 - **Effort:** small (config + test), plus a memory check (one model instead of two loaded).
 
-## 2. Today's names should reach the Romanian recognizer — `idea`
+## 2. Today's names should reach the Romanian recognizer — `done` — stream G: today's names boosted in the Romanian beam search + near-miss repair before translation (35 fixes, 0 false on four logs)
 
 - **Evidence:** names were the main recognition error in both modes: Puha → Pha / Puia / Gua /
   Puma / "Buha" ("Friends"); Paraschiva → Prascheva / "s-a parascheva" ("a parachute") /
@@ -35,7 +35,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   decoder), and add fuzzy spelling fixes for near-misses (Pha → Puha) before translation.
 - **Effort:** medium (decoder support needs checking in NeMo's beam decoder).
 
-## 3. Bible references: show the published verse — `idea`
+## 3. Bible references: show the published verse — `done` — stream D: announced references tell Gemma the verse (step 1); stream H: verses recognised by their words are captioned with WEB / Cornilescu (step 2)
 
 - **Evidence:** readings are announced ("Evrei, capitolul 6, versetul 10", "Proverbe,
   capitolul 19, versetul 22", "2 Corinteni 5 cu 7") and then read slowly in fragments, the case
@@ -81,7 +81,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   translating fragment by fragment.
 - **Effort:** medium; needs a full RO/EN Bible text with a license that allows it.
 
-## 4. Give Gemma its own previous translations as context — `idea`
+## 4. Give Gemma its own previous translations as context — `done` — stream D: Gemma sees its own previous (source, translation) pairs and continues cut sentences
 
 - **Today:** the prompt shows the previous Romanian chunks only ("context only, do not
   translate again"), not how they were translated.
@@ -131,7 +131,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   flow carry over; ask it to continue the sentence when the previous chunk ended mid-sentence.
 - **Effort:** small; check the prompt stays short enough for ~2 s.
 
-## 5. Numbers, negations and facts: a guard — `next`
+## 5. Numbers, negations and facts: a guard — `done` — stream A: `src/live/guards.py` (numbers to digits before EN→RO, number/negation check with one re-translation)
 
 - **Evidence:** "Nouă copii au rămas" (nine children were left) → "They left behind two
   children"; "în urmă cu aproximativ 9 ani" kept correctly in another chunk.
@@ -156,7 +156,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   re-translate once or log it for review.
 - **Effort:** small.
 
-## 6. Words that are also names — `idea`
+## 6. Words that are also names — `done` — stream D: today's names and glossary names are kept as written
 
 - **Evidence:** "Dragoș" (name, also "dear") → "Sweetie"; "Casa Dânșiilor" (their house,
   capitalised by the recogniser) → "the House of Dancers"; "Hayomin".
@@ -167,7 +167,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   ("Dânșiilor") before translation.
 - **Effort:** small.
 
-## 7. Glossary misses in Quickest — `idea`
+## 7. Glossary misses in Quickest — `done` — via the glossary rows (stream D) and NLLB only where it is good
 
 - **Evidence:** "fratele Iacov … fratele Vasile" → "the brother James … the brother Vasile"
   (glossary says Brother X); 107/112 glossary terms kept overall, the 5 misses were NLLB.
@@ -175,7 +175,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   "Brother <Name>".
 - **Effort:** tiny.
 
-## 8. Strip model control tokens from translations — `next`
+## 8. Strip model control tokens from translations — `done` — stream A: special tokens banned at generation (mlx-lm ignored the model's suppress list), output cleanup
 
 - **Evidence (2026-10-24_112256, rehearsal, 11:24:2x, EN→RO, Best):** "the school is pushing
   out as a sexual e education." → "școala<image|>împinge ca o educație sexuală." Gemma
@@ -199,7 +199,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   decode with special tokens skipped. Add a test.
 - **Effort:** tiny.
 
-## 9. Church terms the translator gets wrong: add them to the glossary — `next`
+## 9. Church terms the translator gets wrong: add them to the glossary — `done` — stream D: glossary rows + `data/bible_books.csv`
 
 - **Evidence:** "slujbă de priveghi" (the wake / vigil service; the recogniser writes
   "privechi") → "the service of the elders" (2026-10-23 20:43 and 2026-10-24 11:39, both in
@@ -232,7 +232,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   clouds" (bridegroom → bride). Glossary `mire / mirele` = `bridegroom`.
 - **Effort:** tiny (glossary.csv), no code.
 
-## 10. Empty-phrase fallback misses short Romanian words — `idea`
+## 10. Empty-phrase fallback misses short Romanian words — `done` — stream B
 
 - **Evidence (2026-10-24 11:39):** the Romanian recogniser returned nothing, the multilingual
   one heard "binecuvinteze." and it was still dropped: the fallback needs a Romanian-looking
@@ -241,7 +241,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   unless it scores as English (< 0).
 - **Effort:** tiny.
 
-## 11. Prayer language: idioms and the pronoun for God — `idea`
+## 11. Prayer language: idioms and the pronoun for God — `done` — stream D: `data/idioms.csv` injected when present; one rule for You/you
 
 - **Evidence (2026-10-24 11:41, prayer, Best):** "te rugăm frumos" (we humbly / earnestly pray)
   → "we ask beautifully"; "fiorul Duhului Tău" (the stirring/touch of Your Spirit) → "the
@@ -280,7 +280,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   "praise be"…; one rule for addressing God (always You/Your, or always you/your).
 - **Effort:** small; collect idioms as they appear.
 
-## 12. Language detection: check the Romanian recogniser before switching — `next`
+## 12. Language detection: check the Romanian recogniser before switching — `done` — stream B: the Romanian transcript as a second vote, English heard only by Parakeet translated, length floor back home
 
 - **Evidence (2026-10-24 11:42:5x, all-Romanian service, auto):** during a prayer the
   multilingual model wrote Romanian speech as "Family PUV, the most as court and the first
@@ -306,7 +306,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   "Dragosh a you be pedomun" from the English recogniser.
 - **Effort:** small; replay both service logs to tune.
 
-## 13. English → Romanian: grammar, wrong-language words, idioms — `next`
+## 13. English → Romanian: grammar, wrong-language words, idioms — `done` — stream E: translator per direction; Best uses NLLB for EN→RO (bench: 21/22 vs 20/22, 1.45 s vs 2.25 s)
 
 - **Evidence (2026-10-24 11:45, obituary read in English, Best):** "especially in these last
   few days" → "în special în acești ultimi câteva zile" (should be "în aceste ultime zile":
@@ -355,7 +355,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   `hold_min_words` for EN→RO); consider a short Romanian grammar pass if it stays fast.
 - **Effort:** small (prompt); medium if a second pass.
 
-## 14. Romanian names from the English recogniser: map back to Romanian spelling — `idea`
+## 14. Romanian names from the English recogniser: map back to Romanian spelling — `done` — stream D: English recogniser spellings mapped back to today's names
 
 - **Evidence (11:47, English obituary):** the English recogniser spells Romanian names by
   sound and EN→RO keeps them: "Ragosh / Dragosh Puha" (Dragoș Puha), "Souchava / Suchava"
@@ -368,7 +368,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   Add common places (Suceava, Vicovu de Sus, Botoșani…) to the spellings list.
 - **Effort:** small.
 
-## 15. Lists of names are dropped as "untranslated" — `idea`
+## 15. Lists of names are dropped as "untranslated" — `done` — stream B
 
 - **Evidence (11:47-11:48, the obituary's lists of siblings and children):** "Despra, Carmen,
   Dan, David, Silvia, Dir." and "Isaac, Emily, Michelle, Michael," were not shown
@@ -380,7 +380,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   words / names (or in the terms list) instead of dropping it.
 - **Effort:** tiny.
 
-## 16. Words repeated across chunk boundaries (English) — `idea`
+## 16. Words repeated across chunk boundaries (English) — `done` — stream C
 
 - **Evidence (11:47-11:49, English reader):** the end of one chunk comes back at the start of
   the next: "…May nineteenth, nineteen sixty-three." | "19, 1963, in Vicovisus…" | "Vigo
@@ -394,7 +394,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   chunk (compare normalised words, numbers as digits).
 - **Effort:** small.
 
-## 17. Don't caption garbled recognition: a confidence gate — `next`
+## 17. Don't caption garbled recognition: a confidence gate — `done` — stream B: `src/live/gate.py` (lexicon share, letter scraps, transcript disagreement)
 
 - **Evidence (2026-10-24 11:59, the end of the obituary):** probably an English sentence (or
   a mixed one) recognised as Romanian gibberish, "Meid când ține tu blăstă pha familiei.",
@@ -430,7 +430,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   with words like curse/death/hell appearing out of nowhere.
 - **Effort:** medium (expose the decoder score from the engine; tune on these two services).
 
-## 18. Songs: don't caption garbled lyrics — `idea`
+## 18. Songs: don't caption garbled lyrics — `done` — stream C: Song key; automatic detection available but off (no measurable gain on the bench)
 
 - **Evidence (2026-10-24 12:34, a duet):** sung Romanian is recognised badly and the
   translations are nonsense or misleading: "Ale, vorbește Dumnezeu!" → "But speak, God!";
@@ -448,7 +448,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   holds captions. Lyrics, if wanted, belong on ProPresenter's own song slides.
 - **Effort:** small for the toggle; medium for detection.
 
-## 19. Automatic gain: level each speaker to the ideal volume — `next` (asked for by the operator)
+## 19. Automatic gain: level each speaker to the ideal volume — `done` — stream F: on by default (bench: 26/52 vs 21/52 at a fixed +15 dB)
 
 - **Evidence (2026-10-24 service, speech level per phrase):** -41 dB (first speaker, gain +22,
   before the operator lowered it to +15), ~-30 dB (English obituary reader), -12/-10 dB
@@ -467,7 +467,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   compare speech_db spread and empty/garbled phrases before and after.
 - **Effort:** medium (engine controller + UI switch + tests).
 
-## 20. Cut phrases by words, not seconds, for slow speakers — `idea`
+## 20. Cut phrases by words, not seconds, for slow speakers — `done` — stream C: `phrase_min_words` 6 in Best, no phrase ending on a preposition
 
 - **Evidence (2026-10-24 12:43, an emotional speaker with long pauses):** "dragă comunitate
   din." | "Atlanta, frați și surori…" | "aduc condoleanțe din." | "partea familiei mele…" |
@@ -480,7 +480,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   fragments (hold_min_words 4, hold_s 1.2) is too short for slow speech.
 - **Effort:** small (pipeline hold logic + tests); watch the delay.
 
-## 21. Smoother caption flow: reveal words at speaking pace — `idea` (asked for by the operator)
+## 21. Smoother caption flow: reveal words at speaking pace — `done` — word-paced reveal + smooth roll-up (2026-10-24); the display window also lays out its own lines
 
 - **Measured (2026-10-24 service, 932 captions):** the screen changes in jumps: an update every
   4.4 s (median; 10% under 1.6 s, 10% over 7.4 s), each adding ~45 characters at once (about a
@@ -503,7 +503,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   screen changes, max characters added per change, and the delay of the last word.
 - **Effort:** small-medium (reveal timer + tests); display animation small.
 
-## 22. Gemma's notes to the reader: cut them, keep the translation — `next`
+## 22. Gemma's notes to the reader: cut them, keep the translation — `done` — stream A
 
 - **Evidence (2026-10-24 13:34):** "and to die is gain. Dragur says run his race." (Philippians
   1:21, in a eulogy) → "și a muri este profit. Dragul spune să-și<image|><image|>*(Note: The

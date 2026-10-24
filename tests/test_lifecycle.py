@@ -70,7 +70,7 @@ def test_level_is_about_minus_infinity_for_zero_frames(monkeypatch):
     m = engmod.LevelMeter(10)
     for i in range(10):                                   # 320 ms of exact zeros
         m.feed(np.zeros(engmod.FRAME, np.float32), now=100 + i * 0.032)
-    assert out and all(ev == {"type": "level", "rms_db": -120.0, "peak_db": -120.0, "speech": False,
+    assert out and all({k: v for k, v in ev.items() if k != "t"} == {"type": "level", "rms_db": -120.0, "peak_db": -120.0, "speech": False,
                                     "gain_db": 0.0, "auto": False} for ev in out)
     out.clear()
     t = np.arange(engmod.FRAME * 4) / engmod.SR

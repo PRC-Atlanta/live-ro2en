@@ -198,7 +198,7 @@
       "backlog": {"built": true,  "fields": {"ok": "bool", "s": "num", "msg": "str"}},
       "audio":   {"built": true,  "fields": {"ok": "bool", "fault": {"enum": ["no_frames", "digital_silence", "mic_denied", null]}, "msg": "str"}},
       "loading": {"built": true, "owner": "S1", "fields": {"label": "str", "pct": "num"}},
-      "level":   {"built": true, "owner": "S1", "fields": {"rms_db": "num", "peak_db": "num", "speech": "bool", "gain_db": "num", "auto": "bool"},
+      "level":   {"built": true, "owner": "S1", "fields": {"rms_db": "num", "peak_db": "num", "speech": "bool", "gain_db": "num", "auto": "bool", "t": "num"},
                   "about": "~10 Hz (level_hz, 5-20) from the capture side; dBFS, -120 = nothing (zero samples); gain_db = the input gain in use (the automatic gain's choice while auto)"},
       "listen":  {"built": true, "owner": "S1", "fields": {"on": "bool"},
                   "about": "answer to the listen command; listen off comes after the run's last clause"},
