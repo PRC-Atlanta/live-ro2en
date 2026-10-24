@@ -42,6 +42,7 @@ live:
   keep_both_translators: auto # auto = keep Fast's and Best's translators loaded when the Mac has >= 24 GB
   mt_max_ratio: 3.0           # safety: drop a translation this many times longer than the speech...
   mt_ratio_min_words: 8       # ...once it has at least this many words (mt_overlong)
+  translator_keepalive_s: 60  # translate a word on an idle translator this often, so macOS keeps it in memory (0 = off)
   mt_loop_repeats: 4          # safety: cut a phrase the translator repeats this often in one answer
   autostart: false            # app only: start captioning as soon as everything is ready
 

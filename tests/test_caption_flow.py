@@ -88,3 +88,37 @@ def test_gain_command_from_the_app():
     q, stop = queue.Queue(), threading.Event()
     engine.stdin_loop(iter(['{"cmd":"gain","db":6}\n', '{"cmd":"stop"}\n']), q, stop, ctl)
     assert np.isclose(ctl.gain, 10 ** (6 / 20))
+
+
+def test_idle_translators_are_kept_warm_without_touching_a_busy_one():
+    import types
+    import yaml
+    from live.app import Live
+    cfg = yaml.safe_load(open(pathlib.Path(__file__).resolve().parents[1] / "config.yaml"))
+    live = Live(cfg, types.SimpleNamespace(file=None))
+    calls = []
+
+    class Tr:
+        def __init__(self, name):
+            self.name, self.context = name, [("a", "b", "ro")]
+
+        def translate(self, text, *a, **k):
+            calls.append(self.name)
+            self.context = []                               # as MLXLLMTranslator does without use_context
+            return "Amen."
+    live.tr, spare = Tr("live"), Tr("spare")
+    live._spare_tr = {"spare": spare}
+    live.lc["translator_keepalive_s"] = 60
+    now = 1000.0
+    assert live._keepalive_tick(now) == 2 and sorted(calls) == ["live", "spare"]
+    assert live.tr.context == [("a", "b", "ro")]            # the live context survives the ping
+    calls.clear()
+    live._tr_used = {id(live.tr): now, id(spare): now}
+    assert live._keepalive_tick(now + 30) == 0               # used recently: left alone
+    live._proc_lock.acquire()                                # translating a phrase right now
+    try:
+        assert live._keepalive_tick(now + 120) == 1 and calls == ["spare"]
+    finally:
+        live._proc_lock.release()
+    live.lc["translator_keepalive_s"] = 0
+    assert live._keepalive_tick(now + 999) == 0             # off

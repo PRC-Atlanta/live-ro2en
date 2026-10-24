@@ -121,12 +121,17 @@ def mask(text: str, pat: re.Pattern | None, sub: str = "***") -> tuple[str, int]
     return text, len(spans)
 
 
+KEEPALIVE_TICK_S = 15.0                  # how often idle translators are checked
+
 class PipelineMixin:
     RESTART_KEYS = RESTART_KEYS
 
     def _mixin_init(self):
         self.auto_actions: list[dict] = []     # what the app did by itself, for the operator
         self._spare_tr: dict = {}              # translator spec -> loaded translator (hot switch)
+        self._spare_lock = threading.Lock()    # a spare being kept warm is not handed over mid-call
+        self._tr_used: dict = {}               # id(translator) -> when it last ran (keep-warm)
+        self._keepalive: threading.Thread | None = None
         self._recent_out: collections.deque = collections.deque(maxlen=2)   # (source key, output key)
         self._current: dict | None = None      # the clause the worker is on (backlog)
         self._block: tuple = (None, None)      # (words, compiled pattern)
@@ -179,7 +184,61 @@ class PipelineMixin:
         tr.translate("Bună dimineața.", "ro", "en", self.gloss)    # warm-up
         if hasattr(tr, "reset_context"):
             tr.reset_context()
+        self._tr_used[id(tr)] = time.time()
+        self._start_keepalive()
         return tr
+
+    # --- keep-warm: an idle model is paged out by macOS and its next phrase waits for it ------
+    def _start_keepalive(self):
+        """One background thread per app: every few seconds, `_keepalive_tick`."""
+        t = getattr(self, "_keepalive", None)
+        if t is not None and t.is_alive():
+            return
+        def loop():
+            while not getattr(self, "_shutting_down", False):
+                time.sleep(KEEPALIVE_TICK_S)
+                try:
+                    self._keepalive_tick()
+                except Exception:                # noqa: BLE001 - never take the app down
+                    pass
+        self._keepalive = threading.Thread(target=loop, daemon=True, name="translator-keepalive")
+        self._keepalive.start()
+
+    def _keepalive_tick(self, now: float | None = None) -> int:
+        """Translate a word on every loaded translator idle for translator_keepalive_s, so its
+        weights stay in memory: after ~20 min as an unused spare, Gemma's first phrase took
+        ~27 s (paged out). The live translator only when it is free; its context is kept.
+        Returns how many were touched."""
+        every = float(self.lc.get("translator_keepalive_s", 60) or 0)
+        if not every:
+            return 0
+        now = time.time() if now is None else now
+        n = 0
+        for tr in list(self._spare_tr.values()):
+            if now - self._tr_used.get(id(tr), 0) < every:
+                continue
+            with self._spare_lock:
+                if tr in self._spare_tr.values():     # not handed over meanwhile
+                    self._ping(tr)
+                    n += 1
+        tr = self.tr
+        if tr is not None and now - self._tr_used.get(id(tr), 0) >= every and self._proc_lock.acquire(blocking=False):
+            try:
+                if tr is self.tr:
+                    self._ping(tr)
+                    n += 1
+            finally:
+                self._proc_lock.release()
+        return n
+
+    def _ping(self, tr):
+        ctx = list(tr.context) if isinstance(getattr(tr, "context", None), list) else None
+        try:
+            tr.translate("Amin.", "ro", "en")
+        finally:
+            if ctx is not None:
+                tr.context = ctx
+            self._tr_used[id(tr)] = time.time()
 
     def preload_translators(self):
         """Load every profile's translator that is not loaded yet, as spares, so the first
@@ -219,7 +278,8 @@ class PipelineMixin:
         keep, loaded, t0 = self._keep_both_translators(), False, time.time()
         tr = None
         if spec != old_spec:
-            tr = self._spare_tr.pop(spec, None)
+            with self._spare_lock:               # waits for a keep-warm call on it to end
+                tr = self._spare_tr.pop(spec, None)
             if tr is None and keep and self.running:
                 tr, loaded = self._load_warm(new), True      # the old one translates meanwhile
         wait_s = 0.0
@@ -398,6 +458,7 @@ class PipelineMixin:
             truncated |= bool(getattr(self.tr, "last_truncated", False))
         translation = " ".join(o for o in out if o)
         t_tr = time.time() - t0
+        self._tr_used[id(self.tr)] = time.time()
         if not translation.strip():                     # nothing new to show: not a success
             self._log_failure(ev, "empty_mt", lang=lang, source=src_text, mt_s=round(t_tr, 3))
             return

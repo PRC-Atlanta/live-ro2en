@@ -192,6 +192,9 @@ class LifecycleMixin:
                     tr.context_clauses = int(self.lc.get("context_clauses", 2))
                 tr.translate("Bună dimineața.", "ro", "en", self.gloss)    # warm-up
                 self.tr = tr
+                if hasattr(self, "_start_keepalive"):
+                    self._tr_used[id(tr)] = time.time()
+                    self._start_keepalive()        # keeps it in memory while idle (pipeline.py)
 
     def preload(self, device=None, wait: bool = False):
         """Load everything now and keep it warm, so Start is instant: the translator here and
