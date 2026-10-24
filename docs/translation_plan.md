@@ -155,3 +155,26 @@ workstream owns specific functions so merges stay mechanical.
 Each session brief names: its stream, the files it owns, the ideas and their evidence lines,
 the bench stretch it will be judged on, "unit tests only, no bench runs, no app on 8765",
 and "commit on your branch, don't merge or push".
+
+---
+
+## Results (bench, 2026-10-24 recording 12:42-13:50, 52 known errors)
+
+| Run | Right | Still wrong | Model junk | Captions < 5 words | Median translation |
+|---|---|---|---|---|---|
+| Code before this plan (`base-quality-g15`) | 21 | 31 | 5 | 17% | 1.32 s |
+| Wave 1 + wave 2, Gemma both ways (`full-int`) | 42 | 10 | 0 | 4% | 2.00 s |
+| + NLLB for EN→RO, automatic gain on (`full-final`) | 41 | 11 | 0 | 4% | 1.81 s |
+| + today's names entered (`full-final-terms`) | **47** | **5** | **0** | **4%** | **1.72 s** |
+
+Two runs of the same code differ by about one error. Stretch runs agreed: the mixed RO/EN eulogy
+went from 12/22 to 21/22, the sermon from 1/4 to 3/4. Quickest on Gemma was dropped (no better,
+4× slower); automatic song detection had no measurable effect and stays off (the Song key does it).
+
+The 5 left are speech-recognition errors ("pool" → "poll", "nume" → "numeri", "model" → "modern",
+"frate de sânge" heard as "de corp", a Romanian aside heard as English gibberish): the next lever is
+the Romanian recogniser itself (`src/finetune/`), not translation.
+
+The cost: phrases are longer and the prompt richer, so translation takes ~0.4 s more, and slow
+speakers' 3-word pieces wait for 6 words (about +1 s on those phrases). First-word delay should be
+re-measured at real speed (`--speed 1`) or in the next monitored service.
