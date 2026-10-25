@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import datetime as dt
 import statistics
+import time
 import traceback
 
 import paths
+
+LAG_HOLD_S = 30.0          # the dial's lag empties this long after the last translated line
 
 
 class StateMixin:
@@ -23,6 +26,7 @@ class StateMixin:
                   "lang": self.lang.current, "partial": self.partial,
                   "latency_last": round(lat[-1], 2) if lat else None,
                   "latency_median": round(statistics.median(lat), 2) if lat else None,
+                  "lag_s": self._lag_s(),
                   "lines": [{"src": h["source"], "dst": h["translation"], "lat": h["latency_s"],
                              "lang": h["lang"]} for h in self.history],
                   "screen": self.caps.text, "pp_error": self.pp.last_error,
@@ -35,6 +39,14 @@ class StateMixin:
             except Exception:                # noqa: BLE001  one module's bug must not stop /ws and every reply
                 self._state_failed(fn)
         return st
+
+    def _lag_s(self) -> float | None:
+        """The translation lag the dial shows: the newest translated line's delay, whether or not
+        it reached ProPresenter (Hide, ProPresenter off); None once nothing new came for LAG_HOLD_S."""
+        h = next((h for h in reversed(self.history) if h.get("translation") and h.get("latency_s") is not None), None)
+        if h is None or time.time() - h.get("t_display", 0) > LAG_HOLD_S:
+            return None
+        return round(h["latency_s"], 1)
 
     def _state_failed(self, fn):
         """Log a failing provider to app_errors.log, once per provider (state() runs many times a second)."""

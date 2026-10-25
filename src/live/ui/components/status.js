@@ -32,7 +32,7 @@ export function stateLine(s) {
 // delay shown on the arc: how far captions trail the speaker
 export function delayOf(s) {
   if (!isLive(s)) return null;
-  return s.pace?.behind_s ?? s.latency_last ?? null;
+  return s.pace?.behind_s ?? s.lag_s ?? null;     // translation lag, ProPresenter or not
 }
 
 // pill: [cls '', 'warn', 'err'] + words. Sound uses the meter's verdict key.

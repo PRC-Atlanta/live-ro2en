@@ -18,7 +18,7 @@ const PROBLEMS = {
 export function baseState() {
   return {
     running: false, status: "idle", mode: "auto", profile: "fast", profiles: ["fast", "quality"],
-    lang: "ro", partial: "", latency_last: null, latency_median: null, lines: [], screen: "",
+    lang: "ro", partial: "", latency_last: null, latency_median: null, lag_s: null, lines: [], screen: "",
     pp_error: null, warnings: [], counts: {}, alerts: [],
     translator: "nllb:nllb-200-distilled-1.3B", stt: "jackrabbit-ctc-lm-b8",
     phase: "ready", progress: null,
@@ -46,7 +46,7 @@ const SCENARIOS = {
     return {
       phase: "captioning", running: true, status: "listening (default)", lines,
       screen: lines.slice(-2).map(l => l.dst).join("\n"), partial: talking ? "Să ne gândim" : "",
-      latency_last: 1.6, latency_median: 1.7, counts: { ok: n },
+      latency_last: 1.6, latency_median: 1.7, lag_s: 1.6, counts: { ok: n },
       audio: { ...baseState().audio, rms_db: rms, peak_db: rms + 8, speech: talking, last_voice_s: talking ? 0 : 1.2 },
       elapsed_s: t / 4, first_word_ok_pct: 96,
     };

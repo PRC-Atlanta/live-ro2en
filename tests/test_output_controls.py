@@ -118,6 +118,17 @@ def test_hide_blanks_and_makes_no_propresenter_call(tmp_path, mock):
     assert [r["on"] for r in _log(live) if r.get("event") == "pause"] == [True, False]
 
 
+def test_lag_counts_every_translated_line_and_empties_after_a_while(tmp_path, mock):
+    live = _live(tmp_path, mock.port)
+    assert live.state()["lag_s"] is None
+    now = time.time()
+    live.history = [{"source": "a", "translation": "a", "latency_s": 2.4, "lang": "ro", "t_display": now - 5,
+                     "outcome": "paused"}]                       # hidden: never reached ProPresenter
+    assert live.state()["lag_s"] == 2.4 and live.state()["latency_last"] is None
+    live.history[0]["t_display"] = now - 60                         # nothing new for a minute
+    assert live.state()["lag_s"] is None
+
+
 def test_show_hidden_keeps_the_captions_display_but_not_propresenter(tmp_path, mock):
     live = _live(tmp_path, mock.port)
     live.cfg.setdefault("display", {})["show_hidden"] = True

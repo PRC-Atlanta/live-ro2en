@@ -71,6 +71,7 @@
     "lang":           {"type": {"enum": ["ro", "en"]}, "built": true},
     "partial":        {"type": "str", "built": true},
     "latency_last":   {"type": "num|null", "built": true},
+    "lag_s":          {"type": "num|null", "built": true},
     "latency_median": {"type": "num|null", "built": true},
     "lines":          {"type": {"list": "@line"}, "built": true},
     "screen":         {"type": "str", "built": true},
