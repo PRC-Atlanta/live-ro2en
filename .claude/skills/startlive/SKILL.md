@@ -21,6 +21,15 @@ details of the server, the logs and known behaviour; read it if you need more th
 3. Wait until ready, one Bash call:
    `for i in $(seq 1 90); do python3 scripts/livectl.py get state 2>/dev/null | grep -Eq '"phase": "(ready|listening|captioning)"' && break; sleep 2; done; python3 scripts/livectl.py status`
 
+## 1b. Start the reference recording
+
+In a second Terminal panel tab (title `Service recording`), on the app's input (the `input:`
+line of `livectl.py status`):
+`cd "/Users/bentarcau/Code/Live RO2EN" && .venv-nemo/bin/python scripts/record_input.py --rate 16000 --device "<input device>"`
+It records the raw input (before the app's gain) to `logs/recordings/<date>_<time>.wav`,
+~2 MB a minute, alongside the app (macOS lets both read the device). It is only for reference:
+after the service it is cut down to short clips (step 4) and the full file deleted.
+
 ## 2. Level check (report, don't change)
 
 `python3 scripts/livectl.py watch 2 5`. Speech should sit around -30..-10 dB with peaks
@@ -48,16 +57,33 @@ On each event:
   stiff English, run-on or chopped text, Scripture, untranslated words, recognition errors
   (the Romanian itself is wrong). Do not narrate routine digests: reply with at most one
   short line, or nothing worth saying ("ok"), unless something matters.
+- **A mistake worth hearing again** (wrong meaning, garbage, a name, a wrong switch, a dropped
+  line): mark it so its audio is kept —
+  `python3 scripts/clip_recording.py mark --at HH:MM:SS "what went wrong"` (the phrase's time
+  from the digest). Marks are kept first when the recording is cut down.
 - **An idea:** add it to `docs/translation_ideas.md` following the format there: evidence
   (log name, time, the phrase pair), the change, effort. If it matches an existing idea, add
   the new evidence to that one instead. Prefer ideas with a clear cause (recogniser vs
   translator vs segmentation vs prompt) over vague ones. Don't implement anything; the user
   asks for ideas when they have time.
 
-## 4. When the app stops (or the user says the session is over)
+## 4. When the service is over: stop the recorder, then wait
+
+The user disconnects and travels right after a service. **Only stop the recording** (Ctrl-C in
+its tab via `mcp__terminal__stop_terminal_tab`, so the WAV closes cleanly before the lid
+closes), stop re-arming the Monitor, say so in one line, and **start nothing else** — no
+analysis, clips, deleting or bench runs — until the user is back and says to go on. Leave the
+app as the user wants it (ask; don't stop it on your own).
+
+## 5. When the user is back and says to go on
 
 1. `python3 scripts/livectl.py summary` (newest log) and, for quality, the full transcript:
    `python3 scripts/livectl.py transcript "" <scratchpad>/transcript.txt`, then read it all.
 2. Update `docs/translation_ideas.md` with what the whole session shows.
-3. Tell the user in a few lines: how it went (timings, problems), and how many ideas were
-   added or strengthened, with their titles. Offer nothing else unless asked.
+3. Cut the recording down: `python3 scripts/clip_recording.py plan` (check it: marks + what the
+   log flags, ≤ 90 s per clip, ≤ 30 min in all), then
+   `python3 scripts/clip_recording.py cut --delete-full`. Clips land in
+   `logs/recordings/clips/<recording>/` with an `index.md`; each replays on the bench
+   (`scripts/bench.py run <clip>.wav`). Add the new mistakes to the bench's error list if useful.
+4. Tell the user in a few lines: how it went (timings, problems), how many ideas were added or
+   strengthened (titles), and how many clips were kept. Offer nothing else unless asked.

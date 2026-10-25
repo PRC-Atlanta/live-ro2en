@@ -84,6 +84,11 @@ keep their shared sections identical, so change both.
 
 ## After a service
 
+Reference audio (when recorded): `scripts/record_input.py` writes the raw input next to the
+app; `scripts/clip_recording.py mark|plan|cut --delete-full` keeps only clips around marks and
+log-flagged moments (`logs/recordings/clips/`), replayable with `scripts/bench.py run`. Never
+cut or delete while the user is away unless they said so.
+
 ```
 python3 scripts/livectl.py summary                     # newest log; or summary 2026-10-23_2035
 python3 scripts/livectl.py transcript "" <scratchpad>/transcript.txt   # then Read it whole

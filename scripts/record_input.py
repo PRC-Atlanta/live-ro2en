@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Record the live input to a WAV file, alongside the app (macOS lets both read the device).
 
-  .venv-nemo/bin/python scripts/record_input.py [--device "Dante Virtual Soundcard"] [--out DIR]
+  .venv-nemo/bin/python scripts/record_input.py [--device "Dante Virtual Soundcard"] [--out DIR] [--rate 16000]
 
-Records channel 1 (the channel the engine uses) at the device's own rate, 16-bit, before any
+Records channel 1 (the channel the engine uses) at the device's own rate (or --rate: 16000 is
+what the recogniser uses, ~2 MB a minute; macOS converts), 16-bit, before any
 app gain, so any gain can be applied afterwards. Writes logs/recordings/<date>_<time>.wav and a
 .json beside it with the wall-clock start time (to line the audio up with the service log's
 t_start/t_end). Ctrl-C (or SIGTERM) stops and closes the file cleanly.
@@ -30,9 +31,10 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default="Dante Virtual Soundcard")
     ap.add_argument("--out", default=str(REPO / "logs" / "recordings"))
+    ap.add_argument("--rate", type=int, default=0, help="sample rate (0 = the device's own)")
     a = ap.parse_args()
     info = sd.query_devices(a.device, "input")
-    sr = int(info["default_samplerate"])
+    sr = a.rate or int(info["default_samplerate"])
     out = pathlib.Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     stem = dt.datetime.now().strftime("%Y-%m-%d_%H%M%S")
