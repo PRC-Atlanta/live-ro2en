@@ -3,7 +3,9 @@ projector, opened from the toolbar in its own window. With `display.network: tru
 page is also served to other devices on the local network by a second, VIEW-ONLY server
 (`display.port`, default 8766): it answers GET / (the page) and /ws (the caption box, Hide
 and Hold, the display settings), and nothing else, so turning it on cannot let anyone on
-the church Wi-Fi control the service. Mixed into live.app.Live."""
+the church Wi-Fi control the service. `display.remote: true` runs the same server for Live
+Remote, whose PIN-protected /remote/* routes are in remote.py; the page and its feed are
+still served only with `display.network`. Mixed into live.app.Live."""
 
 import asyncio
 import json
@@ -15,7 +17,7 @@ import threading
 
 PAGE = pathlib.Path(__file__).resolve().parent / "ui" / "display.html"
 DEFAULTS = {"size": "large", "lines": 2, "colors": "white_on_black", "network": False, "port": 8766,
-            "show_hidden": False}
+            "show_hidden": False, "remote": False}
 
 
 def local_name() -> str:
@@ -37,6 +39,7 @@ class DisplayMixin:
         self._net_thread: threading.Thread | None = None
         self._net_error: str | None = None
         self._net_host: str | None = None
+        self._net_lock = threading.Lock()              # startup and a settings change never both start one
         self.register_state(lambda: {"display": self._display_state()})
 
     def _display_cfg(self) -> dict:
@@ -46,8 +49,8 @@ class DisplayMixin:
         d = self._display_cfg()
         on = self._net_server is not None and self._net_error is None
         return {"size": d["size"], "lines": int(d["lines"]), "colors": d["colors"],
-                "network": bool(d["network"]), "show_hidden": bool(d["show_hidden"]),
-                "url": f"http://{self._net_host}:{d['port']}/" if on and self._net_host else None,
+                "network": bool(d["network"]), "show_hidden": bool(d["show_hidden"]), "remote": bool(d["remote"]),
+                "url": f"http://{self._net_host}:{d['port']}/" if on and self._net_host and d["network"] else None,
                 "network_error": self._net_error}
 
     def display_feed(self) -> dict:
@@ -60,12 +63,18 @@ class DisplayMixin:
 
     # --- the view-only network server ---------------------------------------------------
     def start_display_server(self):
-        """Start or stop the network page to match `display.network` (idempotent)."""
-        want = bool(self._display_cfg()["network"])
-        if want and self._net_server is None:
-            self._net_start()
-        elif not want and self._net_server is not None:
-            self._net_stop()
+        """Start or stop the network server to match `display.network` / `display.remote`
+        (idempotent), and the Bonjour advert with it."""
+        with self._net_lock:
+            d = self._display_cfg()
+            want = bool(d["network"]) or bool(d["remote"])
+            if want and self._net_server is None:
+                self._net_start()
+            elif not want and self._net_server is not None:
+                self._net_stop()
+            elif not want:
+                self._net_error = None
+            self._bonjour_sync()
 
     def _net_start(self):
         port = int(self._display_cfg()["port"])
@@ -87,6 +96,7 @@ class DisplayMixin:
         self._net_thread.start()
 
     def _net_stop(self):
+        self._bonjour_stop()
         server, self._net_server = self._net_server, None
         if server is not None:
             server.should_exit = True
@@ -95,23 +105,32 @@ class DisplayMixin:
             th.join(5)
 
     def _display_changed(self, changed: dict):
-        if "display.network" in changed:
+        if "display.network" in changed or "display.remote" in changed:
             self.start_display_server()
         self._broadcast()
 
 
 def network_app(live):
-    """The view-only server: the page and a read-only feed. No other route exists."""
-    from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+    """The view-only server: the page and a read-only feed (with `display.network`), and
+    Live Remote's PIN-protected /remote/* (with `display.remote`). No other route exists."""
+    from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
     from fastapi.responses import HTMLResponse
+
+    import remote
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    shown = lambda: bool(live._display_cfg()["network"])   # noqa: E731
 
     @app.get("/")
     def page():
+        if not shown():
+            raise HTTPException(404)
         return HTMLResponse(PAGE.read_text(), headers={"Cache-Control": "no-cache"})
 
     @app.websocket("/ws")
     async def feed(ws: WebSocket):
+        if not shown():
+            await ws.close()
+            return
         await ws.accept()
         last = None
         try:
@@ -124,4 +143,5 @@ def network_app(live):
         except (WebSocketDisconnect, RuntimeError, OSError):
             return
 
+    remote.add_routes(app, live)
     return app

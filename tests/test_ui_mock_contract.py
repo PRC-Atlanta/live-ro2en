@@ -60,6 +60,8 @@ CALLS = [
     ["settings", "POST", "terms", {"lines": 3}],
     ["settings", "GET", "terms", None],
     ["settings", "POST", "mode", {"mode": "en-ro"}],
+    ["settings", "PUT", "settings", {"values": {"display.remote": True}}],
+    ["settings", "POST", "remote/pin", {}],
     ["settings_live", "PUT", "settings", {"values": {"live.vad_threshold": 0.65}}],
     ["settings_live", "POST", "setup/download", {"profile": "fast"}],
     ["after", "POST", "rate", {"score": 4, "tags": ["Too slow"], "note": "fine"}],
@@ -154,7 +156,7 @@ def test_the_mock_answers_like_the_backend_where_it_matters(answers):
     assert resumed["state"] == "running" and resumed["pct"] >= dl["pct"], "a new download resumes the partial files"
     assert by[("fresh_install", "GET", "setup")][-1]["data"]["profiles"]["quality"]["ready"]
     puts = by[("settings", "PUT", "settings")]
-    assert [p["status"] for p in puts] == [200, 200, 400, 400, 400, 200, 200, 200]
+    assert [p["status"] for p in puts] == [200, 200, 400, 400, 400, 200, 200, 200, 200]
     assert puts[2]["data"] == {"error": "rejected", "keys": ["live.translator"], "detail": "these settings cannot be changed here"}
     assert puts[3]["data"]["keys"] == ["live"], "nested {live: {...}} is not the API's shape"
     assert set(puts[4]["data"]["detail"]) == {"propresenter.port", "propresenter.host"}
@@ -170,6 +172,8 @@ def test_the_mock_answers_like_the_backend_where_it_matters(answers):
     assert kw["user"] == ["Ionuț Pop", "Pastor Brânzei"] and kw["bundled"]
     assert by[("settings", "GET", "terms")][1]["data"] == {"lines": ["Ionut Pop = Ionuț Pop", "Filadelfia"], "n": 2}
     assert by[("settings", "POST", "terms")][0]["data"]["session_terms_n"] == 2
+    rm = by[("settings", "POST", "remote/pin")][0]["data"]["remote"]
+    assert rm["enabled"] is True and len(rm["pin"]) == 6 and rm["pin"].isdigit()
 
 
 def test_the_real_backend_answers_with_the_same_types(tmp_path, monkeypatch):

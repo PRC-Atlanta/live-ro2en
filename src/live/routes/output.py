@@ -102,6 +102,11 @@ def router(live) -> APIRouter:
     async def pp_test_caption():
         return await run(live.pp_test_caption)
 
+    @r.post("/api/remote/pin")
+    async def remote_pin():
+        await run(live.renew_remote_pin)
+        return live.state()
+
     @r.post("/api/reconnect")
     async def reconnect():
         await run(live.reconnect)

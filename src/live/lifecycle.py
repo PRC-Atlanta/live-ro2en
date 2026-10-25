@@ -552,6 +552,8 @@ class LifecycleMixin:
         finally:
             if hasattr(self, "stop_pp_monitor"):
                 self.stop_pp_monitor()
+            if hasattr(self, "_bonjour_stop"):
+                self._bonjour_stop()              # Live Remote stops finding this Mac
             self._drop_pidfiles()
 
     def set_mode(self, mode: str):

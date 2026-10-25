@@ -92,7 +92,7 @@
                        "built": true, "owner": "S2"},
     "display":        {"type": {"object": {"size": {"enum": ["medium", "large", "x-large"]}, "lines": "int",
                                            "colors": {"enum": ["white_on_black", "yellow_on_black", "black_on_white"]},
-                                           "network": "bool", "show_hidden": "bool", "url": "str|null", "network_error": "str|null"}},
+                                           "network": "bool", "show_hidden": "bool", "remote": "bool", "url": "str|null", "network_error": "str|null"}},
                        "built": true, "owner": "S11"},
     "pace":           {"type": {"object": {"state": {"enum": ["ok", "slow", "behind"]}, "behind_s": "num|null"}}, "built": true, "owner": "S4"},
     "backlog":        {"type": {"object": {"n": "int", "oldest_s": "num|null"}}, "built": true, "owner": "S4"},
@@ -109,6 +109,7 @@
     "rehearsal":      {"type": "bool", "built": true, "owner": "S9"},
     "session_terms_n": {"type": "int", "built": true, "owner": "S3"},
     "corrections_n":  {"type": "int", "built": true, "owner": "S2"},
+    "remote":         {"type": {"object": {"enabled": "bool", "pin": "str|null", "clients": "int"}}, "built": true, "owner": "S11"},
     "preflight":      {"type": "@preflight", "nullable": true, "built": true, "owner": "S9"}
   },
 
@@ -149,6 +150,7 @@
      "errors": {"400": ["@bad_request"]}},
     {"method": "POST", "path": "/api/pp/test",      "owner": "S2", "built": true, "response": "@pp_test"},
     {"method": "POST", "path": "/api/pp/test_caption", "owner": "S2", "built": true, "response": "@pp_test_caption"},
+    {"method": "POST", "path": "/api/remote/pin",   "owner": "S11", "built": true, "response": "@state"},
     {"method": "POST", "path": "/api/reconnect",    "owner": "S2", "built": true, "response": "@state"},
 
     {"method": "GET",  "path": "/api/settings",     "owner": "S3", "built": true, "response": "@settings",

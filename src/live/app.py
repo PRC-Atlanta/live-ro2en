@@ -48,6 +48,7 @@ from langid import LangTracker                       # noqa: E402
 from lifecycle import LifecycleMixin                 # noqa: E402
 from output import OutputMixin                       # noqa: E402
 from display import DisplayMixin                     # noqa: E402
+from remote import RemoteMixin                       # noqa: E402
 from pipeline import PipelineMixin                   # noqa: E402
 from propresenter import ProPresenter, make as make_pp   # noqa: E402,F401
 import settings                                      # noqa: E402
@@ -60,7 +61,7 @@ from pipeline import is_echo, merge_clauses, pack_parts            # noqa: E402,
 from security import LOOPBACK, allowed_hosts, request_allowed      # noqa: E402,F401
 
 
-class Live(LifecycleMixin, PipelineMixin, OutputMixin, DisplayMixin, SessionMixin, StateMixin, SettingsMixin):
+class Live(LifecycleMixin, PipelineMixin, OutputMixin, DisplayMixin, RemoteMixin, SessionMixin, StateMixin, SettingsMixin):
     """One service: the engine child, the translator, ProPresenter and the control state.
     The behaviour lives in the mixins (lifecycle, pipeline, output, state); this is the data."""
 

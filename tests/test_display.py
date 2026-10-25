@@ -77,7 +77,8 @@ def test_starting_with_propresenter_off_never_connects(tmp_path, monkeypatch):
 def test_display_settings_reach_the_state(tmp_path, monkeypatch):
     live = _live(tmp_path, monkeypatch)
     assert live.state()["display"] == {"size": "large", "lines": 2, "colors": "white_on_black",
-                                       "network": False, "show_hidden": False, "url": None, "network_error": None}
+                                       "network": False, "show_hidden": False, "remote": False, "url": None,
+                                       "network_error": None}
     assert live.put_settings({"values": {"display.size": "x-large", "display.lines": 1,
                                          "display.colors": "yellow_on_black"}})[0] == 200
     d = live.state()["display"]

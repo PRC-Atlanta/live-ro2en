@@ -116,6 +116,8 @@ display:
   network: false
   port: 8766
   show_hidden: false          # true: Hide blanks ProPresenter only; the captions display goes on
+  remote: false               # true: Live Remote on the ProPresenter Mac may hide, hold, clear, remove last,
+                              # song and send today's names (PIN in Settings → ProPresenter; same port)
 
 # Words or phrases that never reach the screen (any case, diacritics optional)
 safety:

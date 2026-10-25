@@ -48,6 +48,11 @@ export const FIELDS = {
     { key: "display.show_hidden", label: "Keep showing while captions are hidden", kind: "toggle",
       hint: "Hide then blanks ProPresenter only: this display and the app's own screen keep showing the translation." },
   ],
+  // Live Remote: the toolbar app on the ProPresenter Mac (remote.py)
+  remote: [
+    { key: "display.remote", label: "Allow Live Remote on this network", kind: "toggle",
+      hint: "Hide, hold, clear, remove last, song and today's names from another Mac. Start, stop and settings stay here." },
+  ],
   advanced: [
     { key: "live.input_gain_target_db", label: "Auto gain: speech level (dBFS)", kind: "number", min: -30, max: -10, step: 1,
       hint: "The level auto gain aims for. -20 is the middle of the meter's good band." },

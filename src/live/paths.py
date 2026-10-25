@@ -112,6 +112,11 @@ def settings_file(root: pathlib.Path = REPO) -> pathlib.Path:
     return user_dir(root) / "settings.yaml"
 
 
+def remote_pin_file(root: pathlib.Path = REPO) -> pathlib.Path:
+    """Live Remote's PIN (remote.py), next to settings.yaml but never exported with it."""
+    return user_dir(root) / "remote_pin"
+
+
 def user_keywords(root: pathlib.Path = REPO) -> pathlib.Path:
     """Names & words the user added to the bundled keywords_en.txt."""
     return user_dir(root) / "keywords_en.txt"

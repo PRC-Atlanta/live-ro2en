@@ -60,6 +60,7 @@ FIELDS: dict[str, dict] = {
     "display.colors":          {"group": "propresenter", "type": "enum", "choices": ["white_on_black", "yellow_on_black", "black_on_white"], "apply": "now"},
     "display.network":         {"group": "propresenter", "type": "bool", "apply": "now"},
     "display.show_hidden":     {"group": "propresenter", "type": "bool", "apply": "now"},
+    "display.remote":          {"group": "propresenter", "type": "bool", "apply": "now"},
     # Advanced
     "live.input_gain_target_db": {"group": "advanced", "type": "num", "min": -30, "max": -10, "apply": "now", "default": -20},
     "live.vad_threshold":      {"group": "advanced", "type": "num", "min": 0.1, "max": 0.95, "apply": "start"},

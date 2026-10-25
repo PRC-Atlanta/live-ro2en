@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Remote mockup</title>
+<!-- Mockup of the ProPresenter-side remote: a small floating toolbar (horizontal or vertical)
+     that drives the main app over the network. Same tokens as src/live/ui/styles/tokens.css.
+     Clicks here only change the mockup. -->
+<style>
+:root {
+  --bg-0:#060d12; --bg-1:#0a1a22; --bg-2:#10262f; --bg-3:#16323d;
+  --edge:#2b6f7e; --edge-glow:rgba(70,214,236,.28);
+  --cyan:#46d6ec; --cyan-hi:#9df1ff; --cyan-dim:#1f7f92;
+  --lime:#a3e635; --amber:#f5b83d; --red:#ff5d52;
+  --ink:#d9eef2; --label:#b9cbd0; --mute:#6f8b93;
+  --bar:#0b0d0e; --btn-edge:#555d60;
+  --font: -apple-system, "SF Pro Display", "Helvetica Neue", system-ui, sans-serif;
+  --num: "SF Pro Rounded", ui-rounded, -apple-system, system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: #1c1e21; color: var(--ink); font: 15px/1.4 var(--font); }
+main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
+h1 { font-size: 20px; margin: 0 0 4px; font-weight: 600; }
+.lead { color: var(--label); margin: 0 0 22px; max-width: 760px; }
+h2 { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--mute); font-weight: 600; margin: 34px 0 10px; }
+.note { color: var(--mute); font-size: 13px; margin: 10px 0 0; max-width: 760px; }
+
+/* a stand-in for the ProPresenter window behind the toolbar */
+.desk { position: relative; border-radius: 10px; overflow: hidden; min-height: 300px;
+        background: linear-gradient(#2a2d31, #222428); border: 1px solid #000; box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+.desk .pp { position: absolute; inset: 0; display: grid; grid-template-columns: 180px 1fr; opacity: .55; }
+.desk .pp .lib { background: #1b1d20; border-right: 1px solid #111; padding: 14px; }
+.desk .pp .lib i { display: block; height: 10px; margin: 0 0 10px; border-radius: 3px; background: #33373c; }
+.desk .pp .slides { padding: 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; align-content: start; }
+.desk .pp .slides i { aspect-ratio: 16/9; background: #0d0e10; border: 2px solid #3a3e44; border-radius: 3px; }
+.desk .pp .slides i.live { border-color: #e2a400; }
+.desk .tag { position: absolute; left: 12px; bottom: 10px; font-size: 11px; color: #8a9096; letter-spacing: .06em; }
+
+/* ---- the toolbar ---- */
+.rt { position: absolute; display: inline-flex; align-items: stretch; gap: 0;
+      background: radial-gradient(140% 120% at 50% 40%, var(--bg-3) 0%, var(--bg-2) 40%, var(--bg-1) 100%);
+      border: 1px solid var(--edge); border-radius: 10px; user-select: none;
+      box-shadow: inset 0 0 0 1px rgba(70,214,236,.08), 0 0 14px var(--edge-glow), 0 10px 30px rgba(0,0,0,.6); }
+.rt.v { flex-direction: column; }
+.grip { display: grid; place-items: center; padding: 0 8px; cursor: grab; border-right: 1px solid rgba(43,111,126,.45); }
+.rt.v .grip { padding: 6px 0; border-right: 0; border-bottom: 1px solid rgba(43,111,126,.45); }
+.grip b { font: 800 13px var(--font); letter-spacing: -1px; color: var(--ink); }
+.grip .dots { display: none; }
+
+/* status block: LED + phase + delay */
+.stat { display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 6px 12px; min-width: 112px;
+        border-right: 1px solid rgba(43,111,126,.45); }
+.rt.v .stat { align-items: center; padding: 8px 6px; min-width: 0; border-right: 0; border-bottom: 1px solid rgba(43,111,126,.45); }
+.stat .ph { display: flex; align-items: center; gap: 7px; font: 700 11px var(--font); letter-spacing: .14em; text-transform: uppercase; }
+.stat .ph i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.stat small { font-size: 11px; color: var(--mute); letter-spacing: .06em; white-space: nowrap; }
+.stat small b { color: var(--cyan); font-weight: 600; }
+.rt.v .stat .ph span { display: none; }
+.rt.v .stat .ph i { width: 12px; height: 12px; }
+.rt[data-st="live"] .ph { color: var(--lime); } .rt[data-st="live"] .ph i { background: var(--lime); box-shadow: 0 0 8px var(--lime); }
+.rt[data-st="hidden"] .ph { color: var(--amber); } .rt[data-st="hidden"] .ph i { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+.rt[data-st="held"] .ph { color: var(--cyan-hi); } .rt[data-st="held"] .ph i { background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+.rt[data-st="off"] .ph { color: var(--red); } .rt[data-st="off"] .ph i { background: var(--red); box-shadow: 0 0 8px var(--red); }
+.rt[data-st="idle"] .ph { color: var(--label); } .rt[data-st="idle"] .ph i { background: #0d2a33; border: 2px solid #2b5d68; }
+
+/* buttons */
+.keys { display: flex; gap: 6px; padding: 7px 8px; }
+.rt.v .keys { flex-direction: column; padding: 8px 7px; }
+.k { position: relative; width: 58px; height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+     font: 600 9.5px var(--font); letter-spacing: .1em; text-transform: uppercase; color: var(--label); cursor: pointer;
+     background: linear-gradient(#1a2024, #101417); border: 1px solid #2c3438; border-radius: 6px; padding: 0; }
+.k:hover { border-color: var(--cyan-dim); color: var(--ink); }
+.k:active { transform: translateY(1px); }
+.k svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.k kbd { position: absolute; top: 2px; right: 4px; font: 500 8.5px var(--font); letter-spacing: 0; color: var(--mute); }
+.k.on { color: var(--cyan-hi); border-color: var(--cyan-dim); background: linear-gradient(#123742, #0b2028); box-shadow: inset 0 0 8px rgba(70,214,236,.25); }
+.k.hide.on { color: #ffe1a6; border-color: var(--amber); background: linear-gradient(#4a3510, #2a1e08); box-shadow: inset 0 0 8px rgba(245,184,61,.3), 0 0 10px rgba(245,184,61,.35); }
+.k.hide { width: 70px; }
+.rt.v .k, .rt.v .k.hide { width: 62px; }
+.sep { width: 1px; align-self: stretch; margin: 2px 2px; background: rgba(43,111,126,.45); }
+.rt.v .sep { width: auto; height: 1px; margin: 2px 2px; }
+.k.names em { position: absolute; top: 3px; left: 4px; font: 700 9px var(--num); font-style: normal; color: #04161c;
+              background: var(--cyan); border-radius: 7px; padding: 0 4px; line-height: 13px; }
+/* names & words panel */
+.np { position: absolute; width: 560px; max-width: calc(100% - 32px); border-radius: 10px; overflow: hidden;
+      background: radial-gradient(140% 120% at 50% 30%, var(--bg-3) 0%, var(--bg-2) 45%, var(--bg-1) 100%);
+      border: 1px solid var(--edge); box-shadow: 0 0 14px var(--edge-glow), 0 14px 40px rgba(0,0,0,.6); }
+.np .hd2 { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid rgba(43,111,126,.45); }
+.np .hd2 .label { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--label); font-weight: 600; }
+.np .hd2 small { color: var(--mute); font-size: 12px; }
+.np .hd2 small b { color: var(--lime); font-weight: 600; }
+.np .body { display: grid; grid-template-columns: 170px 1fr; min-height: 250px; }
+.np .lists { border-right: 1px solid rgba(43,111,126,.45); padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+.np .lists .sub { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--mute); padding: 4px 6px 6px; }
+.np .lists a { display: flex; justify-content: space-between; padding: 6px 8px; border-radius: 5px; color: var(--label); font-size: 13px; cursor: pointer; }
+.np .lists a span { color: var(--mute); font-size: 12px; }
+.np .lists a.sel { color: var(--cyan-hi); background: linear-gradient(#123742, #0b2028); box-shadow: inset 0 0 0 1px var(--cyan-dim); }
+.np .lists a.add { color: var(--mute); margin-top: auto; }
+.np .ed { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.np textarea { flex: 1; min-height: 150px; resize: none; padding: 8px 10px; font: 14px/1.5 var(--font); color: var(--ink);
+               background: #050b0e; border: 1px solid #2c3438; border-radius: 6px; }
+.np .hint { font-size: 12px; color: var(--mute); }
+.np .ck2 { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--label); }
+.np .ck2 i { width: 14px; height: 14px; border: 1px solid var(--cyan-dim); border-radius: 3px; background: #050b0e; }
+.np .ft { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid rgba(43,111,126,.45); }
+.np .ft .grp { display: flex; gap: 8px; }
+.btn.plain { color: var(--label); border-color: #2c3438; background: linear-gradient(#1a2024, #101417); }
+.toast2 { position: absolute; padding: 7px 12px; border-radius: 6px; font-size: 13px; color: var(--ink);
+          background: rgba(10,26,34,.96); border: 1px solid var(--cyan-dim); box-shadow: 0 0 10px var(--edge-glow); }
+.toast2 b { color: var(--lime); }
+@media (max-width: 620px) { .np .body { grid-template-columns: 1fr; } .np .lists { border-right: 0; border-bottom: 1px solid rgba(43,111,126,.45); } }
+.rt[data-st="off"] .k { opacity: .35; pointer-events: none; }
+
+/* optional caption peek: what's on the big screen now */
+.peek { display: flex; align-items: center; max-width: 280px; padding: 6px 12px; border-left: 1px solid rgba(43,111,126,.45);
+        font-size: 13px; line-height: 1.3; color: var(--cyan-hi); text-shadow: 0 0 8px rgba(70,214,236,.3); }
+.peek span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.rt[data-st="hidden"] .peek { color: var(--mute); text-shadow: none; font-style: italic; }
+.rt.v .peek, .rt.nopeek .peek { display: none; }
+
+.more { display: grid; place-items: center; width: 22px; color: var(--mute); cursor: pointer; border: 0; background: none;
+        border-left: 1px solid rgba(43,111,126,.45); font-size: 16px; }
+.rt.v .more { width: auto; height: 22px; border-left: 0; border-top: 1px solid rgba(43,111,126,.45); }
+.more:hover { color: var(--cyan-hi); }
+
+/* disconnected strip */
+.off-msg { display: none; align-items: center; gap: 8px; padding: 6px 12px; font-size: 12.5px; color: #ffd2cd;
+           background: rgba(255,93,82,.12); border-left: 1px solid rgba(255,93,82,.35); border-radius: 0 9px 9px 0; }
+.rt[data-st="off"] .off-msg { display: flex; }
+.rt[data-st="off"] .peek { display: none; }
+.off-msg button { background: none; border: 0; color: #ff8a80; font: 600 12.5px var(--font); cursor: pointer; padding: 0; }
+
+/* right-click menu (native NSMenu in the app; drawn here for the mockup) */
+.menu { position: absolute; width: 250px; padding: 5px; border-radius: 8px; background: rgba(40,43,47,.97);
+        border: 1px solid rgba(255,255,255,.12); box-shadow: 0 10px 30px rgba(0,0,0,.6); font-size: 13px; color: #e8eaec; }
+.menu div { display: flex; justify-content: space-between; padding: 3px 10px 3px 22px; border-radius: 4px; position: relative; }
+.menu div.ck::before { content: "✓"; position: absolute; left: 7px; }
+.menu div:hover { background: #2f6fd6; }
+.menu div span { color: #9aa0a6; }
+.menu hr { border: 0; border-top: 1px solid rgba(255,255,255,.1); margin: 4px 6px; }
+.menu .hd { color: #8a9096; font-size: 11px; padding-left: 10px; }
+.menu .hd:hover { background: none; }
+
+/* first launch: connect */
+.sheet { position: absolute; width: 340px; padding: 16px 18px; border-radius: 10px;
+         background: radial-gradient(140% 120% at 50% 30%, var(--bg-3) 0%, var(--bg-2) 45%, var(--bg-1) 100%);
+         border: 1px solid var(--edge); box-shadow: 0 0 14px var(--edge-glow), 0 14px 40px rgba(0,0,0,.6); }
+.sheet .label { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--label); font-weight: 600; }
+.sheet p { margin: 6px 0 12px; font-size: 13px; color: var(--label); }
+.found { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--cyan-dim); border-radius: 6px;
+         background: linear-gradient(#123742, #0b2028); color: var(--cyan-hi); font-size: 14px; }
+.found i { width: 9px; height: 9px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 8px var(--lime); }
+.found small { margin-left: auto; color: var(--mute); }
+.pin { display: flex; gap: 6px; margin: 14px 0 4px; }
+.pin b { width: 40px; height: 46px; display: grid; place-items: center; font: 600 22px var(--num); color: var(--cyan-hi);
+         background: #050b0e; border: 1px solid #2c3438; border-radius: 6px; }
+.pin b.cur { border-color: var(--cyan); box-shadow: 0 0 8px var(--edge-glow); }
+.sheet .hint { font-size: 12px; color: var(--mute); }
+.sheet .row { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
+.btn { font: 600 12px var(--font); letter-spacing: .12em; text-transform: uppercase; color: var(--cyan-hi); cursor: pointer;
+       border: 1px solid var(--cyan-dim); background: linear-gradient(#123742, #0b2028); border-radius: 4px; padding: 8px 14px; }
+.lnk { background: none; border: 0; color: var(--mute); font-size: 12px; cursor: pointer; padding: 0; text-decoration: underline; }
+
+/* the main app's Settings side */
+.set { max-width: 620px; padding: 14px 16px; border: 1px solid var(--edge); border-radius: 4px;
+       background: radial-gradient(120% 90% at 50% 55%, var(--bg-3) 0%, var(--bg-2) 35%, var(--bg-1) 100%); }
+.set .row2 { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; border-bottom: 1px solid rgba(15,42,51,.8); }
+.set .row2:last-child { border-bottom: 0; }
+.tog { width: 38px; height: 22px; border-radius: 11px; background: var(--cyan-fill, #2aa9bf); position: relative; flex: none; }
+.tog::after { content: ""; position: absolute; right: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; }
+.set .pinbig { font: 600 22px var(--num); letter-spacing: .18em; color: var(--cyan-hi); }
+.set .h { font-size: 12px; color: var(--mute); }
+.set .conn i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 8px var(--lime); margin-right: 6px; }
+
+.controls { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; }
+.controls button { font: 12px var(--font); color: #dfe5e7; padding: 5px 11px; background: linear-gradient(#3a4144, #25292b);
+                   border: 1px solid var(--btn-edge); border-radius: 3px; cursor: pointer; }
+.controls button[aria-pressed="true"] { color: var(--cyan-hi); border-color: var(--edge); }
+.desk.flow { display: flex; flex-wrap: wrap; gap: 22px; padding: 18px 20px; align-items: flex-start; }
+.desk.flow .col { position: relative; display: flex; flex-direction: column; gap: 16px; align-items: flex-start; }
+.desk.flow .col.row { flex-direction: row; }
+.desk.flow .rt { position: relative; }
+@media (max-width: 720px) { .desk .pp { grid-template-columns: 1fr; } .desk .pp .lib { display: none; } .peek { display: none; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Live Remote: the toolbar for the ProPresenter Mac</h1>
+  <p class="lead">A small floating toolbar that stays above ProPresenter without taking focus from it.
+    It finds the captions Mac on the network by itself and drives it with the same controls as the main app.
+    Drag it by the LT handle. Right-click it, or use ⋯, to switch between horizontal and vertical.</p>
+
+  <h2>1 · Try it</h2>
+  <div class="controls" id="ctl">
+    <button data-o="h" aria-pressed="true">Horizontal</button>
+    <button data-o="v" aria-pressed="false">Vertical</button>
+    <button data-p aria-pressed="true">Caption line</button>
+    <button data-off aria-pressed="false">Captions Mac lost</button>
+  </div>
+  <div class="desk" style="min-height:360px">
+    <div class="pp"><div class="lib"><i></i><i style="width:70%"></i><i></i><i style="width:55%"></i><i></i></div>
+      <div class="slides"><i></i><i class="live"></i><i></i><i></i><i></i><i></i></div></div>
+    <div class="tag">ProPresenter</div>
+    <div class="rt" id="rt" style="left:24px; top:22px" data-st="live"></div>
+  </div>
+  <p class="note">The buttons work here: Hide turns the toolbar amber, Hold blue. The shortcuts work in any app,
+    ProPresenter included, without the toolbar needing focus: ⌃⌥H hide/show, ⌃⌥G hold, ⌃⌥K clear, ⌃⌥Z remove last, ⌃⌥S song, ⌃⌥N names &amp; words.
+    You can change them in the menu.</p>
+
+  <h2>2 · Every state</h2>
+  <div class="desk flow">
+    <div class="pp"><div class="lib"><i></i><i style="width:70%"></i><i></i></div><div class="slides"><i></i><i class="live"></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+    <div class="col">
+      <div class="rt" data-demo="live"></div>
+      <div class="rt" data-demo="hidden"></div>
+      <div class="rt" data-demo="held"></div>
+      <div class="rt" data-demo="idle"></div>
+      <div class="rt" data-demo="off"></div>
+    </div>
+    <div class="col row">
+      <div class="rt v" data-demo="live"></div>
+      <div class="rt v" data-demo="hidden"></div>
+    </div>
+  </div>
+  <p class="note">From the top: captioning · hidden (nothing reaches ProPresenter) · holding the current caption ·
+    the main app is ready but not captioning · the captions Mac can't be reached (buttons greyed out, and it retries by itself).
+    Vertical, on the right: no caption line, and the LED stands in for the status text.</p>
+
+  <h2>3 · Right-click menu</h2>
+  <div class="desk" style="min-height:380px">
+    <div class="pp"><div class="lib"><i></i><i></i></div><div class="slides"><i></i><i class="live"></i><i></i><i></i></div></div>
+    <div class="rt" data-demo="live" style="left:20px; top:18px"></div>
+    <div class="menu" style="left:300px; top:76px">
+      <div class="ck">Horizontal</div>
+      <div>Vertical</div>
+      <hr>
+      <div class="ck">Show the caption line</div>
+      <div class="ck">Keep above all windows</div>
+      <hr>
+      <div class="hd">Connected to church-mac.local</div>
+      <div>Connect to another Mac…</div>
+      <div>Enter PIN…</div>
+      <hr>
+      <div>Keyboard shortcuts…<span>⌘,</span></div>
+      <div>Quit Live Remote<span>⌘Q</span></div>
+    </div>
+  </div>
+
+  <h2>4 · First launch</h2>
+  <div class="desk" style="min-height:330px">
+    <div class="pp"><div class="lib"><i></i><i></i></div><div class="slides"><i></i><i></i><i></i><i></i></div></div>
+    <div class="sheet" style="left:50%; top:24px; transform:translateX(-50%)">
+      <div class="label">Connect to the captions Mac</div>
+      <p>Found on this network:</p>
+      <div class="found"><i></i>Live RO2EN · church-mac <small>8766</small></div>
+      <div class="pin"><b>4</b><b>8</b><b>1</b><b class="cur"></b><b></b><b></b></div>
+      <div class="hint">The PIN is on the captions Mac: Settings → ProPresenter → Remote.</div>
+      <div class="row"><button class="lnk">Type an address instead</button><button class="btn">Connect</button></div>
+    </div>
+  </div>
+
+  <h2>5 · Names &amp; words: send a saved list to the captions Mac</h2>
+  <div class="desk" style="min-height:470px">
+    <div class="pp"><div class="lib"><i></i><i></i></div><div class="slides"><i></i><i class="live"></i><i></i><i></i></div></div>
+    <div class="rt" data-demo="live" style="left:20px; top:18px"></div>
+    <div class="np" style="left:20px; top:92px">
+      <div class="hd2"><span class="label">Today’s names &amp; words</span><small>On the captions Mac now: <b>8 names</b></small></div>
+      <div class="body">
+        <div class="lists">
+          <div class="sub">Saved on this Mac</div>
+          <a class="sel">Sunday morning <span>14</span></a>
+          <a>Sunday evening <span>9</span></a>
+          <a>Youth night <span>11</span></a>
+          <a>Guest: Pastor Ionuț <span>4</span></a>
+          <a>Christmas program <span>22</span></a>
+          <a class="add">+ New list</a>
+        </div>
+        <div class="ed">
+          <textarea spellcheck="false">Ionuț Pop
+Daniel Brânzei
+Biserica Penticostală Harul
+Romani = Romans
+Efeseni = Ephesians
+Duhul Sfânt = Holy Spirit
+Cina Domnului = the Lord’s Supper
+Mihaela Stoica</textarea>
+          <div class="hint">One per line. Write a name as it should appear (Ionuț Pop), or Romanian = English (Romani = Romans).</div>
+          <label class="ck2"><i></i>Also keep them for next time on the captions Mac</label>
+        </div>
+      </div>
+      <div class="ft">
+        <button class="lnk">Get the list in use</button>
+        <div class="grp"><button class="btn plain">Save list</button><button class="btn">Send for today</button></div>
+      </div>
+    </div>
+    <div class="toast2" style="right:20px; bottom:16px">Sent · <b>14 names</b> for today</div>
+  </div>
+  <p class="note">Lists are kept on the ProPresenter Mac, so whoever builds the service there can prepare them ahead of time.
+    <b>Send for today</b> replaces today’s names on the captions Mac, the same as typing them into its Names &amp; words box.
+    They take effect from the next phrase, even mid-service. <b>Get the list in use</b> pulls back what the captions Mac has now, for editing or saving.
+    The badge on the Names button shows how many are in use.</p>
+
+  <h2>6 · On the captions Mac: Settings → ProPresenter</h2>
+  <div class="set">
+    <div class="row2"><div>Allow Live Remote on this network<div class="h">Hide, hold, clear, remove last, song and today’s names from another Mac. Start, stop and settings stay here.</div></div><span class="tog"></span></div>
+    <div class="row2"><div>PIN<div class="h">Type it into Live Remote once.</div></div><div><span class="pinbig">481 207</span>&nbsp;&nbsp;<button class="lnk">New PIN</button></div></div>
+    <div class="row2"><div class="h"><span class="conn"><i></i></span>Connected: ProPresenter-Mac (since 9:42)</div><button class="lnk">Disconnect all</button></div>
+  </div>
+</main>
+
+<script>
+const ICON = {
+  hide: '<svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  hidden: '<svg viewBox="0 0 24 24"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A17 17 0 0 0 2 12s3.6 7 10 7a9.8 9.8 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>',
+  hold: '<svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>',
+  clear: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M9 10l6 6M15 10l-6 6"/></svg>',
+  undo: '<svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>',
+  names: '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 7h5M16 11h5M17.5 15H21"/></svg>',
+  song: '<svg viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>',
+};
+const PHASE = { live: "Captioning", hidden: "Hidden", held: "Holding", idle: "Ready", off: "Not connected" };
+const CAP = "should not perish but have eternal life. Brothers and sisters, this is the heart";
+
+function render(el, st, opts = {}) {
+  el.dataset.st = st;
+  el.classList.toggle("nopeek", opts.peek === false);
+  const delay = st === "live" || st === "held" ? '<b>4.6 s</b> behind' : st === "hidden" ? "not on screen" : st === "idle" ? "not captioning" : "retrying…";
+  el.innerHTML = `
+    <div class="grip" title="Drag to move"><b>LT</b></div>
+    <div class="stat"><div class="ph"><i></i><span>${PHASE[st]}</span></div><small>${delay}</small></div>
+    <div class="keys">
+      <button class="k hide ${st === "hidden" ? "on" : ""}" data-a="hide"><kbd>⌃⌥H</kbd>${st === "hidden" ? ICON.hidden : ICON.hide}${st === "hidden" ? "Show" : "Hide"}</button>
+      <button class="k ${st === "held" ? "on" : ""}" data-a="hold"><kbd>⌃⌥G</kbd>${ICON.hold}Hold</button>
+      <button class="k" data-a="clear"><kbd>⌃⌥K</kbd>${ICON.clear}Clear</button>
+      <button class="k" data-a="undo"><kbd>⌃⌥Z</kbd>${ICON.undo}Remove</button>
+      <button class="k" data-a="song"><kbd>⌃⌥S</kbd>${ICON.song}Song</button>
+      <span class="sep"></span>
+      <button class="k names" data-a="names"><kbd>⌃⌥N</kbd>${ICON.names}Names<em>8</em></button>
+    </div>
+    <div class="peek"><span>${st === "hidden" ? "Hidden: the big screen is blank" : st === "idle" ? "—" : CAP}</span></div>
+    <div class="off-msg">Can't reach church-mac.local <button>Details</button></div>
+    <button class="more" title="Menu">⋯</button>`;
+}
+
+document.querySelectorAll("[data-demo]").forEach(el => render(el, el.dataset.demo, { peek: el.dataset.demo !== "held" }));
+
+// the interactive one
+const rt = document.getElementById("rt");
+let st = "live", peek = true, lost = false;
+const draw = () => render(rt, lost ? "off" : st, { peek });
+draw();
+rt.addEventListener("click", e => {
+  const a = e.target.closest("[data-a]")?.dataset.a;
+  if (a === "hide") st = st === "hidden" ? "live" : "hidden";
+  else if (a === "hold") st = st === "held" ? "live" : "held";
+  draw();
+});
+document.getElementById("ctl").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.o) {
+    rt.classList.toggle("v", b.dataset.o === "v");
+    document.querySelectorAll("[data-o]").forEach(x => x.setAttribute("aria-pressed", x === b));
+  } else if ("p" in b.dataset) { peek = !peek; b.setAttribute("aria-pressed", peek); }
+  else if ("off" in b.dataset) { lost = !lost; b.setAttribute("aria-pressed", lost); }
+  draw();
+});
+// drag by the handle
+rt.addEventListener("pointerdown", e => {
+  if (!e.target.closest(".grip")) return;
+  const r = rt.getBoundingClientRect(), p = rt.parentElement.getBoundingClientRect();
+  const dx = e.clientX - r.left, dy = e.clientY - r.top;
+  const move = ev => { rt.style.left = Math.max(0, ev.clientX - p.left - dx) + "px"; rt.style.top = Math.max(0, ev.clientY - p.top - dy) + "px"; };
+  addEventListener("pointermove", move);
+  addEventListener("pointerup", () => removeEventListener("pointermove", move), { once: true });
+});
+</script>
+</body>
+</html>

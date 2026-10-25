@@ -133,10 +133,25 @@ export function render(el, store) {
         h("div.fx-row", h("p.fx-text", "A full-screen window with only the captions, for a second screen or projector."),
           button("Open captions display", () => window.open("display.html", "lt-captions"))),
         h("div.fx-grid", ...FIELDS.display.map(control)), where));
+
+      // Live Remote: the PIN to type on the ProPresenter Mac, and who is connected
+      const pin = h("strong.fx-pin"), who = h("span.fx-hint"), pinMsg = note();
+      const renew = button("New PIN", async () => {
+        const r = await call("POST", "remote/pin", {});
+        pinMsg.say(r.ok ? "New PIN: type it into Live Remote again." : "The PIN was not changed.", r.ok ? "good" : "bad");
+      });
+      const pinRow = h("div.fx-row", h("span.fx-text", "PIN"), pin, renew);
+      pane.append(h("div.fx-sec", h("span.fx-label", "Live Remote"),
+        h("p.fx-text", "A small toolbar for the ProPresenter Mac. Get it from the same place as this app."),
+        h("div.fx-grid", ...FIELDS.remote.map(control)), pinRow, who, pinMsg));
       onState = s => {
-        const d = s.display || {};
+        const d = s.display || {}, rm = s.remote || {};
         where.textContent = d.network_error ? `Other devices can't connect: ${d.network_error}.`
           : d.url ? `On another device on this network, open ${d.url}` : "";
+        pinRow.hidden = !rm.enabled;
+        pin.textContent = rm.pin ? `${rm.pin.slice(0, 3)} ${rm.pin.slice(3)}` : "";
+        who.textContent = !rm.enabled ? "" : d.network_error ? `Live Remote can't connect: ${d.network_error}.`
+          : rm.clients ? `Connected: ${rm.clients} Live Remote${rm.clients === 1 ? "" : "s"}` : "No Live Remote connected yet.";
       };
     },
 

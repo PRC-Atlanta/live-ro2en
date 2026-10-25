@@ -381,6 +381,8 @@ def diagnostics(out_dir, logs: pathlib.Path, services: pathlib.Path, settings: l
             z.writestr(arc, redact(_tail(p).decode("utf-8", "replace")))
         z.writestr("system.json", json.dumps(system, indent=1, default=str))
         if state is not None:
+            if isinstance(state.get("remote"), dict) and state["remote"].get("pin"):
+                state = {**state, "remote": {**state["remote"], "pin": "<redacted>"}}   # Live Remote's PIN
             z.writestr("state.json", redact(json.dumps(state, indent=1, ensure_ascii=False, default=str)))
     return path
 

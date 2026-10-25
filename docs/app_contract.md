@@ -66,6 +66,14 @@ of a second, view-only server (`display.port`, 8766) for other devices on the lo
 That server answers only `GET /` (the page) and `WS /ws` (`{screen, paused, held, running,
 display}`); it has no controls.
 
+Live Remote (`remote/`, a Swift toolbar for the ProPresenter Mac; server side `remote.py`): with
+`display.remote: true` the same server runs, page or not, and also answers `/remote/*`: `GET
+state`, `POST pause|hold|song {on}`, `POST blank`, `POST retract`, `GET|POST terms`, `WS ws`.
+Every request needs the PIN in `X-Live-Pin` (`remote.pin` in the state, `POST /api/remote/pin`
+for a new one, kept in `<user dir>/remote_pin`). A request with an `Origin` header or a foreign
+`Host` gets 403; wrong PINs lock out that address for a minute (10) or everyone but the last
+good remote for an hour (50). The server is advertised over Bonjour as `_liveroen._tcp`.
+
 `phase`: `needs_setup → loading → ready → starting → listening | captioning → stopping →
 stopped/ready … → unloading`, plus `error`.
 
