@@ -87,9 +87,12 @@ def map_back(text: str, names: list[str], known: set[str] = frozenset()) -> str:
                 if fold(heard) in exact:
                     best = (n, None)                     # already right: leave it
                     break
-                # a dictionary word ('Bethany', 'Sceva') only when it sounds nearly the same as the
-                # name: 'Pua' (a Bible name too) is still Puha, 'Such Ava' still Suceava
+                # a dictionary word ('Bethany', 'Sceva', 'Christian') only when short and sounding
+                # nearly the same as the name: 'Pua' (a Bible name too) is still Puha, 'Such Ava'
+                # still Suceava
                 strict = all(fold(w.group(0)) in known for w in win)
+                if strict and any(len(w.group(0)) > 4 for w in win):
+                    continue                            # 'Christian' is a word, not Cristian
                 hit = next((c for c in cands if len(skeleton(heard)) >= 3 and _close(heard, c)
                             and not (strict and _sounds_ratio(heard, c) < 0.85)), None)
                 if hit:

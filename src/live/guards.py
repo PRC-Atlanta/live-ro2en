@@ -133,7 +133,10 @@ def _a_range(toks, i: int, k: int, first: int, second: int) -> bool:
     before a counted noun. Not "in nineteen eighty times were hard" (a year after "in")."""
     nxt = toks[k + 1][0].lower() if k + 1 < len(toks) else ""
     prev = toks[i - 1][0].lower() if i else ""
-    return nxt in _EN_COUNTED and second > first and prev not in ("in", "since", "from", "by", "until", "of")
+    if nxt not in _EN_COUNTED or second <= first:
+        return False
+    # "in nineteen eighty", "since twenty ten": a year can only start 18, 19 or 20
+    return not (first in (18, 19, 20) and prev in ("in", "since", "from", "by", "until"))
 
 
 def _month(toks, i) -> bool:

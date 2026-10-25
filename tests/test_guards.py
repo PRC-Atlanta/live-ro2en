@@ -62,6 +62,8 @@ def test_english_numbers_to_digits_before_translation(text, out):
     ("we were fifteen twenty people", "en", {15, 20}),
     ("back in nineteen eighty times were hard", "en", {1980}),   # a year after "in"
     ("in twenty twenty people came", "en", {2020}),
+    ("a group of fifteen twenty people", "en", {15, 20}), ("a period of twenty thirty years", "en", {20, 30}),
+    ("since nineteen eighty people", "en", {1980}),
 ])
 def test_numbers_that_are_not_what_they_look_like(text, lang, vals):
     assert G.numbers(text, lang) == vals
@@ -196,6 +198,9 @@ def test_control_tokens_and_thinking_are_cleaned(raw, clean):
     # a label word inside a sentence is the translation, not a note
     ("And here is the explanation: God loves us.", "And here is the explanation: God loves us."),
     ("Take note: God is faithful.", "Take note: God is faithful."),
+    ("He gave this Explanation: God is love.", "He gave this Explanation: God is love."),
+    ("Here is my Note: God is love", "Here is my Note: God is love"),
+    ("He said, “Translation: God is love.”", "He said, “Translation: God is love.”"),
 ])
 def test_notes_to_the_reader_are_cut(raw, clean):
     assert T.clean_output(raw) == clean

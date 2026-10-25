@@ -89,6 +89,14 @@ def _ctrl_sub(m: re.Match) -> str:
     return " "
 
 
+def _set_apart_note(m, before: str) -> bool:
+    """"... ne rugăm Note: the source is incomplete": a capitalised Note after an unfinished
+    phrase. Not "Here is my Note: God is love" or "He gave this Explanation: ..."."""
+    return (m.group(1)[0].isupper() and m.group(1).lower() in ("note", "notă")
+            and not re.search(r"(?i)\b(a|an|the|this|that|my|his|her|our|your|their|o|un|această|acea)\s*$|[“\"„]\s*$",
+                              before))
+
+
 def clean_output(out: str) -> str:
     """What reaches the screen from an LLM: the answer, without thinking, control tokens or
     notes to the reader. Gemma 4 sometimes reopened its thinking channel mid-answer
@@ -105,7 +113,7 @@ def clean_output(out: str) -> str:
     # "Note:" capitalised after an unfinished phrase), not "here is the explanation: God
     # loves us" inside a sentence
     m = next((m for m in _LABEL_RE.finditer(out)
-              if m.group(1)[0].isupper() or re.search(r"[*_]\s*$", out[:m.start()])
+              if _set_apart_note(m, out[:m.start()]) or re.search(r"[*_]\s*$", out[:m.start()])
               or re.search(r"(?:^|[.!?)\]\n\"”>])[\s(\[]*$", out[:m.start()])), None)
     if m:
         lead = not out[:m.start()].strip(" *_\"\n")
