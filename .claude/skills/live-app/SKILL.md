@@ -111,7 +111,7 @@ Each phrase record: `source`, `translation`, `lang`, `profile`, `outcome`
 ## Known behaviour (so it is not rediscovered)
 
 - **Since 2026-10-24 (translation plan, `docs/translation_plan.md`):** Best = Gemma RO→EN +
-  NLLB EN→RO; automatic gain on by default (knob "Auto"); phrases need ≥ 6 words in Best; a
+  NLLB EN→RO; automatic gain on by default (the "Auto gain" switch under the gain knob); phrases need ≥ 6 words in Best; a
   confidence gate drops recognition garbage (`low_confidence` outcome); Bible verses recognised
   by their words are captioned with WEB / Cornilescu (`verse` in the log); a **Song** key holds
   captions during singing; today's names (Names & words) matter more than ever: they feed the

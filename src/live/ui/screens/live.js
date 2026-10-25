@@ -133,8 +133,8 @@ export function render(el, store) {
   const setProf = knob(q("[data-k-prof]"), {
     id: "prof", label: S.quality.label, keys: S.quality.keys, face: S.quality.face,
     positions: [
-      { value: "fast", label: S.quality.knob.fast, at: "left:0;top:86px", angle: 50 },
-      { value: "quality", label: S.quality.knob.quality, at: "right:0;top:86px", angle: -50 },
+      { value: "fast", label: S.quality.knob.fast, at: "left:-10px;top:92px", angle: 50 },
+      { value: "quality", label: S.quality.knob.quality, at: "right:-10px;top:92px", angle: -50 },
     ],
     onPick: p => { if (p !== s.profile) run("quality"); },
   });

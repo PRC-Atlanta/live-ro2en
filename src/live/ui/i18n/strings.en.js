@@ -88,7 +88,7 @@ export const S = {
     sound: device => `Sound · ${device || "no input chosen"}`,
     speech: "Speech", clip: "Clip",
     gain: "Input gain", gainKeys: "Drag · double-click = 0", gainDb: db => `${db > 0 ? "+" : ""}${db} dB`,
-    auto: "Auto", autoTitle: "Automatic gain: levels each speaker. Turning the knob switches it off.",
+    auto: "Auto gain", autoTitle: "Auto gain: levels each speaker. Turning the knob switches it off.",
     good: "GOOD", quiet: "TOO QUIET", loud: "TOO LOUD", last30: "LAST 30 S",
     verdict: {
       idle: ["", ""],
