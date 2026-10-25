@@ -83,6 +83,12 @@ _LEAD = {"ro": set("si de la in pe cu din ca sa ca care dar ci iar pentru prin u
                    "cei cele spre dupa catre".split()),
          "en": set("the a an of in on to and or if for by with from at as that which who but so into "
                    "upon than".split())}
+# a paraphrase, not a quote: "că el ascultă rugăciunea" (that He hears prayer) is not Psalm 65:2
+# starting mid-sentence; with no announced reference a match after these words is refused
+_INTO = {"ro": set("ca el ea ei ele noi voi tu eu care ce de si cum cel cea cei spunea zice spune "
+                   "zicea scrie sau".split()),
+         "en": set("that he she they we you who which what how says said".split())}
+PREV_SHARE = 0.6        # the previous piece's words that must align with the verse to redo it
 # archaic KJV forms, matched as the modern words a preacher says
 _KJV = {"thee": "you", "thou": "you", "ye": "you", "thy": "your", "thine": "your", "hath": "has",
         "hast": "have", "doth": "does", "dost": "do", "art": "are", "shalt": "shall", "wilt": "will",
@@ -100,8 +106,16 @@ def key(word: str, lang: str) -> str:
     return _KJV.get(word, word)
 
 
+# counts are no evidence of a verse: "de două ori sau de trei ori" (twice or three times) matched
+# Job 33:29 "God does all these things, twice, yes three times, with a man" (2026-10-25)
+_NUMBERS = {"ro": set("doi doua trei patru cinci sase sapte opt noua zece suta sute mie mii ori oara "
+                      "prima primul".split()),
+            "en": set("two three four five six seven eight nine ten hundred thousand twice times "
+                      "once first second third".split())}
+
+
 def content(k: str, lang: str) -> bool:
-    return len(k) >= 3 and k not in _STOP[lang]
+    return len(k) >= 3 and k not in _STOP[lang] and k not in _NUMBERS[lang]
 
 
 def _lower(text: str, lang: str) -> str:
@@ -256,9 +270,16 @@ class Match:
     before: str = ""             # the piece's words before / after the verse, to translate
     after: str = ""
     near: bool = False           # found through an announced reference or the previous match
+    replace_prev: bool = False   # the caption starts with the previous piece's words: show it in
+    #                              place of the previous caption (the verse was not matched there)
 
     def log(self) -> dict:
-        return {"ref": self.ref, "score": self.score, "words": self.words, "near": self.near}
+        d = {"ref": self.ref, "score": self.score, "words": self.words, "near": self.near}
+        if self.replace_prev:
+            d["replace_prev"] = True
+        if not self.caption:
+            d["held"] = True
+        return d
 
 
 def align(w: list[str], r: list[str]) -> list[tuple[int, int, float]]:
@@ -388,6 +409,9 @@ class Matcher:
         self.lock = None          # (first verse, last verse) of the passage just matched
         self.lock_left = 0
         self.done = None          # (verse, target word) up to which the published text was shown
+        self.next_src = None      # (stream, position) after the last source word captioned
+        self.prev_n = 0           # words of the previous piece (for a verse matched one piece late)
+        self.prev_verse = False   # the previous piece was captioned with the published text
 
     def _near(self, ref) -> list[tuple[int, int]]:
         """Verse ranges (first, last) of the announced reference and of the passage just matched."""
@@ -439,8 +463,20 @@ class Matcher:
             self.history.popleft()
         self.lock_left -= 1
         if self.lock_left <= 0:
-            self.done = None
-        if self.bible is None or len(piece) < NEAR_OWN or src not in self.bible.streams:
+            self.done, self.next_src = None, None
+        prev_n, prev_verse = self.prev_n, self.prev_verse
+        self.prev_n, self.prev_verse = len(piece), False
+        if self.bible is None or src not in self.bible.streams:
+            return None
+        next_src = self.next_src
+        out = self._find(text, piece, hist, src, tgt, ref, prev_n, prev_verse)
+        if out is None and next_src is not None and prev_verse:
+            out = self._continues(piece, next_src)      # "Și iată.": held for the next caption
+        self.prev_verse = out is not None
+        return out
+
+    def _find(self, text, piece, hist, src, tgt, ref, prev_n, prev_verse) -> Match | None:
+        if len(piece) < NEAR_OWN:
             return None
         w, h = hist + [k for k, *_ in piece], len(hist)
         found = []
@@ -458,7 +494,39 @@ class Matcher:
                 len({c["verse"] for c in found if c["rank"] >= best["rank"] - 1}) > 1:
             return None         # "enter into the kingdom of heaven": in several verses (a long quote is
         #                         the same text in each parallel: Deuteronomy 6:5 = Matthew 22:37)
-        return self._caption(text, piece, h, best, src, tgt)
+        if not best["near"] and self._into(text, piece, best, h, src):
+            return None
+        return self._caption(text, piece, h, best, src, tgt, prev_n if not prev_verse else 0)
+
+    def _continues(self, piece, next_src) -> Match | None:
+        """A short piece (1-3 words) that is the next words of the verse being read ("Și iată."
+        between "tot ce v-am poruncit." and "eu sunt cu voi" in Matthew 28:20): held, with no
+        caption of its own, so the next caption shows it in the published wording instead of
+        the translator's "And behold." before the verse's own "Behold"."""
+        if self.lock_left <= 0 or not 0 < len(piece) <= 3:
+            return None
+        if not any(content(k, next_src[0].lang) for k, *_ in piece):
+            return None                                 # "Nu.", "Și eu.": the preacher's own words
+        st, at = next_src
+        ahead = range(at, min(at + len(piece) + 3, len(st.keys)))
+        found = [next((q for q in ahead if sim(k, st.keys[q]) >= MIN_SIM), None) for k, *_ in piece]
+        if None in found:
+            return None
+        self.next_src = (st, max(found) + 1)
+        b = self.bible
+        v = int(st.verse[min(at, len(st.keys) - 1)])
+        return Match(b.name(v, v), 1.0, len(piece), "", near=True)
+
+    @staticmethod
+    def _into(text, piece, m: dict, h: int, src: str) -> bool:
+        """With no announced reference: the verse begins after "că el" / "care" / "spune": the
+        speaker paraphrases it inside a sentence of their own ("multe versete din Biblie spun că
+        el ascultă rugăciunea"), so splicing the published text in would garble the sentence."""
+        i0 = m["mine"][0][0] - h
+        if i0 <= 0:
+            return False
+        before = text[:piece[i0][1]].rstrip()
+        return bool(before) and not _BREAK.search(before[-1:]) and piece[i0 - 1][0] in _INTO[src]
 
     @staticmethod
     def _judge(st: Stream, w: list[str], h: int, lo: int, pairs, near: bool) -> dict | None:
@@ -487,13 +555,22 @@ class Matcher:
         if not ok:
             return None
         return {"rank": len(pairs) * quality + (0.5 if near else 0), "st": st, "lo": lo, "mine": mine,
+                "pairs": [(i, j) for i, j, _ in pairs],
                 "verse": int(st.verse[lo + mine[0][1]]),
                 "quality": round(float(quality), 2), "words": len(pairs), "near": near, "idf": round(sum(rare), 1)}
 
-    def _caption(self, text, piece, h, m: dict, src: str, tgt: str) -> Match | None:
+    def _caption(self, text, piece, h, m: dict, src: str, tgt: str, prev_n: int = 0) -> Match | None:
         b, st, lo, mine = self.bible, m["st"], m["lo"], m["mine"]
         i0, i1 = mine[0][0] - h, mine[-1][0] - h               # piece word indexes of the verse part
         p0, p1 = lo + mine[0][1], lo + mine[-1][1]          # stream positions of those words
+        # the previous piece was the verse's beginning but went to the translator (Daniel 3:18:
+        # "să știi, împărate, că noi vom sluji Dumnezeu." → "we will serve God.", the opposite):
+        # caption from there and show it in place of the previous caption
+        redo = False
+        if prev_n and i0 == 0 and self.done is None:
+            prev = [(i, j) for i, j in m.get("pairs", []) if h - prev_n <= i < h]
+            if len(prev) >= max(3, PREV_SHARE * prev_n) and lo + prev[0][1] < p0:
+                p0, redo = lo + prev[0][1], True
         va, vz = int(st.verse[p0]), int(st.verse[p1])
         vlo, vhi = int(st.first[va]), int(st.first[vz + 1])
         edge = lambda ws, a, z: [next((q for q in range(a, z) if sim(k, st.keys[q]) >= MIN_SIM), None)  # noqa: E731
@@ -542,13 +619,19 @@ class Matcher:
         self.lock, self.lock_left = (va, vz), KEEP_LOCK
         caption = display(" ".join(out), tgt)
         n_words = len(caption.split())
-        if n_words < 1 or n_words < 3 and not ends:
+        whole = i0 == 0 and i1 == len(piece) - 1 and m["near"]   # all of the piece is the verse
+        if n_words < 1 or n_words < 3 and not ends and not whole:
             return None                                     # "Your", "men": wait for more of the verse
         self.done = done
+        self.next_src = (st, p1 + 1)
         before = text[:piece[i0][1]].strip(" ,;:-–—") if i0 else ""
         after = text[piece[i1][2]:].strip(" ,;:.-–—") if i1 < len(piece) - 1 else ""
         if 0 < len(tail) < 3 and after and None not in edge(tail, vlo, vhi):
             after = ""                                      # a verse word said in another order
+        if 0 < len(tail) < 3 and after and not ends:
+            after = ""                                      # "am spus" for "am scăpat", "Pl[enuel]": the
+            #                                                 next words of the verse, mis-heard or cut
         if 0 < i0 < 3 and before and None not in edge(lead, vlo, vhi):
             before = ""
-        return Match(b.name(va, vz), m["quality"], m["words"], caption, before, after, m["near"])
+        return Match(b.name(va, vz), m["quality"], m["words"], caption, "" if redo else before, after,
+                     m["near"], replace_prev=redo)

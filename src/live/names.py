@@ -62,7 +62,7 @@ def candidates(names: list[str]) -> list[str]:
         out.append(n)
         words = n.split()
         if len(words) > 1 and all(w[:1].isupper() for w in words):
-            out += [w for w in words if len(w) >= 3]
+            out += [w for w in words if len(w) >= 3 and fold(w) not in RO_CUES]
     return list(dict.fromkeys(out))
 
 
@@ -109,9 +109,12 @@ def map_back(text: str, names: list[str], known: set[str] = frozenset()) -> str:
 
 
 def mentioned(text: str, names: list[str]) -> list[str]:
-    """The listed names any of whose words (3+ letters) occur in the text."""
+    """The listed names any of whose own words (capitalised, 3+ letters, not "Fratele", "Sora",
+    "Familia") occur in the text. "fratele" alone used to bring in every saved "Fratele …"
+    name, and Gemma answered with "Fratele Emanuel și Dumnezeu" in Romanian (2026-10-25)."""
     seen = set(fold(w) for w in _WORD_RE.findall(text))
-    return [n for n in names if any(len(w) >= 3 and fold(w) in seen for w in n.split())]
+    return [n for n in names if any(len(w) >= 3 and w[:1].isupper() and fold(w) not in RO_CUES
+                                    and fold(w) in seen for w in n.split())]
 
 
 # --- the Romanian recogniser's near-misses (idea 2) ---------------------------------------

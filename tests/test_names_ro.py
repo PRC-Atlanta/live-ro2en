@@ -117,12 +117,12 @@ def test_keywords_command_carries_the_romanian_names():
     e = _engine()
     e.set_keywords(["Dragosh"], ["Dragoș", "Puha"])
     e.set_keywords(["Dragosh"])                           # an older app: the English names only
-    assert e.stt.got == [(["Dragoș", "Puha"], 1.0)]
+    assert e.stt.got == [(["Dragoș", "Puha"] + engmod.CHURCH_PHRASES, 1.0)]   # stock church phrases too
     assert e.apply_cfg({"ro_names": ["Puha"]}) == []      # a restarted engine's cfg: applied live
-    assert e.stt.got[-1] == (["Puha"], 1.0)
+    assert e.stt.got[-1] == (["Puha"] + engmod.CHURCH_PHRASES, 1.0)
     e.stt.names = ["Puha"]
     assert e.apply_cfg({"ro_name_boost": 0}) == []          # live.ro_name_boost: 0 switches it off
-    assert e.stt.got[-1] == (["Puha"], 0.0) and e.name_boost == 0.0
+    assert e.stt.got[-1] == (["Puha"] + engmod.CHURCH_PHRASES, 0.0) and e.name_boost == 0.0
 
 
 def test_stdin_keywords_with_and_without_ro(monkeypatch):
@@ -186,3 +186,13 @@ def test_settings_names_reach_the_romanian_name_list():
     gloss = types.SimpleNamespace(session=[], user=[], names=["Dragoș"], extra_names=["Paraschiva", "Puha"])
     names = N.ro_names(gloss)
     assert "Paraschiva" in names and "Puha" in names and "Dragoș" in names
+
+
+def test_cue_words_do_not_bring_in_saved_names():
+    """"fratele" alone used to put every saved "Fratele …" name on the Names line, and Gemma
+    answered "Fratele Emanuel și Dumnezeu" in Romanian (2026-10-25)."""
+    saved = ["Fratele Nelu și sora Aneta", "Fratele Emanuel Pop", "Familia Barbu", "Puha"]
+    assert N.mentioned("luați legătură cu fratele Emmanuel și Dumnezeu.", saved) == []
+    assert N.mentioned("fratele Emanuel ne-a vorbit", saved) == ["Fratele Emanuel Pop"]
+    assert N.mentioned("familia Barbu și fratele Ilie Puha", saved) == ["Familia Barbu", "Puha"]
+    assert "Fratele" not in N.candidates(["Fratele Emanuel Pop"])

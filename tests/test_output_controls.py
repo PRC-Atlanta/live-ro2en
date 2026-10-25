@@ -496,3 +496,54 @@ def test_output_api_end_to_end(tmp_path, mock):
     live.pp.backoff = (0,)
     r = post("/api/pp/test")
     assert r.json()["ok"] is False and r.json()["pp"]["error_code"] == "unreachable"
+
+
+# --- 2026-10-25 pipeline fixes ------------------------------------------------------------------
+def _pair(i, ro, t_start, t_end):
+    return {"id": i, "ro": ro, "multi": "", "en": "", "t_start": t_start, "t_end": t_end, "t_emit": t_end + 0.1,
+            "stt_s": 0.1, "audio_s": t_end - t_start}
+
+
+def test_a_one_word_echo_of_the_last_word_is_dropped(tmp_path, mock):
+    live = _live(tmp_path, mock.port)
+    live.lang.set_mode("ro-en")
+    t = time.time()
+    live._handle(_pair(1, "Dumnezeu să ne ajute pentru cele trei familii.", t - 5, t - 2))
+    live._handle(_pair(2, "famili.", t - 1.97, t - 1.5))
+    live._handle(_pair(3, "Amin.", t - 1.0, t - 0.5))                # a different word: shown
+    outs = [r["outcome"] for r in _log(live) if "outcome" in r]
+    assert outs == ["ok", "echo_word", "ok"]
+
+
+def test_glued_numbers_are_repaired_before_translating(tmp_path, mock):
+    live = _live(tmp_path, mock.port)
+    live.lang.set_mode("ro-en")
+    live._handle(_clause(1, "sunt în jur de vreo 4567.000 de copii, de elevi."))
+    rec = [r for r in _log(live) if "outcome" in r][-1]
+    assert rec["source"] == "sunt în jur de vreo 4.000-7.000 de copii, de elevi." and rec["numbers_unglued"]
+
+
+def test_a_late_verse_replaces_the_previous_caption(tmp_path, mock):
+    live = _live(tmp_path, mock.port)
+    live.lang.set_mode("ro-en")
+
+    class Tr:
+        context = []
+        last_verse = None
+
+        def translate(self, t, src, tgt, gloss=None, use_context=False):
+            if "Dumnezeilor" in t:
+                self.last_verse = {"ref": "Daniel 3:18", "replace_prev": True}
+                return "that we will not serve your gods"
+            self.last_verse = None
+            return {"să știi, împărate,": "know, O king,", "că noi vom sluji Dumnezeu.": "that we will serve God."}[t]
+    live.tr = Tr()
+    live.caps.reveal = False                                         # whole captions at once
+    t = time.time()
+    live._handle(_pair(1, "să știi, împărate, că noi vom sluji Dumnezeu.", t - 6, t - 4))
+    live.caps.advance(force=True)                                    # all words revealed
+    assert "we will serve God" in live.caps.text
+    live._handle(_pair(2, "Dumnezeilor tăi.", t - 3.9, t - 3))
+    live.caps.advance(force=True)
+    assert "we will serve God" not in live.caps.text
+    assert "know, O king, that we will not serve your gods" in live.caps.text.replace("\n", " ")

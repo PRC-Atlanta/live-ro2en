@@ -177,3 +177,41 @@ def test_pipeline_logs_the_verse_and_skips_the_guard(tmp_path, monkeypatch):
                   "t_start": 0.0, "t_end": 1.0, "t_emit": 1.1, "stt_s": 0.1, "audio_s": 1.0})
     rec = [json.loads(line) for line in open(live.log_path)][-1]
     assert rec["outcome"] == "ok" and rec["verse"]["ref"] == "Psalms 23:1" and rec["translation"] == caption
+
+
+# --- 2026-10-25 -------------------------------------------------------------------------------
+def test_a_paraphrase_is_not_spliced_with_the_verse(m):
+    """"multe versete spun că el ascultă rugăciunea": no reference, the verse starts after
+    "că el": the speaker's own sentence, not Psalm 65:2."""
+    out = read(m, ["și 139 și multe versete din Biblie sunt care.",
+                   "că el ascultă rugăciunea, de aceea, toți oamenii vor veni la el."])
+    assert out[-1] is None
+
+
+def test_short_verse_words_are_held_for_the_next_caption(m):
+    """Matthew 28:20: "Și iată." between two verse pieces is not translated ("And behold."
+    before the verse's own "Behold")."""
+    out = read(m, ["Matei 28, versetul 19.", "Duceți-vă și faceți ucenici din toate neamurile.",
+                   "botezindu-i în numele Tatălui și al Fiului.",
+                   "și al Duhului Sfânt, și învățați-i să păzească.", "tot ce v-am poruncit.", "Și iată.",
+                   "eu sunt cu voi în toate zilele."])
+    assert out[5] is not None and out[5].caption == "" and out[5].log()["held"]
+    assert "Behold" in out[6].caption
+
+
+def test_a_verse_matched_one_piece_late_redoes_the_previous_caption(m):
+    """Daniel 3:18: "că noi vom sluji Dumnezeu." (the recogniser lost "nu") went to the
+    translator ("we will serve God."); the next piece matches: caption from there, in place."""
+    out = read(m, ["dar mai frumos, versetul 18 spune așa.", "și chiar dacă nu ne va scoate.",
+                   "să știi, împărate,", "că noi vom sluji Dumnezeu.",
+                   "Dumnezeilor tăi și nici nu ne vom închina chipului tău de aur."])
+    caps = " ".join(v.caption for v in out if v)
+    assert "we will not serve" in caps and any(v and v.replace_prev for v in out)
+
+
+def test_counts_are_not_a_verse(m):
+    """"de două ori sau de trei ori" matched Job 33:29 ("twice, yes three times, with a man")
+    in the middle of a missionary's story (2026-10-25)."""
+    out = read(m, ["planul pe care eu o am cu viața ta.",
+                   "și am zis, Doamne, da, nu-i mai bine ca să. vină o dată pe an sau de două ori sau de trei ori pe an."])
+    assert out[-1] is None

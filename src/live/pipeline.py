@@ -148,7 +148,8 @@ def mask(text: str, pat: re.Pattern | None, sub: str = "***") -> tuple[str, int]
 
 
 KEEPALIVE_TICK_S = 15.0                  # how often idle translators are checked
-OVERLAP_GAP_S = 2.0                      # a repeat across a longer pause was said twice, not heard twice
+OVERLAP_GAP_S = 2.0
+ECHO_GAP_S = 1.5                         # a one-word echo of the last word comes right after it                      # a repeat across a longer pause was said twice, not heard twice
 
 class PipelineMixin:
     RESTART_KEYS = RESTART_KEYS
@@ -500,6 +501,16 @@ class PipelineMixin:
             self.counts[outcome] += 1
         self._write_log(rec)
 
+    def _guard_fallback(self):
+        """A loaded NLLB for the guard's last try (idea 5): Quality keeps one for English →
+        Romanian, and NLLB translates Romanian → English too. None when none is loaded."""
+        pool = list(translate.members(self.tr, self.lc).values()) if self.tr is not None else []
+        try:
+            pool += list((getattr(self, "_spare_tr", None) or {}).values())
+        except RuntimeError:                            # the spares thread changed it meanwhile
+            pass
+        return next((t for t in pool if isinstance(t, translate.NLLBTranslator)), None)
+
     def _input_fields(self, ev: dict) -> dict:
         """The input gain and level while the phrase was spoken (lifecycle._level_over)."""
         lvl = None
@@ -552,6 +563,38 @@ class PipelineMixin:
         if fixed:
             info["names_fixed"] = [list(f) for f in fixed]
         return text
+
+    def _echo_word(self, ev: dict, text: str) -> bool:
+        """A one-word phrase that repeats the previous phrase's last word, right after it: the
+        recogniser re-hearing the tail ("…pentru cele trei familii." then "famili." → its own
+        caption "families."; "trecut.", "dominicală.", 2026-10-25). Logged as `echo_word`."""
+        import difflib
+        words = re.findall(r"[^\W\d_]+", text)
+        prev, prev_end = getattr(self, "_last_word", ("", None))
+        self._last_word = (fold_diacritics(words[-1].lower()) if words else "", ev["t_end"])
+        if len(words) != 1 or not prev or prev_end is None or ev["t_start"] - prev_end > ECHO_GAP_S:
+            return False
+        w = fold_diacritics(words[0].lower())
+        if len(w) < 4 or difflib.SequenceMatcher(None, w, prev).ratio() < 0.75:
+            return False
+        self._log_failure(ev, "echo_word", source=text)
+        return True
+
+    def _repair_numbers(self, ev: dict, text: str, lang: str, info: dict) -> str:
+        """Numbers the Romanian recogniser mangles (idea 5): a spoken range glued into one
+        number ("4567.000" -> "4.000-7.000"), and a number word the other recogniser heard
+        longer ("doi fii" where it heard "12 fii")."""
+        if lang != "ro":
+            return text
+        fixed = guards.unglue(text)
+        if fixed != text:
+            info["numbers_unglued"] = text
+        alt = ev.get("multi") or ""
+        if alt and lang_score(alt) > 0:                 # the other transcript is Romanian too
+            fixed, longer = guards.longer_numbers(fixed, alt)
+            if longer:
+                info["numbers_longer"] = [list(x) for x in longer]
+        return fixed
 
     def _gate_min_real(self) -> float:
         return float(self.lc.get("gate_min_real", 0.6) or 0)
@@ -629,6 +672,9 @@ class PipelineMixin:
         return True
 
     def _handle_locked(self, ev: dict):
+        # the parts of the previous phrase's caption, only while it is the last one in the box
+        last_out, self._last_out = getattr(self, "_last_out", None), None
+        last_src = getattr(self, "_last_src", "")
         lang, src_text, src_info = self._source(ev)
         src_text = apply_spellings(src_text, self.cfg.get("spellings") or {})
         if self._song_hold(ev, lang, src_text):          # a song: not captioned (logged)
@@ -638,6 +684,9 @@ class PipelineMixin:
             return
         src_info.update(trimmed)
         src_text = self._repair_names(src_text, lang, src_info)
+        src_text = self._repair_numbers(ev, src_text, lang, src_info)
+        if self._echo_word(ev, src_text):               # "trecute." then "trecut." alone (logged)
+            return
         if not src_text.strip():
             self._log_failure(ev, "empty_stt", lang=lang)
             return
@@ -662,14 +711,24 @@ class PipelineMixin:
         # lack nothing"); the other parts of the same phrase still are
         if not verse:
             translation, guard = guards.check(self.tr, src_text, " ".join(o for o in out if o),
-                                              lang, tgt, self.gloss)
+                                              lang, tgt, self.gloss, fallback=self._guard_fallback())
         else:
             guard = {}
             for i, (p, o) in enumerate(zip(parts, out)):
                 if o and not is_verse[i]:
-                    out[i], g = guards.check(self.tr, p, o, lang, tgt, self.gloss)
+                    out[i], g = guards.check(self.tr, p, o, lang, tgt, self.gloss,
+                                             fallback=self._guard_fallback())
                     guard = guard or g
             translation = " ".join(o for o in out if o)
+        # a verse matched one piece late (Daniel 3:18): its caption starts with the previous
+        # phrase's last part, so it replaces that phrase's caption, keeping the parts before
+        redo = bool(is_verse and is_verse[0] and verse and verse[0].get("replace_prev") and last_out)
+        if redo:
+            translation = " ".join(last_out[:-1] + [translation])
+            src_info["replaced_prev"] = " ".join(last_out)
+        if guards.odd_figures(src_text):                # "1.271701 milion": never shown as a figure
+            translation = guards.hide_odd(src_text, translation)
+            src_info["odd_figure"] = True
         t_tr = time.time() - t0
         self._tr_used[id(self.tr)] = time.time()
         if not translation.strip():                     # nothing new to show: not a success
@@ -686,7 +745,8 @@ class PipelineMixin:
                 self._log_failure(ev, "mt_echo", lang=lang, source=src_text, translation=translation,
                                   mt_s=round(t_tr, 3))
                 return
-        translation, safety = self._safety(ev, src_text, translation, lang, t_tr)
+        translation, safety = self._safety(ev, f"{last_src} {src_text}" if redo else src_text, translation,
+                                           lang, t_tr)
         if translation is None:                         # dropped by the safety filter (logged)
             return
         if truncated:                                   # shown (better than nothing), but counted
@@ -701,8 +761,14 @@ class PipelineMixin:
         screen_text, self._cap_open = tidy_clause(translation, continues, tgt, src_text)
         self._cap_end = ev["t_end"]
         t1 = time.time()
-        shown, ok, outcome = self._show(screen_text, close="." if prev_open and not continues else "",
-                                        audio_s=ev.get("audio_s"))
+        with self._out_lock:                            # one step: no tick shows the box in between
+            if redo:
+                self.caps.retract()                     # the previous caption goes; this replaces it
+            shown, ok, outcome = self._show(screen_text, close="." if prev_open and not continues and not redo else "",
+                                            audio_s=ev.get("audio_s"))
+        if shown:                                       # in the caption box: a late verse may replace it
+            self._last_out = [translation] if redo else [o for o in out if o]
+            self._last_src = f"{last_src} {src_text}" if redo else src_text
         t_disp = time.time()
         latency = t_disp - ev["t_end"]
         n_g, ok_g = self.gloss.adherence(src_text, translation, lang)

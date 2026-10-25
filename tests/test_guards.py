@@ -257,3 +257,162 @@ def test_guard_leaves_an_echoed_quote_to_the_echo_check():
     tr = LLM({})
     assert G.check(tr, "I will not fear.", "I will not fear.", "ro", "en") == ("I will not fear.", {})
     assert tr.calls == []
+
+
+# --- 2026-10-25: reversed meanings that reached the screen, and false alarms -----------------
+class NoteLLM(LLM):
+    """Gemma-like: takes a note; answers by (text, note)."""
+    takes_note = True
+
+    def translate(self, text, src, tgt, glossary=None, use_context=False, note=""):
+        self.calls.append((text, use_context, note))
+        return self.answers.get((text, bool(note)), self.answers.get(text))
+
+
+class FakeNLLB:
+    def __init__(self, answer):
+        self.answer, self.calls = answer, 0
+
+    def translate(self, text, src, tgt, glossary=None):
+        self.calls += 1
+        return self.answer
+
+
+def test_a_retry_with_the_same_mistake_gets_a_note():
+    src = "Ne-ai mai dat o zi binecuvântată."
+    tr = NoteLLM({(src, False): "You haven't given a blessed day.",
+                  (src, True): "You have given us another blessed day."})
+    out, rec = G.check(tr, src, "You have not given us a blessed day.", "ro", "en")
+    assert out == "You have given us another blessed day."
+    assert rec["guard"]["kept"] == "note" and "NO negation" in tr.calls[-1][2]
+
+
+def test_the_fallback_translator_is_the_last_try():
+    src = "ne mai trebuie fonduri"
+    tr = NoteLLM({src: "we don't need any more funds"})
+    nllb = FakeNLLB("we need more funds")
+    out, rec = G.check(tr, src, "we don't need any more funds", "ro", "en", fallback=nllb)
+    assert out == "we need more funds" and rec["guard"]["kept"] == "fallback" and nllb.calls == 1
+
+
+def test_when_every_translator_disagrees_with_the_check_the_first_stays():
+    """Three translators against the detector: the detector is the likely one at fault, and
+    NLLB's weaker output must not replace Gemma's."""
+    src = "dacă tu ne-ai chemat să ne mutăm"
+    tr = NoteLLM({src: "if You didn't call us to move"})
+    nllb = FakeNLLB("if You didn't call us")
+    out, rec = G.check(tr, src, "if You didn't call us to move", "ro", "en", fallback=nllb)
+    assert out == "if You didn't call us to move" and rec["guard"]["kept"] == "first"
+
+
+def test_a_fallback_that_fixes_the_negation_wins_even_with_a_number_left():
+    src = "ne mai trebuie 12 fonduri"
+    tr = NoteLLM({src: "we don't need 12 funds"})
+    out, rec = G.check(tr, src, "we don't need twelve funds", "ro", "en", fallback=FakeNLLB("we need more funds"))
+    assert out == "we need more funds" and rec["guard"]["unresolved"]
+
+
+@pytest.mark.parametrize("src,out", [
+    ("Dumnezeu ne mântuiește", "God does not save us"),
+    ("Trebuie să ne pocăim", "We must not repent"),
+    ("Vă rog să ne iertați", "Please do not forgive us"),
+    ("El a venit pentru a doua oară.", "He did not come for the second time."),
+])
+def test_ne_pronoun_and_ordinals_keep_the_guard(src, out):
+    assert "negation" in G.mismatches(src, out, "ro", "en")
+
+
+def test_second_time_is_not_a_number_either_side():
+    assert G.mismatches("El a venit pentru a doua oară.", "He came for the second time.", "ro", "en") == {}
+
+
+def test_longer_number_only_when_the_other_did_not_hear_the_small_one():
+    assert G.longer_numbers("cinci pâini și doi pești", "5 pâini și 2 pești, 12 coșuri")[1] == []
+
+
+def test_no_fallback_keeps_the_first_as_before():
+    src = "ne mai trebuie fonduri"
+    tr = NoteLLM({src: "we don't need any more funds"})
+    out, rec = G.check(tr, src, "we don't need funds", "ro", "en")
+    assert out == "we don't need funds" and rec["guard"]["kept"] == "first"
+
+
+@pytest.mark.parametrize("src,out", [
+    ("Domnul a doua m-a întrebat: Emmanuel", "the Lord asked me a second time: Emmanuel"),
+    ("m-a întrebat a doua oară", "he asked me again"),
+    ("dacă sunt suflete nete. ne mântuite, Doamne", "if there are souls who are not saved, Lord"),
+    ("suflete nemântuite", "unsaved souls"),
+])
+def test_no_false_alarm(src, out):
+    assert G.mismatches(src, out, "ro", "en") == {}
+
+
+def test_real_mismatches_still_caught():
+    assert "numbers" in G.mismatches("a treia zi", "on the second day", "ro", "en")
+    assert "negation" in G.mismatches("ne mai trebuie fonduri", "we don't need any more funds", "ro", "en")
+
+
+@pytest.mark.parametrize("text,has_mai,has_tag", [
+    ("Ne-ai mai dat o zi binecuvântată.", True, False),
+    ("ne mai trebuie fonduri", True, False),
+    ("nu mai avem finanțe", False, False),           # a real "nu mai": no note
+    ("nici nu mai vine", False, False),
+    ("nu-i așa că uneori avem impresia că", False, True),
+    ("e bine așa", False, False),
+])
+def test_notes(text, has_mai, has_tag):
+    n = " ".join(G.notes(text, "ro"))
+    assert ("«mai»" in n) == has_mai and ("nu-i așa" in n) == has_tag
+    assert G.notes(text, "en") == []
+
+
+@pytest.mark.parametrize("text,want", [
+    ("sunt în jur de vreo 4567.000 de copii", "sunt în jur de vreo 4.000-7.000 de copii"),
+    ("să valoreze 50067.000 de dolari", "să valoreze 5.000-7.000 de dolari"),
+    ("cam 345 de mii de oameni", "cam 345 de mii de oameni"),   # 3 digits: a real amount
+    ("123.000 lei", "123.000 lei"),
+    ("7.641 de insule", "7.641 de insule"),
+    ("în 2024.000", "în 2024.000"),
+    ("1.207 dolari", "1.207 dolari"),
+])
+def test_unglue(text, want):
+    assert G.unglue(text) == want
+
+
+def test_the_other_recogniser_heard_the_longer_number():
+    assert G.longer_numbers("tatăl celor doi fii", "tatăl celor 12 fii.") == ("tatăl celor 12 fii", [("doi", 12)])
+    assert G.longer_numbers("cei doi frați", "cei doi frați") == ("cei doi frați", [])
+    assert G.longer_numbers("două sute de oameni", "douăzeci de oameni")[1] == []   # "două sute" is 200
+
+
+def test_odd_figures_are_not_shown():
+    src = "1.271701 milion. 271.700.000."
+    assert G.odd_figures(src) and not G.odd_figures("7.641 de insule") and not G.odd_figures("1.207")
+    assert G.hide_odd(src, "1.271701 million. 271,700,000.") == "[amount unclear]. [amount unclear]."
+    assert G.hide_odd("7.641 de insule", "7,641 islands") == "7,641 islands"
+
+
+def test_twenty_second_is_22():
+    assert G.numbers("on November twenty-second", "en") == {22}
+
+
+# --- glossary forms, people with Bible names, Jacob/James -------------------------------------
+def test_glossary_matches_other_forms_after_exact_ones():
+    g = T.Glossary()
+    assert ("sicriu", "coffin") in [(r["ro"], r["en"]) for r in g.relevant("cum se perindau sicriile în față")]
+    assert g.relevant("apostolul Pavel")[0]["en"] == "Paul"           # exact matches first
+    assert [r["ro"] for r in g.relevant("Îl salutăm pe fratele Ionuț")] == []   # fratele ≠ frați
+
+
+def test_people_with_a_bible_name_and_a_surname():
+    g = T.Glossary()
+    assert T.persons("Fratele Benu și fratele Ilie Puha a promis", g) == ["Ilie Puha"]
+    assert T.persons("Domnul Isus Hristos", g) == []
+    assert T.persons("fratele Ioan Botezătorul", g) == []
+
+
+def test_te_rog_frumos_is_please():
+    g = T.Glossary()
+    rows = {r["ro"]: r["en"] for r in g.idioms("Te rog frumos, că trebuie să-mi supraveghez fabrica.")}
+    assert rows.get("te rog frumos", "").startswith("please")
+    assert {r["ro"]: r["en"] for r in g.idioms("te rugăm frumos, Doamne")}["te rugăm frumos"] == "we humbly pray"

@@ -75,6 +75,14 @@ def emit(obj) -> None:
 
 # --- STT backends (in-memory audio) -------------------------------------------------------
 
+
+# Church phrases boosted with today's names in the Romanian beam search: on 2026-10-25 "slăvit
+# să fie Domnul" was heard as "să vii să fie Domnul", "frați și surori" as "fra și surori",
+# "vrednic de laudă" as "vremii de laudă". Whole phrases only: a single common word ("Doamne",
+# "Iov") would pull real words to it ("domnule Manuel", "eu").
+CHURCH_PHRASES = ["slăvit să fie Domnul", "slăviți să fie", "lăudat să fie Domnul", "frați și surori",
+                  "fraților și surorilor", "vrednic de laudă", "Peniel", "cetățuia mea", "baza de misiune"]
+
 class NemoSTT:
     """NeMo hybrid TDT/CTC model called directly: preprocessor + encoder on the Apple GPU
     (MPS), decoding on CPU. Output matches model.transcribe() on CPU (verified on the Bible
@@ -632,7 +640,7 @@ class Engine:
         if stt is None or not hasattr(stt, "set_names"):
             return
         try:
-            stt.set_names([str(x) for x in names or [] if str(x).strip()], self.name_boost)
+            stt.set_names([str(x) for x in names or [] if str(x).strip()] + CHURCH_PHRASES, self.name_boost)
         except Exception as e:                           # noqa: BLE001  recognition goes on unboosted
             emit({"type": "warn", "msg": f"names not boosted in Romanian recognition: {type(e).__name__}: {e}"})
 

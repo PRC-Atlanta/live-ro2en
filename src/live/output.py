@@ -101,6 +101,7 @@ class OutputMixin:
     # --- operator controls -----------------------------------------------------------------
     def clear(self):
         """Blank now: one-shot; captions continue with the next phrase."""
+        self._last_out = None                   # a late verse must not redo across this
         with self._out_lock:
             self.caps.clear()
             self.pp.clear()
@@ -115,6 +116,7 @@ class OutputMixin:
         translation and the log carry on, and with `display.show_hidden` so does the captions
         display. Show starts clean: nothing from the hidden time is dumped, and the
         translator's context is reset."""
+        self._last_out = None                   # a late verse must not redo across this
         on = bool(on)
         with self._out_lock:
             if on == self.paused:
@@ -167,6 +169,7 @@ class OutputMixin:
         reset. `auto`: the song detector's doing; the operator ending a detected song keeps
         the detector quiet for SONG_SNOOZE_S, and the operator pressing Song during a
         detected one makes it theirs (only they end it)."""
+        self._last_out = None                   # a late verse must not redo across this
         on = bool(on)
         with self._out_lock:
             if on == self.song_on:
@@ -187,6 +190,7 @@ class OutputMixin:
 
     def retract(self) -> bool:
         """Remove last caption: the screen shows the lines from before it."""
+        self._last_out = None                   # a late verse must not redo across this
         with self._out_lock:
             before = self.caps.text
             text = self.caps.retract()
@@ -199,6 +203,7 @@ class OutputMixin:
 
     def correct(self, text: str) -> bool:
         """Fix last caption: the operator's text replaces the last caption on screen."""
+        self._last_out = None                   # a late verse must not redo across this
         text = " ".join(str(text).split())
         if not text:
             return False

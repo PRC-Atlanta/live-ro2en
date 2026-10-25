@@ -23,7 +23,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   first-word time and read both transcripts.
 - **Effort:** small (config + test), plus a memory check (one model instead of two loaded).
 
-## 2. Today's names should reach the Romanian recognizer — `done` — stream G: today's names boosted in the Romanian beam search + near-miss repair before translation (35 fixes, 0 false on four logs)
+## 2. Today's names should reach the Romanian recognizer — `done` — stream G: today's names boosted in the Romanian beam search + near-miss repair before translation (35 fixes, 0 false on four logs) · 2026-10-25: stock church phrases boosted with the names (`engine.CHURCH_PHRASES`)
 
 - **Evidence:** names were the main recognition error in both modes: Puha → Pha / Puia / Gua /
   Puma / "Buha" ("Friends"); Paraschiva → Prascheva / "s-a parascheva" ("a parachute") /
@@ -44,7 +44,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   fie Domnul, frați și surori, binecuvântat să fie, pace vouă…) to the same beam boost and
   near-miss repair as today's names. Small; bench on today's clips.
 
-## 3. Bible references: show the published verse — `done` — stream D: announced references tell Gemma the verse (step 1); stream H: verses recognised by their words are captioned with WEB / Cornilescu (step 2)
+## 3. Bible references: show the published verse — `done` — stream D: announced references tell Gemma the verse (step 1); stream H: verses recognised by their words are captioned with WEB / Cornilescu (step 2) · 2026-10-25: paraphrase not spliced, short verse words held, a verse matched one piece late redoes the previous caption, trailing mis-heard verse words dropped
 
 - **Evidence:** readings are announced ("Evrei, capitolul 6, versetul 10", "Proverbe,
   capitolul 19, versetul 22", "2 Corinteni 5 cu 7") and then read slowly in fragments, the case
@@ -167,7 +167,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   flow carry over; ask it to continue the sentence when the previous chunk ended mid-sentence.
 - **Effort:** small; check the prompt stays short enough for ~2 s.
 
-## 5. Numbers, negations and facts: a guard — `done` — stream A: `src/live/guards.py` (numbers to digits before EN→RO, number/negation check with one re-translation) · follow-up `next` (2026-10-25: four reversed meanings on screen, two false alarms costing 9-10 s)
+## 5. Numbers, negations and facts: a guard — `done` — stream A: `src/live/guards.py` (numbers to digits before EN→RO, number/negation check with one re-translation) · 2026-10-25 follow-up `done`: retry with a note, NLLB fallback, a still-flagged negation never shown; «mai» / «nu-i așa că» notes; no false alarm on «a doua oară» / «ne-» words; glued and longer numbers, odd figures hidden
 
 - **Evidence:** "Nouă copii au rămas" (nine children were left) → "They left behind two
   children"; "în urmă cu aproximativ 9 ani" kept correctly in another chunk.
@@ -261,7 +261,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   a participle as a negation; also skip the retry when the only "not" in the English is
   "not" + a participle matching such a word.
 
-## 6. Words that are also names — `done` — stream D: today's names and glossary names are kept as written
+## 6. Words that are also names — `done` — stream D: today's names and glossary names are kept as written · 2026-10-25: «Fratele» alone no longer brings in saved names; «fratele Ilie Puha» kept; Iacov = Jacob in Old Testament context
 
 - **Evidence:** "Dragoș" (name, also "dear") → "Sweetie"; "Casa Dânșiilor" (their house,
   capitalised by the recogniser) → "the House of Dancers"; "Hayomin".
@@ -318,7 +318,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   decode with special tokens skipped. Add a test.
 - **Effort:** tiny.
 
-## 9. Church terms the translator gets wrong: add them to the glossary — `done` — stream D: glossary rows + `data/bible_books.csv`
+## 9. Church terms the translator gets wrong: add them to the glossary — `done` — stream D: glossary rows + `data/bible_books.csv` · 2026-10-25: inflected forms matched (after exact ones); rows fiori, cântare, minister, Gosen, împărat
 
 - **Evidence:** "slujbă de priveghi" (the wake / vigil service; the recogniser writes
   "privechi") → "the service of the elders" (2026-10-23 20:43 and 2026-10-24 11:39, both in
@@ -561,7 +561,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   with words like curse/death/hell appearing out of nowhere.
 - **Effort:** medium (expose the decoder score from the engine; tune on these two services).
 
-## 18. Songs: don't caption garbled lyrics — `done` — stream C: Song key; automatic detection available but off (no measurable gain on the bench)
+## 18. Songs: don't caption garbled lyrics — `done` — stream C: Song key; automatic detection available but off (no measurable gain on the bench) · 2026-10-25: an «odd capitalised words» gate was tried and dropped (it passed the garbled song, "Baba" is a known name, and blocked a real list of names)
 
 - **Evidence (2026-10-24 12:34, a duet):** sung Romanian is recognised badly and the
   translations are nonsense or misleading: "Ale, vorbește Dumnezeu!" → "But speak, God!";
@@ -623,7 +623,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   speaker: freeze or ignore frames while a song is detected/keyed. Small; bench on the
   09:39 clip (mark below) and a quiet-then-loud rehearsal.
 
-## 20. Cut phrases by words, not seconds, for slow speakers — `done` — stream C: `phrase_min_words` 6 in Best, no phrase ending on a preposition
+## 20. Cut phrases by words, not seconds, for slow speakers — `done` — stream C: `phrase_min_words` 6 in Best, no phrase ending on a preposition · 2026-10-25: a one-word echo of the previous phrase's last word is dropped (`echo_word`)
 
 - **Evidence (2026-10-24 12:43, an emotional speaker with long pauses):** "dragă comunitate
   din." | "Atlanta, frați și surori…" | "aduc condoleanțe din." | "partea familiei mele…" |
@@ -679,7 +679,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   1-2 character fragments to the translator at all (idea 17).
 - **Effort:** tiny.
 
-## 23. Meaning slips in Quality: a dropped word, a misread time phrase, a wrong person — `idea`
+## 23. Meaning slips in Quality: a dropped word, a misread time phrase, a wrong person — `idea` · 2026-10-25: idiom rows (de două zile, după-masa, ani de zile, te rog frumos = please); the coverage check (b) not done
 
 - **Evidence (2026-10-25, Quality, sermon on the ten virgins; marked in the recording):**
   - 09:09:24 "Celelalte nechibzuite ce spune Biblia, plecați că nu vă cunosc." → "The others, as
@@ -716,7 +716,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   (c) small but risky (false fixes when the speaker really speaks in the 1st person). Bench on
   the marked clips.
 
-## 24. Translation got slower with the richer prompt: cache the fixed part — `idea`
+## 24. Translation got slower with the richer prompt: cache the fixed part — `done` (2026-10-25): prompt-prefix KV cache, median 2.18 → 1.68 s on 14 phrases, identical output
 
 - **Evidence (median, Quality, same Gemma model):** 2026-10-24 service (11:31, before the
   14:33 prompt commit): translation **1.46 s**, first word on screen **6.35 s**. 2026-10-25
@@ -731,3 +731,8 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   for some? check); (c) context pairs 2 → 1 if (a) is not enough; (d) run the guard's retry
   only when the first answer differs in negation *and* the phrase is not a question tag.
 - **Effort:** (a) small-medium, measure on the bench (mt_s and the error list); (b-d) small.
+- **Measured after the change (bench, 4 clips at 1×, old vs new code, 46-47 phrases):** first
+  word on screen median 7.57 → 7.66 s (no change within noise), 90th percentile 15.8 → 11.2 s;
+  translation median 2.44 → 2.26 s, 90th percentile 7.1 → 4.7 s. The cache's gain is partly
+  spent on the longer prompts (notes, more glossary rows) and the extra guard tries; recognition
+  varied ±0.15 s between runs (not the new phrase boost: the same without it).

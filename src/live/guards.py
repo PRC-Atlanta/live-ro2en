@@ -9,8 +9,21 @@ that change a fact on screen, and both are cheap to check:
   to_digits(text, lang)    number words rewritten as digits (English before EN->RO, and the
                            source of a retry), so the translator copies them instead
   negated(text, lang)      whether a phrase says "not" (tag questions like "nu-i așa?" ignored)
-  check(tr, src, out, ...) compare source and translation; on a mismatch translate once more
-                           and keep the version that matches; returns the fields for the log
+  check(tr, src, out, ...) compare source and translation; on a mismatch translate again
+                           (without context, then with a note naming the problem, then with
+                           the fallback translator) and keep the first version that matches;
+                           returns the fields for the log
+  unglue(text)             "4567.000" (the recogniser's "patru, cinci, șase, șapte mii") -> "4.000-7.000"
+  longer_numbers(ro, alt)  "doi" -> "12" when the other recogniser heard 12 (doisprezece ⊃ doi)
+  odd_figures(text)        figures no speaker says ("1.271701 milion", 271.700.000.000)
+  hide_odd(src, out)       such figures in a translation replaced by "[amount unclear]"
+  notes(text, lang)        warnings for the translator before it starts: a bare "mai" (more,
+                           again), "nu-i așa că …?" (a question, not a negation)
+
+2026-10-25: four reversed meanings reached the screen because the retry repeated the first
+answer ("Ne-ai mai dat o zi" -> "You have not given us", "ne mai trebuie fonduri" -> "we don't
+need any more funds"), and two false alarms cost 9-10 s ("a doua oară" = 2 against "a second
+time"; "nemântuite" with no "nu" against "not saved").
 """
 from __future__ import annotations
 
@@ -101,8 +114,8 @@ def _word(toks, i, lang) -> tuple[int, str, bool] | None:
         if w in _EN:
             return (*_EN[w], False)
         if w in _EN_ORD:
-            if w == "second" and prev != "the" and not _month(toks, i - 1):
-                return None                             # "wait a second", "a second time"
+            if w == "second" and (prev not in ("the", "-") or nxt in ("time", "one")) and not _month(toks, i - 1):
+                return None                             # "wait a second", "(for) the second time"
             return (*_EN_ORD[w], True)
         if w in ("a", "an") and nxt in ("hundred", "thousand", "million"):
             return 1, "unit", False
@@ -113,6 +126,8 @@ def _word(toks, i, lang) -> tuple[int, str, bool] | None:
         return 1, "unit", False                         # not "spune-o mie": "say it to me"
     ordn = _ro_ordinal(w, prev)
     if ordn:
+        if nxt in ("oară", "oara", "m", "l", "i", "ne", "te", "v", "s") and ordn[0] < 11:
+            return None                                 # "a doua oară" / "a doua m-a întrebat": "again"
         return (*ordn, True)
     if w == "nouă" and (not nxt or not nxt[0].isalpha() or nxt in _ROFUNC or prev in ("ne", "-")):
         return None                                     # "ne-a spus nouă că": "to us", not nine
@@ -259,6 +274,25 @@ _TAGS = {"ro": [re.compile(r"\bnu-i a[șs]a\b\s*\??", re.I),                    
                            r"this)\s*\?", re.I)]}                              # ..., isn't it?
 
 
+# Romanian adjectives and participles negated by "ne-": "suflete nemântuite" is "souls that are
+# not saved" in English, a "not" with no "nu". The recogniser also splits them ("ne mântuite").
+_NE_STEMS = ("mantui", "credincio", "pocai", "ascultat", "ascultato", "cunoscu", "vazu", "putincio",
+             "drept", "fericit", "impac", "iertat", "botezat", "nascut", "facut", "spus", "stiut",
+             "lucrat", "atins", "intors", "convertit", "multumit", "maritat", "casatorit", "dorit")
+# the attached form ("nemântuite"), or the recogniser's split one with a participle/adjective
+# ending ("ne mântuite") and not after "să" ("să ne mântuiască", "Dumnezeu ne mântuiește" are
+# the pronoun "us": a "not" in their translation is a real reversal)
+_NE_ENDS = r"(?:i?t|i?ta|i?te|i?ti|at|ata|ate|ati|ut|uta|ute|uti|os|oasa|oase|osi)"   # right after the stem
+_NE_RE = re.compile(r"\bne(?:" + "|".join(_NE_STEMS) + r")\w*|(?<!\bsa )\bne\s+(?:"
+                    + "|".join(_NE_STEMS) + r")" + _NE_ENDS + r"\b", re.I)
+
+
+def ambiguous_negation(text: str, lang: str) -> bool:
+    """A Romanian "ne-" word: English may say it with "not" or with "un-"/"in-", so a negation
+    mismatch on this phrase proves nothing."""
+    return lang == "ro" and bool(_NE_RE.search(fold_diacritics(fix_cedilla(text).lower())))
+
+
 def negated(text: str, lang: str) -> bool:
     """Does the phrase say "not"? Tag questions are not negations ("nu-i așa?", "isn't it?")."""
     t = fix_cedilla(text).replace("\u2019", "'")
@@ -278,28 +312,75 @@ def mismatches(src: str, out: str, lang: str, tgt: str) -> dict:
     if a != b:
         issues["numbers"] = {"source": sorted(a), "translation": sorted(b)}
     na, nb = negated(src, lang), negated(out, tgt)
-    if na != nb:
+    if na != nb and not ambiguous_negation(src if lang == "ro" else out, "ro"):
         issues["negation"] = {"source": na, "translation": nb}
     return issues
 
 
-def _retranslate(tr, text: str, lang: str, tgt: str, gloss) -> str:
+# --- warnings for the translator ---------------------------------------------------------------
+_MAI = re.compile(r"\bmai\b", re.I)
+_MAI_NEG = re.compile(r"\b(?:nu|n|nici|niciodat[ăa])\b[\s-]*(?:\w+[\s-]+){0,2}?mai\b", re.I)
+_NUI_ASA = re.compile(r"\bnu-i a[șs]a\s+c[ăa]\b|\bnu\s+e(?:ste)?\s+a[șs]a\s+c[ăa]\b", re.I)
+
+
+def notes(text: str, lang: str) -> list[str]:
+    """Short warnings that go into the translator's prompt for this piece (RO→EN): Gemma read a
+    bare "mai" as "nu mai" (no longer) twice on 2026-10-25, and "nu-i așa că …?" as a negation."""
+    if lang != "ro":
+        return []
+    t = fix_cedilla(text)
+    out = []
+    if _MAI.search(t) and not _MAI_NEG.search(t) and not negated(t, "ro"):
+        out.append("«mai» here means more / again / another / still. There is no negation in this "
+                   "piece: do not write not, no longer or any more.")
+    if _NUI_ASA.search(t):
+        out.append("«nu-i așa că …?» means «isn't it true that …?»: keep it a question, it is not a "
+                   "negation.")
+    return out
+
+
+def _retranslate(tr, text: str, lang: str, tgt: str, gloss, note: str = "") -> str:
     """One more translation without the previous sentences (they may be the cause); the
-    translator's context is left as it was."""
+    translator's context is left as it was. `note` goes into the prompt when the translator
+    takes one (Gemma)."""
+    kw = {"note": note} if note and _takes_note(tr, lang, tgt) else {}
     if not hasattr(tr, "context"):
-        return tr.translate(text, lang, tgt, gloss)
+        return tr.translate(text, lang, tgt, gloss, **kw)
     saved, truncated = list(tr.context), getattr(tr, "last_truncated", False)
     try:
-        return tr.translate(text, lang, tgt, gloss, use_context=False)
+        return tr.translate(text, lang, tgt, gloss, use_context=False, **kw)
     finally:
         tr.context, tr.last_truncated = saved, truncated
 
 
-def check(tr, src: str, out: str, lang: str, tgt: str, gloss=None) -> tuple[str, dict]:
+def _takes_note(tr, lang: str, tgt: str) -> bool:
+    member = getattr(tr, "trs", {}).get((lang, tgt), tr)    # ByDirection: the member that would run
+    return bool(getattr(member, "takes_note", False))
+
+
+def _note(issues: dict, src: str, lang: str) -> str:
+    """What to tell the translator on the second retry."""
+    parts = []
+    neg = issues.get("negation")
+    if neg is not None:
+        parts.append("The source has NO negation: the translation must not contain not, no, never "
+                     "or no longer." if not neg["source"] else
+                     "The source IS negative: keep the negation (not / no / never) in the translation.")
+    if "numbers" in issues:
+        want = issues["numbers"]["source"]
+        parts.append("Numbers in the source: " + (", ".join(map(str, want)) if want else "none")
+                     + ". Write exactly these, as digits.")
+    return " ".join(parts)
+
+
+def check(tr, src: str, out: str, lang: str, tgt: str, gloss=None, fallback=None) -> tuple[str, dict]:
     """Compare numbers and negations of `src` and its translation `out`. On a mismatch,
-    translate once more (the number words of the source as digits, no context) and keep the
-    version that matches; if neither does, keep the first. Returns (translation, log fields):
-    {} when all agreed, else {"guard": {"issues", "kept": "first"|"retry", "first"|"retry"}}."""
+    translate again: (1) without context, number words as digits; (2) the same with a note
+    naming the problem (Gemma); (3) with `fallback` (NLLB: literal, it neither invents nor
+    drops a "not"). The first version that matches is kept. If none does, a negation mismatch
+    takes the fallback's version (never the reversed meaning of the first), anything else the
+    first. Returns (translation, log fields): {} when all agreed, else {"guard": {"issues",
+    "kept": "first"|"retry"|"note"|"fallback", "first"|"retry"|"tries"}}."""
     if not out.strip() or re.findall(r"\w+", src.lower()) == re.findall(r"\w+", out.lower()):
         return out, {}                                  # nothing, or the source echoed (a quote)
     issues = mismatches(src, out, lang, tgt)
@@ -307,17 +388,110 @@ def check(tr, src: str, out: str, lang: str, tgt: str, gloss=None) -> tuple[str,
         return out, {}
     rec = {"issues": issues, "kept": "first"}
     text = to_digits(src, lang, min_value=2) if "numbers" in issues else src
+    tries = {}
+
+    def attempt(name, fn):
+        try:
+            again = (fn() or "").strip()
+        except Exception as e:                          # a failed retry never loses the caption
+            rec.setdefault("errors", {})[name] = f"{type(e).__name__}: {e}"
+            rec.setdefault("error", rec["errors"][name])
+            return None
+        tries[name] = again
+        return again if again and not mismatches(src, again, lang, tgt) else None
+
     # a translator without context (NLLB) gives the same answer to the same text: no point asking
-    if text == src and not hasattr(tr, "context"):
+    plain = not (text == src and not hasattr(tr, "context"))
+    got = attempt("retry", lambda: _retranslate(tr, text, lang, tgt, gloss)) if plain else None
+    if got is None and "negation" in issues and _takes_note(tr, lang, tgt):   # numbers alone: often a false alarm
+        got = attempt("note", lambda: _retranslate(tr, text, lang, tgt, gloss, note=_note(issues, src, lang)))
+    if got is None and fallback is not None and fallback is not getattr(tr, "trs", {}).get((lang, tgt), tr):
+        got = attempt("fallback", lambda: fallback.translate(text, lang, tgt, gloss))
+    if got is not None:
+        name = next(k for k, v in tries.items() if v == got)
+        rec.update(kept=name, first=out)
+        if len(tries) > 1:
+            rec["tries"] = tries
+        return got, {"guard": rec}
+    if "negation" in issues and tries.get("fallback") and \
+            "negation" not in mismatches(src, tries["fallback"], lang, tgt):
+        rec.update(kept="fallback", first=out, tries=tries, unresolved=True)
+        return tries["fallback"], {"guard": rec}
+    if not plain:
         rec["retry"] = None
-        return out, {"guard": rec}
-    try:
-        again = (_retranslate(tr, text, lang, tgt, gloss) or "").strip()
-    except Exception as e:                              # a failed retry never loses the caption
-        rec["error"] = f"{type(e).__name__}: {e}"
-        return out, {"guard": rec}
-    if again and not mismatches(src, again, lang, tgt):
-        rec.update(kept="retry", first=out)
-        return again, {"guard": rec}
-    rec["retry"] = again
+    elif len(tries) == 1:
+        rec["retry"] = tries.get("retry")
+    else:
+        rec["tries"] = tries
     return out, {"guard": rec}
+
+
+# --- numbers the recogniser mangles ------------------------------------------------------------
+_GLUED = re.compile(r"\b(\d{4,6})\.000\b|\b(\d{4,6})(?=\s+(?:de\s+)?mii\b)")   # 123.000 is a real amount
+
+
+def _ascending(digits: str) -> tuple[int, int] | None:
+    d = [int(c) for c in digits if c != "0"]
+    if len(d) >= 3 and all(b == a + 1 for a, b in zip(d, d[1:])) and len(digits) - len(d) <= 2:
+        return d[0], d[-1]
+    return None
+
+
+def unglue(text: str) -> str:
+    """A spoken range written as one number: "vreo patru, cinci, șase, șapte mii" came out as
+    "4567.000", "cinci, șase, șapte mii" as "50067.000" (2026-10-25). Ascending single digits
+    before thousands become a range: "4.000-7.000"."""
+    def fix(m):
+        digits = m.group(1) or m.group(2)
+        r = _ascending(digits)
+        if r is None:
+            return m.group(0)
+        return f"{r[0]}.000-{r[1]}.000" if m.group(1) else f"{r[0]}-{r[1]}"
+    return _GLUED.sub(fix, text)
+
+
+# small number words that are the start of a bigger one: doi ⊂ doisprezece / douăzeci
+_GROWS = {2: (12, 20), 3: (13, 30), 4: (14, 40), 5: (15, 50), 6: (16, 60), 7: (17, 70), 8: (18, 80),
+          9: (19, 90)}
+_RO_UNIT_WORDS = {v: [w for w, (n, k) in _RO.items() if n == v and k == "unit"] for v in _GROWS}
+
+
+def longer_numbers(ro: str, alt: str) -> tuple[str, list]:
+    """The Romanian recogniser heard "Iacov, tatăl celor doi fii" where the other recogniser of
+    the same audio heard "celor 12 fii" (doisprezece): a number word that is the beginning of
+    the other transcript's number is replaced by it. Returns (text, [(word, value)])."""
+    if not alt or not ro:
+        return ro, []
+    have, other = numbers(ro, "ro"), numbers(alt, "ro") | {int(x) for x in re.findall(r"\b\d{1,2}\b", alt)}
+    fixes = []
+    for v, bigger in _GROWS.items():
+        if v not in have or v in other:                 # the other recogniser heard it too: right
+            continue
+        for big in bigger:
+            if big in other and big not in have:
+                for w in _RO_UNIT_WORDS[v]:
+                    pat = re.compile(rf"\b{w}\b(?!\s+(?:sute|mii|milioane)\b)", re.I)
+                    if pat.search(ro):
+                        ro = pat.sub(str(big), ro, count=1)
+                        fixes.append((w, big))
+                        break
+                break
+    return ro, fixes
+
+
+_ODD = re.compile(r"\b\d{1,3}[.,]\d{4,}\b|\b\d{1,3}(?:[.,]\d{3}){3,}\b|\b\d{10,}\b")
+_ODD_OUT = re.compile(r"\b\d{1,3}[.,]\d{4,}(?:\s+(?:million|billion|milion|milioane))?\b"
+                      r"|\b\d{1,3}(?:[.,]\d{3}){2,}\b|\b\d{7,}\b")
+
+
+def odd_figures(text: str) -> bool:
+    """A figure no speaker says: a decimal with 4+ places ("1.271701 milion") or 10+ digits."""
+    return bool(_ODD.search(text or ""))
+
+
+def hide_odd(src: str, out: str) -> str:
+    """When the source has a mangled figure, the translation's big or odd figures are replaced
+    by "[amount unclear]": a church loan balance came out as "1.271701 million. 271,700,000."."""
+    if not odd_figures(src):
+        return out
+    return _ODD_OUT.sub("[amount unclear]", out)

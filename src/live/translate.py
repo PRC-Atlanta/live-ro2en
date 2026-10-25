@@ -126,6 +126,28 @@ def clean_output(out: str) -> str:
     return out.split("\n\n")[0].strip()
 
 
+_CAP = r"[A-ZĂÂÎȘȚ][a-zăâîșț]+"
+_PERSON_RE = re.compile(rf"\b(?:[Ff]rate(?:le|lui)?|[Ss]ora|[Ss]orei|[Ff]amilia|[Pp]astor(?:ul)?|[Pp]rezbiter(?:ul)?)"
+                        rf"\s+(?:{_CAP}\s+)?({_CAP})\s+({_CAP})\b")
+_NOT_SURNAME = {"hristos", "cristos", "domnul", "dumnezeu", "botezatorul", "apostolul", "proorocul",
+                "profetul", "sfantul", "duhul", "imparatul"}
+
+
+def persons(text: str, glossary) -> list[str]:
+    """People named with a Bible name and a surname after "fratele" / "sora" ("fratele Ilie
+    Puha", "sora Maria Vlad"): kept as written. "Ilie Puha" came out as "Elijah Puha"."""
+    bible = {fold_diacritics(r["ro"].casefold()) for r in getattr(glossary, "rows", [])
+             if r["ro"][:1].isupper() and r["ro"].casefold() != r["en"].casefold()}
+    out = []
+    for m in _PERSON_RE.finditer(text):
+        first, last = m.group(1), m.group(2)
+        if fold_diacritics(last.casefold()) in _NOT_SURNAME or fold_diacritics(last.casefold()) in bible:
+            continue
+        if fold_diacritics(first.casefold()) in bible:
+            out.append(f"{first} {last}")
+    return out
+
+
 def tiny(text: str) -> bool:
     """A 1-2 character fragment ("T."): with context, Gemma translated the context instead."""
     return sum(c.isalnum() for c in text) <= 2
@@ -159,6 +181,27 @@ def read_glossary(path: pathlib.Path | str | None) -> list[dict]:
     with open(path, newline="", encoding="utf-8") as f:
         return [{"ro": r["ro"].strip(), "en": r["en"].strip(), "note": (r.get("note") or "").strip()}
                 for r in csv.DictReader(f) if (r.get("ro") or "").strip() and (r.get("en") or "").strip()]
+
+
+# Romanian noun/adjective endings: a glossary word matches its other forms ("sicriu" →
+# "sicriile": the coffins came out as "cicadas" on 2026-10-25 for want of the plural)
+_RO_FORMS = ("", "u", "ul", "ului", "a", "ei", "e", "ele", "elor", "le", "lor", "i", "ii", "ilor", "ile",
+             "uri", "urile", "urilor", "ri", "rile", "rilor")    # not -ia: împărat ≠ Împărăția
+
+
+def _stem(k: str) -> str:
+    for end in ("ului", "ul", "ele", "ile", "le", "a", "e", "u", "i"):
+        if k.endswith(end) and len(k) - len(end) >= 4:
+            return k[:-len(end)]
+    return k
+
+
+def _inflected(token: str, key: str) -> bool:
+    """`token` is another form of the glossary word `key` (both phonetic keys)."""
+    if token == key or len(key) < 4:
+        return False
+    st = _stem(key)
+    return len(st) >= 5 and token.startswith(st) and token[len(st):] in _RO_FORMS
 
 
 class Glossary:
@@ -214,6 +257,10 @@ class Glossary:
         if src_lang == "ro":
             seq = _fk(src)
             hits = [r for k, r in self._ro if self._contains(seq, k)]
+            seen = {id(r) for r in hits}
+            forms = [r for k, r in self._ro if id(r) not in seen and len(k) == 1 and r["ro"][:1].islower()
+                     and any(_inflected(t, k[0]) for t in seq)]
+            return sorted(hits, key=lambda r: -len(r["ro"])) + list({id(r): r for r in forms}.values())
         else:
             seq = tokens(src)
             hits = {}
@@ -295,7 +342,8 @@ SYSTEM = {
                    "For Bible quotations use NKJV-style wording. Never use archaic English: no thee, "
                    "thou, thy, ye, hath, doth, unto, or -eth/-est endings. Capitalise You/Your/He/His/Him "
                    "only for God; for people use lower case (his footsteps, your father). Bible figures "
-                   "keep their English Bible names; other people's names stay exactly as written. "
+                   "keep their English Bible names; other people's names stay exactly as written, also when "
+                   "they are a Bible name with a surname (fratele Ilie Puha = brother Ilie Puha). "
                    "Output only the English translation, nothing else."),
     ("en", "ro"): ("You are a live interpreter for a Romanian evangelical church service. Translate the "
                    "English speech into natural Romanian with correct diacritics (ă â î ș ț). "
@@ -314,7 +362,12 @@ SYSTEM = {
 LANG = {"ro": "Romanian", "en": "English"}
 
 
+IACOV_MEMORY_S = 3 * 60 * 60          # a whole service
+
+
 class MLXLLMTranslator:
+    takes_note = True                             # guards.check may add a note to a retry's prompt
+
     def __init__(self, repo: str, max_tokens: int = 200, context_clauses: int = 2):
         from mlx_lm import load
         self.repo = repo
@@ -326,6 +379,8 @@ class MLXLLMTranslator:
         self.reading = scripture.Reading()        # a Bible reference announced a few chunks back
         self.verses = verses.Matcher()            # a verse recognised by its words: the published text
         self.last_verse = None                    # the last piece's verse match (log record)
+        self._kv = None                           # prompt cache: the model state after `_kv_ids`
+        self._kv_ids: list[int] = []
 
     def reset_context(self):
         """Forget the previous sentences (after Show, a profile switch or a new service)."""
@@ -335,11 +390,12 @@ class MLXLLMTranslator:
         if getattr(self, "verses", None) is not None:
             self.verses.reset()
 
-    def _prompt(self, text, src, tgt, glossary, hint: str = ""):
+    def _prompt(self, text, src, tgt, glossary, hint: str = "", note: str = ""):
+        import guards
         lines = []
         if glossary is not None:
-            keep = glossary.keep_names(text)
-            kept = {fold_diacritics(n.casefold()) for n in keep}
+            keep = glossary.keep_names(text) + (persons(text, glossary) if src == "ro" else [])
+            kept = {fold_diacritics(w.casefold()) for n in keep for w in [n] + n.split()}
             rel = glossary.relevant(text, src)
             rel += glossary.idioms(text, src)
             pairs = []
@@ -347,6 +403,8 @@ class MLXLLMTranslator:
                 if r["ro"].casefold() == r["en"].casefold() and fold_diacritics(r["ro"].casefold()) in kept:
                     continue                              # a name: on the Names line
                 a, b = (r["ro"], r["en"]) if src == "ro" else (r["en"], r["ro"])
+                if src == "ro" and r["ro"] == "Iacov":
+                    b = "Jacob" if self._old_testament() else "James (Jacob when it is the patriarch)"
                 if src == "ro" and fold_diacritics(r["ro"].casefold()) in kept:
                     b += " (only for the Bible figure)"   # 'Pavel = Paul' with a Pavel here today
                 pairs.append((a, b + (f" ({r['note']})" if "=" in r.get("note", "") else "")))
@@ -356,6 +414,9 @@ class MLXLLMTranslator:
                 lines.append("Names (keep exactly as written): " + ", ".join(keep))
         if hint:
             lines.append("Scripture: " + hint)
+        warn = guards.notes(text, src) + ([note] if note else [])
+        if warn:
+            lines.append("Note: " + " ".join(warn))
         n = max(self.context_clauses, 0)
         ctx = [c for c in self.context[-n:] if c[1].strip()] if n else []
         if ctx:
@@ -371,10 +432,64 @@ class MLXLLMTranslator:
             msgs = [{"role": "user", "content": SYSTEM[(src, tgt)] + "\n\n" + msgs[1]["content"]}]
             return self.tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False)
 
-    def translate(self, text: str, src: str = "ro", tgt: str = "en", glossary=None,
-                  use_context: bool = False) -> str:
+    def _old_testament(self) -> bool:
+        """Iacov is Jacob, not James: a verse with Iacov in it matched earlier in the service was in
+        the Old Testament (a sermon on Genesis 32 also quotes Ephesians), else the passage read or
+        announced last is."""
+        seen = getattr(self, "_iacov_ot", None)
+        if seen is not None and time.time() - seen[1] < IACOV_MEMORY_S:
+            return seen[0]
+        ref = getattr(getattr(self, "reading", None), "ref", None)
+        books = scripture.BOOKS
+        if ref is not None and getattr(ref, "book", None) is not None and ref.book in books:
+            return books.index(ref.book) < 39
+        lock = getattr(getattr(self, "verses", None), "lock", None)
+        bible = getattr(getattr(self, "verses", None), "bible", None)
+        if lock is not None and bible is not None:
+            return bible.refs[lock[0]][0] <= 39
+        return False
+
+    def _generate(self, prompt: str) -> str:
+        """Greedy generation that reuses the model state of the longest token prefix this prompt
+        shares with the previous one (the instructions and often the glossary and the earlier
+        context): only the rest is processed. 2026-10-25 the richer prompt (previous pieces,
+        idioms, names, Scripture hint) made translation 1.5 → 2.4 s, all of it prompt processing.
+        Any trouble with the cache: a plain generation, as before."""
         from mlx_lm import generate
         from mlx_lm.sample_utils import make_sampler
+        kw = dict(max_tokens=self.max_tokens, sampler=make_sampler(temp=0.0), verbose=False,
+                  logits_processors=self._suppress())
+        try:
+            from mlx_lm.models.cache import can_trim_prompt_cache, make_prompt_cache, trim_prompt_cache
+            bos = getattr(self.tok, "bos_token", None)
+            ids = list(self.tok.encode(prompt, add_special_tokens=bos is None or not prompt.startswith(bos)))
+            n = 0
+            for a, b in zip(ids, self._kv_ids):
+                if a != b:
+                    break
+                n += 1
+            n = min(n, len(ids) - 1)                      # at least one new token to process
+            cache = self._kv
+            if cache is None or n < 16 or not can_trim_prompt_cache(cache):
+                cache, n = make_prompt_cache(self.model), 0
+            else:
+                cached = cache[0].offset if hasattr(cache[0], "offset") else len(self._kv_ids)
+                if cached > n:
+                    trim_prompt_cache(cache, cached - n)
+            self._kv, self._kv_ids = None, []                # in use: unusable if this call fails
+            out = generate(self.model, self.tok, prompt=ids[n:], prompt_cache=cache, **kw)
+            if can_trim_prompt_cache(cache):
+                self._kv, self._kv_ids = cache, ids         # the generated tokens are trimmed next time
+            return out
+        except Exception as e:                            # noqa: BLE001  the cache is an optimisation
+            self._kv, self._kv_ids = None, []
+            if not getattr(self, "_kv_warned", False):
+                self._kv_warned = True
+                print(f"translate: prompt cache off for this call ({type(e).__name__}: {e})", file=sys.stderr)
+            return generate(self.model, self.tok, prompt=prompt, **kw)
+
+    def translate(self, text: str, src: str = "ro", tgt: str = "en", glossary=None,
+                  use_context: bool = False, note: str = "") -> str:
         import guards
         if not use_context:
             self.context = []
@@ -397,9 +512,7 @@ class MLXLLMTranslator:
         if small:
             self.context, hint = [], ""          # translated alone, the context kept for later
         try:
-            out = generate(self.model, self.tok, prompt=self._prompt(text, src, tgt, glossary, hint),
-                           max_tokens=self.max_tokens, sampler=make_sampler(temp=0.0), verbose=False,
-                           logits_processors=self._suppress())
+            out = self._generate(self._prompt(text, src, tgt, glossary, hint, note))
         finally:
             self.context = ctx
         self.last_truncated = len(self.tok.encode(out)) >= self.max_tokens - 1
@@ -413,11 +526,18 @@ class MLXLLMTranslator:
 
     def _verse(self, verse, text: str, src: str, tgt: str, glossary) -> str:
         """A piece that is part of a verse: the published text, the words around it translated alone."""
+        import guards
         ctx = self.context
-        around = [self.translate(t, src, tgt, glossary) if t else "" for t in (verse.before, verse.after)]
+        around = [guards.check(self, t, self.translate(t, src, tgt, glossary), src, tgt, glossary)[0] if t else ""
+                  for t in (verse.before, verse.after)]   # the words around a verse are checked too
         out = " ".join(x for x in (around[0], verse.caption, around[1]) if x)
         self.context = (ctx + [(text, out, src)])[-max(self.context_clauses, 1):]
         self.last_truncated, self.last_verse = False, verse.log()
+        if src == "ro" and re.search(r"\bIacov", text):
+            book = verse.ref.rsplit(" ", 1)[0]
+            ot = next((i < 39 for i, b in enumerate(scripture.BOOKS) if b.en == book), None)
+            if ot is not None:
+                self._iacov_ot = (ot, time.time())
         return out
 
     def _suppress(self) -> list:
@@ -541,6 +661,8 @@ class ByDirection:
         live = bool(kw.get("use_context"))
         if "use_context" in kw and not hasattr(tr, "context"):
             kw.pop("use_context")                # NLLB has no context
+        if not getattr(tr, "takes_note", False):
+            kw.pop("note", None)
         try:
             if getattr(tr, "verses", None) is None and live:
                 return self._plain(tr, text, src, tgt, glossary)
