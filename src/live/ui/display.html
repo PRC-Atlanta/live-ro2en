@@ -84,9 +84,10 @@
     const d = s.display || {};
     root.dataset.size = d.size || "large";
     root.dataset.colors = d.colors || "white_on_black";
-    follow(s.paused ? "" : s.screen || "");
-    let want = s.paused ? "" : lastLines(Math.max(1, Math.min(3, d.lines || 2)));
-    if (s.held && !s.paused) {               // Hold: the screen keeps what it had
+    const hidden = s.paused && !d.show_hidden;  // show_hidden: Hide is ProPresenter's only
+    follow(hidden ? "" : s.screen || "");
+    let want = hidden ? "" : lastLines(Math.max(1, Math.min(3, d.lines || 2)));
+    if (s.held && !hidden) {                 // Hold: the screen keeps what it had
       if (heldText === null) heldText = shown;
       want = heldText;
     } else {
