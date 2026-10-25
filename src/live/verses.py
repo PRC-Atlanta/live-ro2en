@@ -110,8 +110,20 @@ def _lower(text: str, lang: str) -> str:
 
 
 def words(text: str, lang: str) -> list[tuple[str, int, int]]:
-    """(key, start, end) for each word of `text`."""
-    return [(key(m.group(0), lang), m.start(), m.end()) for m in _TOK[lang].finditer(_lower(text, lang))]
+    """(key, start, end) for each word of `text`: positions in `text` itself, also after
+    "don't" → "dont" made the lowered text shorter (the caption cuts `text` at them)."""
+    low = _lower(text, lang)
+    if len(low) == len(text):
+        return [(key(m.group(0), lang), m.start(), m.end()) for m in _TOK[lang].finditer(low)]
+    at, j = [], 0                                       # at[i]: where low[i] came from in text
+    plain = fix_cedilla(text).lower().replace("’", "'")
+    for i, ch in enumerate(low):
+        while j < len(plain) and plain[j] != ch:
+            j += 1                                      # an apostrophe the rewrite dropped
+        at.append(j)
+        j += 1
+    at.append(len(text))
+    return [(key(m.group(0), lang), at[m.start()], at[m.end() - 1] + 1) for m in _TOK[lang].finditer(low)]
 
 
 @functools.lru_cache(maxsize=500_000)
@@ -507,6 +519,8 @@ class Matcher:
             marks = anchors(cands)
             t0 = project(s, n, len(ws), breaks, marks)
             t1 = project(e if e < n - 1 else n, n, len(ws), breaks, marks)
+            if t0 < len(ws) - 1 and _END.search(ws[t0]) and not any(s <= i < e and j == t0 for i, j, _ in cands):
+                t0 += 1                                     # landed on the end of the sentence before
             floor = max([q for q in range(1, t0 + 1) if _END.search(ws[q - 1])], default=0)
             said = [j for i, j, _ in cands if s <= i < e and floor <= j < t0]
             if said:                                        # "le este rânduit" → "it is appointed for men"

@@ -62,8 +62,10 @@ def candidates(names: list[str]) -> list[str]:
     return list(dict.fromkeys(out))
 
 
-def map_back(text: str, names: list[str]) -> str:
-    """Replace the English recogniser's spellings of today's names with the listed form."""
+def map_back(text: str, names: list[str], known: set[str] = frozenset()) -> str:
+    """Replace the English recogniser's spellings of today's names with the listed form.
+    `known` holds folded dictionary words: a heard word in it is a real word, not a misheard
+    name ('Bethany' is not 'Botoșani', 'Sceva' is not 'Suceava'), and is only kept as is."""
     if not names or not text:
         return text
     cands = candidates(names)
@@ -81,6 +83,8 @@ def map_back(text: str, names: list[str]) -> str:
                 if fold(heard) in exact:
                     best = (n, None)                     # already right: leave it
                     break
+                if all(fold(w.group(0)) in known for w in win):
+                    continue
                 hit = next((c for c in cands if len(skeleton(heard)) >= 3 and _close(heard, c)), None)
                 if hit:
                     best = (n, hit)

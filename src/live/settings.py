@@ -387,6 +387,15 @@ class SettingsMixin:
         if bad:
             return 400, {"error": "invalid", "detail": bad}
         with self._settings_lock:
+            if get(self.cfg, "live.input_gain_auto"):    # as the gain knob does it on the Live screen:
+                eng = getattr(self, "_eng_gain", None)
+                if ok.get("live.input_gain_auto") is False and "live.input_gain_db" not in ok \
+                        and isinstance(eng, (int, float)):
+                    good, val = check_value("live.input_gain_db", round(eng), self.cfg)
+                    if good:                            # Auto gain off keeps the gain it reached
+                        ok["live.input_gain_db"] = val
+                elif "live.input_gain_db" in ok and "live.input_gain_auto" not in ok:
+                    ok["live.input_gain_auto"] = False  # a gain set by hand switches Auto gain off
             changed = {k: v for k, v in ok.items() if get(self.cfg, k) != v}
             user = copy.deepcopy(self._user)
             for k, v in changed.items():

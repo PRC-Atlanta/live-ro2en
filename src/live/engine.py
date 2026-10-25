@@ -218,7 +218,7 @@ class AutoGain:
                  limit_hold_s: float = 10.0, floor_db: float = -80.0):
         self.on = False
         self.target_db = target_db
-        self.window_s = window_s                 # running median over this much speech time
+        self.window_s = window_s                 # running median over the speech frames of this many seconds
         self.rate = rate_db_s                    # the slow part: at most this many dB per second of speech
         self.min_n = int(min_speech_s * SR / FRAME)   # no verdict on less speech than this
         self.deadband = deadband_db              # closer than this to the target: leave it

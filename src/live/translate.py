@@ -17,6 +17,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))      # guards
 from textnorm import fix_cedilla, fold_diacritics, phon_key, tokens   # noqa: E402
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import gate   # noqa: E402
 import names as namelist   # noqa: E402
 import scripture   # noqa: E402
 import verses   # noqa: E402
@@ -100,7 +101,10 @@ def clean_output(out: str) -> str:
     elif "<|channel>" in out:                           # a thought that never closed
         out = out.split("<|channel>")[0]
     out = _NOTE_RE.sub("", out)
-    m = _LABEL_RE.search(out)
+    # a label opens the output, a line or a sentence: "Note: ..." after the translation, not
+    # "here is the explanation: God loves us" inside it
+    m = next((m for m in _LABEL_RE.finditer(out)
+              if re.search(r"(?:^|[.!?)\]\n\">]|\*\*)[\s*_(\[]*$", out[:m.start()])), None)
     if m:
         lead = not out[:m.start()].strip(" *_\"\n")
         if lead and m.group(1).lower() in ("translation", "traducere"):
@@ -369,7 +373,7 @@ class MLXLLMTranslator:
         if src == "en":
             text = guards.to_digits(text, "en")   # "October fifteenth" came back as "fifty"
             if glossary is not None:
-                text = namelist.map_back(text, glossary.names)   # Dragosh → Dragoș, Souchava → Suceava
+                text = namelist.map_back(text, glossary.names, gate.lexicon()["en"])   # Dragosh → Dragoș, Souchava → Suceava
         reading = getattr(self, "reading", None)
         hint = ""
         if use_context and reading is not None:
@@ -544,7 +548,7 @@ class ByDirection:
         if src == "en":
             text = guards.to_digits(text, "en")
             if glossary is not None:
-                text = namelist.map_back(text, glossary.names)
+                text = namelist.map_back(text, glossary.names, gate.lexicon()["en"])
         self.reading.update(text)
         verse = self.verses.match(text, src, tgt, self.reading.ref)
         if verse is None:

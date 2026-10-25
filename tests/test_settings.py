@@ -383,6 +383,20 @@ def test_input_gain_applies_live_and_reaches_the_engine(home):
     live._send = lambda cmd: sent.append(cmd) or True
     r = client(live).put("/api/settings", json={"values": {"live.input_gain_db": 12}}, headers=ME).json()
     assert r["restart_required"] is False
-    assert sent == [{"cmd": "gain", "db": 12.0}]
+    # Auto gain (on by default) goes off first, as a turn of the knob does it
+    assert sent == [{"cmd": "agc", "on": False, "target_db": -20.0}, {"cmd": "gain", "db": 12.0}]
     assert live.state()["audio"]["gain_db"] == 12.0           # the knob follows the saved value
+    assert live.state()["audio"]["gain_auto"] is False
     assert live._engine_cfg()["input_gain_db"] == 12.0        # and the next engine starts with it
+
+
+def test_auto_gain_off_in_settings_keeps_the_gain_it_reached(home):
+    live = make_live(home, running=True)
+    sent = []
+    live._send = lambda cmd: sent.append(cmd) or True
+    live._on_level({"rms_db": -22.0, "peak_db": -15.0, "speech": True, "auto": True, "gain_db": 14.2})
+    assert live.state()["audio"]["gain_db"] == 14.2
+    client(live).put("/api/settings", json={"values": {"live.input_gain_auto": False}}, headers=ME)
+    assert sent == [{"cmd": "agc", "on": False, "target_db": -20.0}, {"cmd": "gain", "db": 14.0}]
+    assert live.state()["audio"]["gain_db"] == 14.0           # not the old saved 0 dB
+    assert live._engine_cfg()["input_gain_db"] == 14.0

@@ -153,7 +153,7 @@ def check(text: str, lang: str, lex: dict, names: set[str] = frozenset(),
         return False, "fragment", f
     if n >= 3 and f["frag"] / n > max_frag:
         return False, "fragments", f
-    if f["all_caps"] and not f["frag"]:
+    if f["all_caps"] and n >= 2 and not f["frag"]:      # one capitalised word is any phrase's first
         return True, "", f
     if f["real_share"] < min_real and (n >= 2 or f["foreign"] == 0 and f["real"] == 0):
         return False, "non_words", f
