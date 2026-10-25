@@ -169,7 +169,8 @@ main:has(> .unit) { padding: 12px 16px; }
 .gk .knob { cursor: ns-resize; touch-action: none; user-select: none; }
 .gk .knob .ptr { transition: none; }
 .gk .knob .val { font-size: 12px; }
-.gk-foot { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.gk-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 6px; }
+.gk-foot > * { white-space: nowrap; }   /* a narrow column puts the Auto gain switch under the label */
 .gk-auto { font-family: inherit; font-size: 10px; font-weight: 600; line-height: 1; letter-spacing: .08em; text-transform: uppercase; color: var(--label);
            background: none; border: 1px solid #1d4450; border-radius: 9px; padding: 3px 7px; cursor: pointer;
            min-height: 22px; }
