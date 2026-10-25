@@ -189,6 +189,8 @@ def run(args) -> pathlib.Path:
         env["LIVE_TERMS_FILE"] = str(pathlib.Path(args.terms).resolve())
         info["terms"] = env["LIVE_TERMS_FILE"]
     env.pop("LIVE_HOME", None)
+    (rdir / "user").mkdir(exist_ok=True)                 # names from --terms only: not what was typed in
+    env["LIVE_USER_DIR"] = str(rdir / "user")           # Settings of this checkout (a --code worktree has none)
     cmd = [str(APP_PY), str(code / "src" / "live" / "app.py"), "--config", str(rdir / "config.yaml"),
            "--settings", str(rdir / "settings.yaml"), "--file", str(seg), "--autostart",
            "--exit-on-eof", "--headless", "--profile", args.profile, "--mode", args.mode]
@@ -221,8 +223,20 @@ def _run_log(arg: str) -> tuple[pathlib.Path, dict]:
 
 
 def _errors(path: str | None) -> list[dict]:
+    return _error_file(path)["errors"]
+
+
+def _error_file(path: str | None) -> dict:
     p = pathlib.Path(path) if path else DEFAULT_ERRORS
-    return json.loads(p.read_text())["errors"]
+    return json.loads(p.read_text())
+
+
+def _errors_day(path: str | None) -> str:
+    """The service the known errors were seen in: "day" in the file, else its name
+    (errors_2026-10-24.json), else the first list's day."""
+    p = pathlib.Path(path) if path else DEFAULT_ERRORS
+    m = re.search(r"\d{4}-\d{2}-\d{2}", p.name)
+    return _error_file(path).get("day") or (m.group(0) if m else "2026-10-24")
 
 
 def _day_ts(day: str, hms: str) -> float:
@@ -277,6 +291,8 @@ def score(arg: str, errors_path: str | None, quiet: bool = False) -> dict:
     day = dt.datetime.fromtimestamp(ph[0]["t_start"]).date().isoformat()
     lo, hi = ph[0]["t_start"], ph[-1]["t_end"]
     res = {}
+    if day != _errors_day(errors_path):                 # another service's recording: nothing to judge
+        errs = []
     for e in errs:
         t = _day_ts(day, e["t"])
         if not (lo - 5 <= t <= hi + 5):
@@ -325,9 +341,8 @@ def compare(a: str, b: str, errors_path: str | None) -> None:
 def check(errors_path: str | None) -> None:
     """Every known error must be visible in the live logs (bad found, or good absent), else the
     pattern is wrong. The live service is the baseline: all should come out 'still'."""
-    errs = _errors(errors_path)
-    recs = [r for p in sorted(LIVE_LOGS.glob("2026-10-24_*.jsonl")) for r in _records(p) if r.get("outcome")]
-    day = "2026-10-24"
+    errs, day = _errors(errors_path), _errors_day(errors_path)
+    recs = [r for p in sorted(LIVE_LOGS.glob(f"{day}_*.jsonl")) for r in _records(p) if r.get("outcome")]
     bad = 0
     for e in errs:
         s, text = judge(e, recs, day)

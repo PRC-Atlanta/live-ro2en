@@ -139,6 +139,11 @@ def plan(moms: list[tuple[float, int, str]], t0: float, t1: float, before: float
                     and max(k["end"], b) - min(k["start"], a) <= max_clip), None)
         if hit:
             new_a, new_b = min(hit["start"], a), max(hit["end"], b)
+            for k in kept:                                  # growing never reaches into another clip
+                if k is not hit and k["start"] >= hit["end"]:
+                    new_b = min(new_b, k["start"])
+                if k is not hit and k["end"] <= hit["start"]:
+                    new_a = max(new_a, k["end"])
             add = (new_b - new_a) - (hit["end"] - hit["start"])
             if total + add > max_s and p > 0:
                 continue
@@ -205,6 +210,8 @@ def cut(args, really: bool) -> None:
     if args.delete_full:
         if not ok:
             sys.exit("a clip came out short: the full recording is kept")
+        if not clips or not logs:
+            sys.exit("no clips or no service log: the full recording is kept")
         rec.unlink()
         rec.with_suffix(".json").unlink(missing_ok=True)
         marks_path(rec).unlink(missing_ok=True)

@@ -17,6 +17,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))      # guards
 from textnorm import fix_cedilla, fold_diacritics, phon_key, tokens   # noqa: E402
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import gate   # noqa: E402
 import names as namelist   # noqa: E402
 import scripture   # noqa: E402
 import verses   # noqa: E402
@@ -88,6 +89,14 @@ def _ctrl_sub(m: re.Match) -> str:
     return " "
 
 
+def _set_apart_note(m, before: str) -> bool:
+    """"... ne rugăm Note: the source is incomplete": a capitalised Note after an unfinished
+    phrase. Not "Here is my Note: God is love" or "He gave this Explanation: ..."."""
+    return (m.group(1)[0].isupper() and m.group(1).lower() in ("note", "notă")
+            and not re.search(r"(?i)\b(a|an|the|this|that|my|his|her|our|your|their|o|un|această|acea)\s*$|[“\"„]\s*$",
+                              before))
+
+
 def clean_output(out: str) -> str:
     """What reaches the screen from an LLM: the answer, without thinking, control tokens or
     notes to the reader. Gemma 4 sometimes reopened its thinking channel mid-answer
@@ -100,7 +109,12 @@ def clean_output(out: str) -> str:
     elif "<|channel>" in out:                           # a thought that never closed
         out = out.split("<|channel>")[0]
     out = _NOTE_RE.sub("", out)
-    m = _LABEL_RE.search(out)
+    # a note: a label that opens the output, a line or a sentence, or is set apart ("*Note:",
+    # "Note:" capitalised after an unfinished phrase), not "here is the explanation: God
+    # loves us" inside a sentence
+    m = next((m for m in _LABEL_RE.finditer(out)
+              if _set_apart_note(m, out[:m.start()]) or re.search(r"[*_]\s*$", out[:m.start()])
+              or re.search(r"(?:^|[.!?)\]\n\"”>])[\s(\[]*$", out[:m.start()])), None)
     if m:
         lead = not out[:m.start()].strip(" *_\"\n")
         if lead and m.group(1).lower() in ("translation", "traducere"):
@@ -369,7 +383,7 @@ class MLXLLMTranslator:
         if src == "en":
             text = guards.to_digits(text, "en")   # "October fifteenth" came back as "fifty"
             if glossary is not None:
-                text = namelist.map_back(text, glossary.names)   # Dragosh → Dragoș, Souchava → Suceava
+                text = namelist.map_back(text, glossary.names, gate.lexicon()["en"])   # Dragosh → Dragoș, Souchava → Suceava
         reading = getattr(self, "reading", None)
         hint = ""
         if use_context and reading is not None:
@@ -544,7 +558,7 @@ class ByDirection:
         if src == "en":
             text = guards.to_digits(text, "en")
             if glossary is not None:
-                text = namelist.map_back(text, glossary.names)
+                text = namelist.map_back(text, glossary.names, gate.lexicon()["en"])
         self.reading.update(text)
         verse = self.verses.match(text, src, tgt, self.reading.ref)
         if verse is None:

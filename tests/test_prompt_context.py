@@ -10,6 +10,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "src" / "live"))
 
+import gate                   # noqa: E402
 import names as N            # noqa: E402
 import scripture as S        # noqa: E402
 from live import translate as T   # noqa: E402
@@ -109,7 +110,21 @@ def test_english_spellings_map_back_to_the_names(tr, gloss):
     ("Jonathan and Joseph", "Jonathan and Joseph"), ("Season of Victory", "Season of Victory"),
 ])
 def test_map_back_is_conservative(heard, expect):
-    assert N.map_back(heard, ["Dragoș Puha", "Paraschiva", "Suceava", "Vicovu de Sus", "Jonathan"]) == expect
+    names = ["Dragoș Puha", "Paraschiva", "Suceava", "Vicovu de Sus", "Jonathan"]
+    assert N.map_back(heard, names) == expect
+    assert N.map_back(heard, names, gate.lexicon()["en"]) == expect      # as the translator calls it
+
+
+@pytest.mark.parametrize("heard, expect", [
+    ("Mary in Bethany, near Jerusalem", "Mary in Bethany, near Jerusalem"),   # not Botoșani
+    ("the sons of Sceva", "the sons of Sceva"),                               # not Suceava
+    ("Brother Pua", "Brother Puha"), ("in Such Ava", "in Suceava"),           # Bible words, still names
+    ("A Christian life", "A Christian life"), ("We are Christians", "We are Christians"),
+    ("Emmanuel", "Emmanuel"),                                                 # words, not Cristian, Emanuel
+])
+def test_map_back_leaves_real_words_unless_they_sound_like_the_name(heard, expect):
+    names = ["Botoșani", "Suceava", "Dragoș Puha", "Cristian Popa", "Emanuel"]
+    assert N.map_back(heard, names, gate.lexicon()["en"]) == expect
 
 
 # --- idea 3 (step 1) and 9: announced references and the book table ----------------------

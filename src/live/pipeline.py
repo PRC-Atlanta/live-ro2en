@@ -651,16 +651,25 @@ class PipelineMixin:
         if ev.get("caught_up"):                           # catching up: few calls, each bounded
             parts = pack_parts(parts, int(self.lc.get("catchup_max_words", 60)))
         t0 = time.time()
-        out, truncated, verse = [], False, []
+        out, truncated, verse, is_verse = [], False, [], []
         for p in parts:
             out.append(self.tr.translate(p, lang, tgt, self.gloss, use_context=True)
                        if hasattr(self.tr, "context") else self.tr.translate(p, lang, tgt, self.gloss))
             truncated |= bool(getattr(self.tr, "last_truncated", False))
             verse += [getattr(self.tr, "last_verse", None)] if getattr(self.tr, "last_verse", None) else []
-        translation = " ".join(o for o in out if o)
-        # a published verse is not checked for numbers/negations ("nu voi duce lipsă" = "I shall lack nothing")
-        translation, guard = (translation, {}) if verse else \
-            guards.check(self.tr, src_text, translation, lang, tgt, self.gloss)
+            is_verse.append(bool(getattr(self.tr, "last_verse", None)))
+        # a published verse is not checked for numbers/negations ("nu voi duce lipsă" = "I shall
+        # lack nothing"); the other parts of the same phrase still are
+        if not verse:
+            translation, guard = guards.check(self.tr, src_text, " ".join(o for o in out if o),
+                                              lang, tgt, self.gloss)
+        else:
+            guard = {}
+            for i, (p, o) in enumerate(zip(parts, out)):
+                if o and not is_verse[i]:
+                    out[i], g = guards.check(self.tr, p, o, lang, tgt, self.gloss)
+                    guard = guard or g
+            translation = " ".join(o for o in out if o)
         t_tr = time.time() - t0
         self._tr_used[id(self.tr)] = time.time()
         if not translation.strip():                     # nothing new to show: not a success

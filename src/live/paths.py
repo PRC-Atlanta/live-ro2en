@@ -3,6 +3,7 @@ app: LIVE_HOME (~/Library/Application Support/Live RO2EN) and the LIVE_* overrid
 
   LIVE_HOME               user data root (settings, session logs, models via HF_HOME)
   LIVE_LOG_DIR            logs (engine.log, app_errors.log, services/)
+  LIVE_USER_DIR           the user's own files (settings, names & words); default LIVE_HOME
   LIVE_CACHE_DIR          caches
   LIVE_ENGINE_PYTHON      interpreter for engine.py (default <root>/<stt_venv>/bin/python)
   LIVE_ENGINE_PYTHONPATH  PYTHONPATH for that interpreter (embedded runtime site dirs)
@@ -101,8 +102,9 @@ def hf_cache(root: pathlib.Path = REPO) -> pathlib.Path:
 # --- settings and the user's word lists (S3) -------------------------------------------
 def user_dir(root: pathlib.Path = REPO) -> pathlib.Path:
     """The user's own files (settings.yaml and the additions to the bundled lists): LIVE_HOME,
-    or <repo>/user in dev, so the bundled glossary.csv / keywords_en.txt are never overwritten."""
-    return _env("LIVE_HOME") or root / "user"
+    or <repo>/user in dev, so the bundled glossary.csv / keywords_en.txt are never overwritten.
+    LIVE_USER_DIR overrides both (a bench run: no names typed in Settings, only --terms)."""
+    return _env("LIVE_USER_DIR") or _env("LIVE_HOME") or root / "user"
 
 
 def settings_file(root: pathlib.Path = REPO) -> pathlib.Path:

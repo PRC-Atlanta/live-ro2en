@@ -58,7 +58,7 @@ export function gainKnob(el, { label, keys, min, max, fmt, onChange, onCommit, a
     k.onpointerup = k.onpointercancel = () => {
       k.onpointermove = k.onpointerup = k.onpointercancel = null;
       turning = false;
-      commit();
+      if (cur !== v0) commit();                            // a click alone changes nothing (Auto gain stays on)
     };
   });
   k.addEventListener("wheel", e => {

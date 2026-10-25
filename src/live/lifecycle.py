@@ -841,7 +841,9 @@ class LifecycleMixin:
         self._level = (now, ev)
         if isinstance(ev.get("rms_db"), (int, float)):
             at = float(ev["t"]) if isinstance(ev.get("t"), (int, float)) else now   # the capture time: on the
-            self._level_hist.append((at, float(ev["rms_db"]), float(ev.get("peak_db") or ev["rms_db"]),   # recording's clock in a bench replay
+            pk = ev.get("peak_db")                     # 0.0 is a clipped peak, not a missing one
+            pk = float(pk) if isinstance(pk, (int, float)) else float(ev["rms_db"])
+            self._level_hist.append((at, float(ev["rms_db"]), pk,   # on the recording's clock in a bench replay
                                      bool(ev.get("speech"))))
         if ev.get("speech"):
             self._last_voice_t = now

@@ -259,6 +259,12 @@ def monitor(every: float = 60.0) -> None:
         time.sleep(2)
 
 
+def _said(r: dict) -> str:
+    """When the phrase was spoken, HH:MM:SS: the time `clip_recording.py mark --at` wants."""
+    t = r.get("t_speech") or r.get("t_start")
+    return time.strftime("%H:%M:%S", time.localtime(t)) if isinstance(t, (int, float)) and t > 1e9 else "--:--:--"
+
+
 def _digest(rows: list[dict]) -> str:
     ok = [r for r in rows if r["outcome"] == "ok"]
     head = (f"PHRASES {rows[0]['time'][11:19]}-{rows[-1]['time'][11:19]}: {len(ok)} shown, "
@@ -269,9 +275,10 @@ def _digest(rows: list[dict]) -> str:
         lv = [r["level"]["speech_db"] for r in ok if isinstance(r.get("level"), dict) and r["level"].get("speech_db") is not None]
         if lv:
             head += f", speech level {st.median(lv):.0f} dB"
-    body = [f"  {'Q' if r.get('profile') == 'quality' else 'F'}{r.get('lang', '')} RO: {r.get('source', '')}\n"
-            f"        EN: {r.get('translation', '')}" for r in ok]
-    body += [f"  -- {r['outcome']}: {(r.get('ro') or r.get('multi') or '')[:60]!r}" for r in rows if r["outcome"] != "ok"]
+    body = [f"  {_said(r)} {'Q' if r.get('profile') == 'quality' else 'F'}{r.get('lang', '')} RO: {r.get('source', '')}\n"
+            f"                 EN: {r.get('translation', '')}" for r in ok]
+    body += [f"  {_said(r)} -- {r['outcome']}: {(r.get('ro') or r.get('multi') or '')[:60]!r}"
+             for r in rows if r["outcome"] != "ok"]
     return "\n".join([head] + body)
 
 

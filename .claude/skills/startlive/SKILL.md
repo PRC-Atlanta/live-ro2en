@@ -59,8 +59,8 @@ On each event:
   short line, or nothing worth saying ("ok"), unless something matters.
 - **A mistake worth hearing again** (wrong meaning, garbage, a name, a wrong switch, a dropped
   line): mark it so its audio is kept —
-  `python3 scripts/clip_recording.py mark --at HH:MM:SS "what went wrong"` (the phrase's time
-  from the digest). Marks are kept first when the recording is cut down.
+  `python3 scripts/clip_recording.py mark --at HH:MM:SS "what went wrong"` (the time at the
+  start of that phrase's line in the digest: when it was spoken). Marks are kept first when the recording is cut down.
 - **An idea:** add it to `docs/translation_ideas.md` following the format there: evidence
   (log name, time, the phrase pair), the change, effort. If it matches an existing idea, add
   the new evidence to that one instead. Prefer ideas with a clear cause (recogniser vs

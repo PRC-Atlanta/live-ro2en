@@ -66,7 +66,13 @@ def test_the_gain_freezes_while_nobody_speaks():
     t = talk(ctl, t, 30.0, -60, speech=False)          # room noise between speakers: not pumped up
     t = talk(ctl, t, 30.0, -26, speech=False)          # louder music the detector rejects: no duck either
     assert ctl.gain_db == g
-    t2 = talk(ctl, t + 60.0, DT, -40)                  # a minute of silence does not count as time
+    # a pause does not count as time: 5 s of silence (the 20 s window still holds the speech
+    # before it, so the gain could move) and the next speech frame moves it by one frame's step
+    ctl = auto_ctl(gain_db=10)
+    t = talk(ctl, 0.0, 10.0, -40)
+    g = ctl.gain_db
+    talk(ctl, t + 5.0, DT, -40)
+    assert ctl.agc.median() is not None and ctl.gain_db != g
     assert abs(ctl.gain_db - g) <= 2 * DT * 1.0 + 1e-9
 
 

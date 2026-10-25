@@ -33,6 +33,8 @@ def test_gate_drops_garbled_recognition():
     assert not _ok("Eu cuidarei isso, vou virar de mim.", "ro")
     for scrap in ("F.", "T.", "A."):                                   # "F." -> "Friends,"
         assert not _ok(scrap, "ro")
+    for garble in ("Nezukum.", "Tsoom."):           # one word, capitalised as every phrase's first
+        assert not _ok(garble, "en")
 
 
 def test_gate_keeps_real_short_phrases_and_names():

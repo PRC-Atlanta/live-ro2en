@@ -50,6 +50,10 @@ def _close(heard: str, name: str) -> bool:
     return r >= 0.9 or (r >= 0.75 and a[0] == b[0] and a[-1] == b[-1])
 
 
+def _sounds_ratio(heard: str, name: str) -> float:
+    return difflib.SequenceMatcher(None, skeleton(heard), skeleton(name)).ratio()
+
+
 def candidates(names: list[str]) -> list[str]:
     """Full names, and each word of a person's name ('Dragoș Puha' → 'Dragoș', 'Puha');
     a place with a small word in it ('Vicovu de Sus') only as a whole."""
@@ -62,8 +66,10 @@ def candidates(names: list[str]) -> list[str]:
     return list(dict.fromkeys(out))
 
 
-def map_back(text: str, names: list[str]) -> str:
-    """Replace the English recogniser's spellings of today's names with the listed form."""
+def map_back(text: str, names: list[str], known: set[str] = frozenset()) -> str:
+    """Replace the English recogniser's spellings of today's names with the listed form.
+    `known` holds folded dictionary words: a heard word in it is a real word, not a misheard
+    name ('Bethany' is not 'Botoșani', 'Sceva' is not 'Suceava'), and is only kept as is."""
     if not names or not text:
         return text
     cands = candidates(names)
@@ -81,7 +87,14 @@ def map_back(text: str, names: list[str]) -> str:
                 if fold(heard) in exact:
                     best = (n, None)                     # already right: leave it
                     break
-                hit = next((c for c in cands if len(skeleton(heard)) >= 3 and _close(heard, c)), None)
+                # a dictionary word ('Bethany', 'Sceva', 'Christian') only when short and sounding
+                # nearly the same as the name: 'Pua' (a Bible name too) is still Puha, 'Such Ava'
+                # still Suceava
+                strict = all(fold(w.group(0)) in known for w in win)
+                if strict and any(len(w.group(0)) > 4 for w in win):
+                    continue                            # 'Christian' is a word, not Cristian
+                hit = next((c for c in cands if len(skeleton(heard)) >= 3 and _close(heard, c)
+                            and not (strict and _sounds_ratio(heard, c) < 0.85)), None)
                 if hit:
                     best = (n, hit)
                     break

@@ -109,16 +109,34 @@ def _word(toks, i, lang) -> tuple[int, str, bool] | None:
         if w == "dozen":
             return 12, "teen", False
         return None
-    if w in ("o", "un") and nxt in ("sută", "suta", "mie", "milion"):
-        return 1, "unit", False
+    if w in ("o", "un") and nxt in ("sută", "suta", "mie", "milion") and prev != "-":
+        return 1, "unit", False                         # not "spune-o mie": "say it to me"
     ordn = _ro_ordinal(w, prev)
     if ordn:
         return (*ordn, True)
     if w == "nouă" and (not nxt or not nxt[0].isalpha() or nxt in _ROFUNC or prev in ("ne", "-")):
         return None                                     # "ne-a spus nouă că": "to us", not nine
+    if w == "nouă" and prev in ("o", "una", "cea", "această", "aceasta", "acea", "mai", "foarte", "noua"):
+        return None                                     # "o nouă viață": a new life, not nine
     if w in _RO:
         return (*_RO[w], False)
     return None
+
+
+# "twenty thirty years ago", "fifteen twenty people": a range of counts, not a year
+_EN_COUNTED = set("""years months weeks days hours minutes seconds times people men women children
+kids families brothers sisters members pastors churches dollars miles pages chapters verses""".split())
+
+
+def _a_range(toks, i: int, k: int, first: int, second: int) -> bool:
+    """"twenty thirty years ago", "fifteen twenty people": two counts, the second the larger,
+    before a counted noun. Not "in nineteen eighty times were hard" (a year after "in")."""
+    nxt = toks[k + 1][0].lower() if k + 1 < len(toks) else ""
+    prev = toks[i - 1][0].lower() if i else ""
+    if nxt not in _EN_COUNTED or second <= first:
+        return False
+    # "in nineteen eighty", "since twenty ten": a year can only start 18, 19 or 20
+    return not (first in (18, 19, 20) and prev in ("in", "since", "from", "by", "until"))
 
 
 def _month(toks, i) -> bool:
@@ -177,7 +195,8 @@ def _runs(text: str, lang: str) -> list[dict]:
             elif kind == "scale" or (kind != "scale" and total and cur == 0):
                 cur += nv                               # a hundred and twenty / două mii doisprezece
             elif (lang == "en" and not year and kind in ("teen", "ten") and 10 <= cur < 100
-                  and nk in ("teen", "ten") and k == j):
+                  and nk in ("teen", "ten") and k == j
+                  and not _a_range(toks, i, k, cur, nv)):
                 cur, year = cur * 100 + nv, True        # nineteen sixty / twenty twenty
             elif year and kind == "ten" and cur % 10 == 0 and nk == "unit":
                 cur += nv                               # nineteen sixty three
