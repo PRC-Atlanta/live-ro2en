@@ -13,13 +13,22 @@ details of the server, the logs and known behaviour; read it if you need more th
 ## 1. Launch
 
 1. `python3 scripts/livectl.py url`. If it prints a URL, the app is already running: do not
-   start a second one; go to step 2.
+   start a second one; give the user the addresses (step 4) and go on to step 1b.
 2. Otherwise start it in a Terminal panel tab (`mcp__terminal__run_in_terminal`,
    title `Live RO2EN app`):
    `cd "/Users/bentarcau/Code/Live RO2EN" && exec .venv-mt/bin/python src/live/app.py`
    (add `--autostart` only if the user asked for captions to start by themselves).
 3. Wait until ready, one Bash call:
-   `for i in $(seq 1 90); do python3 scripts/livectl.py get state 2>/dev/null | grep -Eq '"phase": "(ready|listening|captioning)"' && break; sleep 2; done; python3 scripts/livectl.py status`
+   `for i in $(seq 1 90); do python3 scripts/livectl.py get state 2>/dev/null | grep -Eq '"phase": "(ready|listening|captioning)"' && break; sleep 2; done; python3 scripts/livectl.py status; python3 scripts/livectl.py url`
+4. **As soon as the server answers, tell the user its addresses, before anything else**, one
+   short message (the user asked for this every time). Use the URL the last command printed
+   (the port can differ; never assume 8765):
+   - Control page: `<url>/ui/`
+   - Captions display (shows the translation also while ProPresenter is hidden):
+     `<url>/ui/display.html`
+   Note in the same message that they open on this Mac only (127.0.0.1). If `url` prints
+   "not running" after the wait, say the app did not start and show the end of its Terminal
+   tab (`mcp__terminal__read_terminal`).
 
 ## 1b. Start the reference recording
 
