@@ -1,6 +1,7 @@
 // Live screen (docs/APP_PLAN.md §1.3 "Live", controls §1.4), matching docs/ui_mockup/live.html:
-// sound meter, Heard / On screen / Both text display, Hide LED and health pills, problem banner,
-// and the control deck (Speaker knob, the big Start/Stop dial with its Delay arc, Quality knob).
+// sound meter, Heard / On screen / Both text display, health pills, problem banner, and the
+// control deck (Gain and Speaker knobs, the big Start/Stop dial with its Delay arc, the Hide
+// captions button above the Quality knob).
 import { S } from "../i18n/strings.en.js";
 import { frame } from "../components/frame.js";
 import { mountMeter } from "../components/meter.js";
@@ -39,10 +40,6 @@ const DECK = `
   </div>
 
   <div class="ledrow">
-    <div class="leds">
-      <button class="led" data-hide aria-pressed="false"><b></b><span class="label">${S.hide}</span><span class="sub">${S.hideKey}</span></button>
-      <button class="led" data-song aria-pressed="false" title="${S.songTitle}"><b></b><span class="label">${S.song}</span><span class="sub">${S.songKey}</span></button>
-    </div>
     <div class="pills">
       <span class="pill" data-pill="sound"><i></i><span></span></span>
       <span class="pill" data-pill="pp"><i></i><span></span></span>
@@ -76,7 +73,20 @@ const DECK = `
       <div class="label stateline" data-stateline></div>
       <div class="sub" id="lt-bighint" data-bighint></div>
     </div>
-    <div class="ctl" data-k-prof></div>
+    <div class="ctlstack">
+      <div class="ctl">
+        <button class="hidebtn" data-hide aria-pressed="false" aria-label="${S.hide}" title="${S.hideTitle}">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <path d="M9 22H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h20a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/>
+            <path class="tri" d="M16 19l6 7H10z"/>
+            <path class="slash" d="M5 4l22 22"/>
+          </svg>
+        </button>
+        <div class="label">${S.hide}</div>
+        <div class="sub">${S.hideKey}</div>
+      </div>
+      <div class="ctl" data-k-prof></div>
+    </div>
   </div>
   <div class="sr" data-announce aria-live="polite"></div>`;
 
@@ -143,7 +153,6 @@ export function render(el, store) {
   const say = t => { q("[data-announce]").textContent = t; };
   const DONE = {
     pause: b => (b.on ? S.toast.hidden : S.toast.shown), blank: () => S.toast.blanked,
-    song: b => (b.on ? S.toast.songOn : S.toast.songOff),
     retract: () => S.toast.removed, correct: () => S.toast.fixed, reconnect: () => S.toast.reconnecting,
     start: () => S.toast.started, stop: () => S.toast.stopped,
     mode: b => S.toast.mode(S.mode.long[b.mode]), profile: b => S.toast.quality(S.quality.long[b.profile] || b.profile),
@@ -245,7 +254,6 @@ export function render(el, store) {
   unbind.push(() => { removeEventListener("keydown", onKey); removeEventListener("keyup", onKeyUp); });
 
   q("[data-hide]").onclick = () => run("pause");
-  q("[data-song]").onclick = () => run("song");
   q("[data-banner] .bbtn").onclick = () => { const b = bannerFor(s); if (b) run(b.action.id); };
   q("[data-ppstrip] button").onclick = () => { const p = ppStrip(s); if (p) run(p.action.id); };
 
@@ -270,9 +278,6 @@ export function render(el, store) {
     const hb = q("[data-hide]");
     hb.classList.toggle("on", hidden); hb.setAttribute("aria-pressed", hidden);
     q("[data-mirror]").classList.toggle("hidden", hidden);
-    const sb = q("[data-song]"), song = !!s.song;
-    sb.classList.toggle("on", song); sb.setAttribute("aria-pressed", song);
-    sb.querySelector(".label").textContent = song && s.song_auto ? S.songAuto : S.song;
 
     // the speaker's language and the captions' language
     const srcLang = s.mode === "en-ro" ? "en" : s.mode === "ro-en" ? "ro" : s.lang || "ro";

@@ -20,7 +20,7 @@ main:has(> .unit) { padding: 12px 16px; }
   50% { box-shadow: 0 0 0 1px rgba(255,93,82,.9), 0 0 16px 4px rgba(255,93,82,.75); }
 }
 .tb.wide { flex: 1; min-width: 0; text-align: center; overflow: hidden; text-overflow: ellipsis; }
-.tb:focus-visible, .mtab:focus-visible, .pos:focus-visible, .knob:focus-visible, .led:focus-visible,
+.tb:focus-visible, .mtab:focus-visible, .pos:focus-visible, .knob:focus-visible,
 .bbtn:focus-visible, .btn:focus-visible { outline: 2px solid var(--cyan-hi); outline-offset: 2px; }
 
 /* main panel */
@@ -88,16 +88,8 @@ main:has(> .unit) { padding: 12px 16px; }
 .earlier .dst.none { color: var(--mute); font-style: italic; }
 .earlier li.empty { display: block; color: var(--mute); }
 
-/* LED row: Hide captions, Song + health pills */
-.ledrow { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: 14px 4px 4px; }
-.led { display: inline-flex; align-items: center; gap: 10px; background: none; border: 0; padding: 8px 4px;
-       color: var(--label); cursor: pointer; min-height: 44px; font: inherit; }
-.led b { width: 16px; height: 16px; border-radius: 50%; background: #0d2a33; border: 2px solid #2b5d68;
-         box-shadow: inset 0 1px 3px rgba(0,0,0,.8); }
-.led.on b { background: radial-gradient(circle at 40% 35%, #fff 0, var(--amber) 35%, #8a5a00 100%);
-            border-color: #ffd27a; box-shadow: 0 0 10px var(--amber); }
-.led.on .label { color: var(--amber); }
-.leds { display: flex; gap: 14px; flex-wrap: wrap; }
+/* health pills under the text display */
+.ledrow { display: flex; justify-content: flex-end; align-items: center; gap: 12px; flex-wrap: wrap; margin: 14px 4px 4px; }
 .pills { display: flex; gap: 16px; flex-wrap: wrap; }
 .pill { display: inline-flex; align-items: center; gap: 8px; }
 .pill i { width: 9px; height: 9px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 8px var(--lime); }
@@ -177,6 +169,28 @@ main:has(> .unit) { padding: 12px 16px; }
 .gk-auto[aria-pressed="true"] { color: var(--cyan-hi); border-color: var(--cyan); box-shadow: 0 0 6px rgba(70,214,236,.45); }
 .gk-auto:focus-visible { outline: 2px solid var(--cyan-hi); outline-offset: 2px; }
 .gk.auto .gk-fill { stroke: var(--cyan); }
+
+/* Hide captions (H): the screen-off button above the Quality knob; pulses red while hidden */
+.hidebtn { width: 60px; height: 60px; margin: 10px 0; border-radius: 50%; padding: 0; cursor: pointer; display: grid; place-items: center;
+           background: radial-gradient(circle at 50% 40%, #1d5a6a 0%, #0f3440 60%, #0a2730 100%);
+           border: 2px solid var(--cyan); box-shadow: 0 0 14px var(--edge-glow), inset 0 0 12px rgba(0,0,0,.6); }
+.hidebtn svg { width: 32px; height: 32px; fill: none; stroke: var(--cyan-hi); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+               filter: drop-shadow(0 0 3px rgba(70,214,236,.5)); }
+.hidebtn svg .tri { fill: var(--cyan-hi); stroke: none; }
+.hidebtn:focus-visible { outline: 2px solid var(--cyan-hi); outline-offset: 2px; }
+.hidebtn.on { border-color: var(--red); background: radial-gradient(circle at 50% 40%, #6a2a26 0%, #3f1714 60%, #2a0f0d 100%);
+              animation: hidePulse 1.6s ease-in-out infinite; }
+.hidebtn.on svg { stroke: var(--red); animation: hideIcon 1.6s ease-in-out infinite; }
+.hidebtn.on svg .tri { fill: var(--red); }
+.hidebtn.on ~ .label { color: var(--red); }
+@keyframes hidePulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(255,93,82,.5), 0 0 8px 1px rgba(255,93,82,.35), inset 0 0 12px rgba(0,0,0,.6); }
+  50% { box-shadow: 0 0 0 2px rgba(255,93,82,.9), 0 0 22px 6px rgba(255,93,82,.75), inset 0 0 12px rgba(0,0,0,.6); }
+}
+@keyframes hideIcon {
+  0%, 100% { filter: drop-shadow(0 0 2px rgba(255,93,82,.4)); opacity: .75; }
+  50% { filter: drop-shadow(0 0 7px rgba(255,93,82,1)); opacity: 1; }
+}
 
 /* big dial */
 .bigwrap { position: relative; width: 260px; height: 230px; margin: 0 auto; }
@@ -307,7 +321,7 @@ kbd { font: 600 12px var(--num); color: var(--cyan-hi); background: #050b0e; bor
   /* two lines, newest at the bottom: older wrapped lines scroll off the top */
   .heard, .mirror .screen { height: 2.9em; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
   .earlier { display: none; }
-  .ledrow { margin: 2px 2px 0; } .led { min-height: 34px; padding: 2px 4px; }
+  .ledrow { margin: 2px 2px 0; }
   .banner { margin-top: 2px; padding: 4px 10px; font-size: 13px; line-height: 1.3; } .bbtn { min-height: 34px; padding: 4px 12px; }
   .deck { zoom: .66; margin-top: 14px; } .foot { display: none; }
 }
@@ -316,4 +330,6 @@ kbd { font: 600 12px var(--num); color: var(--cyan-hi); background: #050b0e; bor
   .big.holding .hold { animation-duration: .6s; }
   .tb.on[data-tb="rehearsal"] { animation: none; box-shadow: 0 0 0 1px rgba(255,93,82,.9), 0 0 12px 3px rgba(255,93,82,.6); }
   .meterwrap.pp-alert { animation: none; box-shadow: 0 0 0 2px rgba(255,93,82,.7), 0 0 30px 6px rgba(255,93,82,.5); }
+  .hidebtn.on { animation: none; box-shadow: 0 0 0 2px rgba(255,93,82,.9), 0 0 18px 4px rgba(255,93,82,.6); }
+  .hidebtn.on svg { animation: none; opacity: 1; }
 }

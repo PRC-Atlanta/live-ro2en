@@ -170,7 +170,6 @@ def test_every_shortcut_posts_the_right_action():
         calls[k] = [intent, callFor(intent, s, { text: "Fixed.", lines: ["Ionuț Pop"], save: true })];
       }
       calls.paused_h = callFor("pause", { ...s, paused: true });
-      calls.song_s = callFor("song", { ...s, song: true });
       calls.quality_back = callFor("quality", { ...s, profile: "quality" });
       const g = spaceGate(500);
       calls.space = [g({ phase: "ready" }, 0), g({ phase: "captioning" }, 1000), g({ phase: "captioning" }, 1300),
@@ -178,7 +177,7 @@ def test_every_shortcut_posts_the_right_action():
       calls.modifier = intentFor({ key: "h", metaKey: true });
       console.log(JSON.stringify(calls));""")
     want = {
-        "h": ["pause", ["pause", {"on": True}]], "s": ["song", ["song", {"on": True}]], "escape": ["blank", ["blank", {}]],
+        "h": ["pause", ["pause", {"on": True}]], "escape": ["blank", ["blank", {}]],
         "1": ["mode_auto", ["mode", {"mode": "auto"}]], "2": ["mode_ro", ["mode", {"mode": "ro-en"}]],
         "3": ["mode_en", ["mode", {"mode": "en-ro"}]], "q": ["quality", ["profile", {"profile": "quality"}]],
         "backspace": ["retract", ["retract", {}]], "r": ["reconnect", ["reconnect", {}]],
@@ -188,7 +187,6 @@ def test_every_shortcut_posts_the_right_action():
     for k, w in want.items():
         assert res[k] == w, (k, res[k])
     assert res["paused_h"] == ["pause", {"on": False}]
-    assert res["song_s"] == ["song", {"on": False}]                 # the same key releases a song
     assert res["quality_back"] == ["profile", {"profile": "fast"}]
     # Space: start when ready; while live the first press only arms, a second within 0.5 s stops
     assert res["space"] == ["start", "armed", "stop", "armed", "armed", None]
