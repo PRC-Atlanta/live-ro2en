@@ -200,7 +200,7 @@ def test_hot_switch_keeps_the_engine_and_sends_cfg(tmp_path, monkeypatch):
     cmds = engine.cmds()
     assert [c["cmd"] for c in cmds] == ["cfg"]
     assert cmds[0]["cfg"]["min_pause_ms"] == 250 and cmds[0]["cfg"]["max_clause_s"] == 5.5
-    assert "stt_model" not in cmds[0]["cfg"] and "en_recognizer" not in cmds[0]["cfg"]
+    assert "stt_model" not in cmds[0]["cfg"]
     assert all(isinstance(v, (int, float, str, bool)) for v in cmds[0]["cfg"].values())   # contract: map num|str|bool
     live._handle(_clause(1, "Frați și surori, astăzi citim."))
     assert _log(live)[-1]["translation"].startswith("[fake:quality]") and _log(live)[-1]["profile"] == "quality"

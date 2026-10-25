@@ -6,7 +6,7 @@ import { MODES, PROFILES } from "../setup/kit.js";
 export const NEVER_EXPOSED = [
   "live.translator", "stt_model", "stt_venv", "context_s", "lookahead_words", "context_clauses",
   "max_clause_s", "max_chunk_s", "min_pause_ms", "catchup", "paths", "google", "bible_testset",
-  "whistle.weights", "whistle.lib", "profiles.", "web_host", "web_port", "transcript_log_dir",
+  "profiles.", "web_host", "web_port", "transcript_log_dir",
 ];
 
 export const TABS = [
@@ -47,9 +47,6 @@ export const FIELDS = {
       hint: "View only: a phone, tablet or TV browser on the church Wi-Fi can show the captions. It has no controls." },
   ],
   advanced: [
-    { key: "live.en_recognizer", label: "English listener", kind: "choice",
-      options: [["parakeet", "Standard", "Most accurate"], ["parakeet-stream", "Streaming", "Words appear sooner"],
-                ["whistle", "Light", "Streaming, least memory"]] },
     { key: "live.input_gain_target_db", label: "Automatic gain: speech level (dBFS)", kind: "number", min: -30, max: -10, step: 1,
       hint: "The level the automatic gain aims for. -20 is the middle of the meter's good band." },
     { key: "live.vad_threshold", label: "Ignore music & singing", kind: "choice",

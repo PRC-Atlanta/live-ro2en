@@ -36,7 +36,7 @@ import numpy as np
 # setup.sh. Set LIVE_ALLOW_NETWORK=1 only for setup/updates.
 if os.environ.get("LIVE_ALLOW_NETWORK") != "1":
     for _k, _v in (("HF_HUB_OFFLINE", "1"), ("TRANSFORMERS_OFFLINE", "1"), ("HF_DATASETS_OFFLINE", "1"),
-                   ("NEEDLE_TELEMETRY", "0"), ("DO_NOT_TRACK", "1")):
+                   ("DO_NOT_TRACK", "1")):
         os.environ[_k] = _v
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import netaudit  # noqa: E402
@@ -44,7 +44,6 @@ netaudit.install()                 # no-op unless NET_AUDIT_LOG is set (offline 
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from langid import score as lang_score      # noqa: E402
 from segmenter import PauseTracker          # noqa: E402
 from vad import FRAME, SileroVAD            # noqa: E402
 
@@ -69,7 +68,7 @@ _EMIT_LOCK = threading.Lock()
 
 
 def emit(obj) -> None:
-    with _EMIT_LOCK:                       # the Whistle stream thread emits too
+    with _EMIT_LOCK:                       # the capture thread emits too (level, input)
         _OUT.write(json.dumps(obj, ensure_ascii=False) + "\n")
     _OUT.flush()
 
@@ -544,7 +543,7 @@ class Engine:
         self.min_commit = int(cfg.get("min_commit_s", 0) * SR / FRAME)
         self.max_commit = int(cfg.get("max_commit_s", 0) * SR / FRAME)
         self.n = 0
-        self._id_lock = threading.Lock()                 # the stream thread numbers clauses too
+        self._id_lock = threading.Lock()                 # clause ids stay unique across threads
         # audio watchdog: no frames at all (device gone) or exact digital silence (muted/dead
         # interface) for this long is reported; a real quiet room still has a noise floor
         self.no_audio_s = float(cfg.get("audio_watchdog_s", 2.0))
@@ -555,15 +554,6 @@ class Engine:
         self.realtime = True
         self.backlog_s = float(cfg.get("stt_backlog_s", 3.0))
         self.catchup_max = int(cfg.get("catchup_max_s", 20.0) * SR / FRAME)
-        # English recognizer: Whistle (streaming, offline) or the previous Parakeet path (A/B)
-        self.whistle = None
-        self.wcfg = cfg.get("whistle") or {}
-        self.en_rec = cfg.get("en_recognizer", "parakeet")
-        if self.en_rec == "whistle":
-            loading("Loading English recognition", 80)
-            from whistle_en import WhistleSTT
-            self.whistle = WhistleSTT(self.wcfg)
-        self.streamer = self.whistle                     # English streaming recognizer (EN→RO locked)
         # short live chunks are transcribed with the previous context_s seconds of audio
         # (RO 11.3 -> 6.9 %, EN 10.3 -> 2.4 % WER vs Google; see DECISIONS.md)
         from context_stt import ContextSTT
@@ -574,14 +564,8 @@ class Engine:
         self._held_t = None                              # when the held word(s) were spoken
         from concurrent.futures import ThreadPoolExecutor
         self._pool = ThreadPoolExecutor(max_workers=1)
-        if self.en_rec == "parakeet-stream":
-            loading("Loading English recognition", 85)
-            from parakeet_stream import ParakeetStreamSTT
-            self.streamer = ParakeetStreamSTT(cfg.get("parakeet_stream") or {})
-        self._wstream = None                             # (assembler, wall_t0, chunk buffer)
-        # English needs a recognizer that hears it: auto needs one to detect the language
-        self.english_ok = self.multi is not None or self.whistle is not None or self.streamer is not None
-        if not self.english_ok and self.mode != "ro-en":
+        # English is heard by Parakeet (self.multi); auto needs it to detect the language too
+        if self.multi is None and self.mode != "ro-en":
             self._refuse(self.mode)
             self.mode = "ro-en"
         loading("Ready", 100)
@@ -620,8 +604,6 @@ class Engine:
                 elif k == "context_s":
                     for c in ctxs:
                         c.ctx_n, c.max_ctx_words = int(float(v) * SR), max(1, int(float(v) * 3))
-                elif k == "en_recognizer" and v == getattr(self, "en_rec", v):
-                    pass                                          # unchanged: nothing to do
                 elif k in ("input_gain_db", "input_gain_auto", "input_gain_target_db"):
                     pass                  # the capture side's: the `gain`/`agc` commands set them live
                 elif k == "ro_names":
@@ -632,8 +614,6 @@ class Engine:
                     if hasattr(getattr(self, "stt", None), "names"):
                         self.stt.names = None                   # rebuilt with the new weight
                     self.set_ro_names(names)
-                elif k in ("whistle", "parakeet_stream"):
-                    pass                  # recognizer options: names come by `keywords`, the rest at the next start
                 else:
                     later.append(k)
             except (TypeError, ValueError):
@@ -641,11 +621,9 @@ class Engine:
         return later
 
     def set_keywords(self, words: list[str], ro: list[str] | None = None) -> None:
-        """`{"cmd":"keywords"}`: the user's and today's names for the English recognizer, and
-        (`ro`) as Romanian speech has them, for the Romanian one."""
-        w = getattr(self, "whistle", None)
-        if w is not None and hasattr(w, "set_keywords"):
-            w.set_keywords([str(x) for x in words or [] if str(x).strip()])
+        """`{"cmd":"keywords"}`: the user's and today's names. `ro` (as Romanian speech has
+        them) is boosted in the Romanian recogniser; `words` (the English side) has no consumer
+        in the engine (Parakeet takes no word list) and is accepted for compatibility."""
         if ro is not None:
             self.set_ro_names(ro)
 
@@ -682,9 +660,8 @@ class Engine:
     def _transcribe(self, audio: np.ndarray, t_start: float, t_end: float, t_speech: float | None = None,
                     final: bool = True) -> None:
         t = time.time()
-        en_locked_whistle = self.mode == "en-ro" and self.whistle is not None
-        need_ro = self.mode != "en-ro" or (self.multi is None and not self.whistle)
-        need_multi = self.multi is not None and self.mode != "ro-en" and not en_locked_whistle
+        need_ro = self.mode != "en-ro" or self.multi is None
+        need_multi = self.multi is not None and self.mode != "ro-en"
         multi = ""
         if need_ro and need_multi and self.multi_ctx is not None:
             # Auto mode: Jackrabbit (torch, helper thread) and Parakeet (MLX, must stay on this
@@ -703,64 +680,11 @@ class Engine:
             t_first = min(t_first, self._held_t)
         held = getattr(self.stt_ctx if need_ro else (self.multi_ctx or self.stt_ctx), "held", 0)
         self._held_t = (t_end - 0.4 * held) if (held and not final) else None
-        en = ""
-        # auto: Whistle only when the clause is not clearly Romanian (it would be discarded)
-        clearly_ro = self.mode == "auto" and bool(multi) and lang_score(multi) > 0.15
-        if self.whistle is not None and self.mode != "ro-en" and not clearly_ro:
-            en = self.whistle(audio)                                         # English text
         if self.mode == "en-ro" and not ro:
-            ro = en or multi
-        emit({"type": "clause", "id": self._next_id(), "ro": ro.strip(), "multi": (multi or en).strip(), "en": en.strip(),
+            ro = multi
+        emit({"type": "clause", "id": self._next_id(), "ro": ro.strip(), "multi": multi.strip(),
               "t_start": t_start, "t_speech": t_first, "t_end": t_end, "t_emit": time.time(), "stt_s": round(time.time() - t, 4),
               "audio_s": round(len(audio) / SR, 3)})
-
-    # --- Whistle streaming (EN→RO locked mode) -------------------------------------------
-    def _whistle_streaming(self, ts: float, fr: np.ndarray, p: float) -> bool:
-        """Feed audio to Whistle while EN→RO is locked. Non-speech frames (VAD below
-        whistle.vad_threshold: music, choir, noise) are replaced by silence, which Whistle
-        returns as empty text. Returns True when the frame was consumed by the stream."""
-        want = self.streamer is not None and self.mode == "en-ro" and self.wcfg.get("stream", True) \
-            and not getattr(self.streamer, "error", None)      # a failed stream: use the clause path
-        if not want:
-            self._stop_whistle_stream(wait=False)        # mode switch: never stall the audio loop
-            return False
-        if self._wstream is None:
-            from whistle_en import ClauseAssembler, words_from_event
-            wall_t0 = ts - FRAME / SR
-
-            def on_clause(text, start, end, pass_ms):
-                emit({"type": "clause", "id": self._next_id(), "ro": "", "multi": text, "en": text, "source": f"{self.en_rec}",
-                      "t_start": wall_t0 + start, "t_speech": wall_t0 + start, "t_end": wall_t0 + end,
-                      "t_emit": time.time(), "stt_s": round(pass_ms / 1000, 4), "audio_s": round(end - start, 3)})
-            asm = ClauseAssembler(on_clause, pause_s=self.wcfg.get("pause_s", 0.35),
-                                  max_chunk_s=self.wcfg.get("max_chunk_s", 2.5))
-
-            def on_event(ev):
-                if ev.get("error"):
-                    emit({"type": "error", "where": "english stream", "msg": ev["error"]})
-                if ev.get("end") or ev.get("error"):
-                    asm.flush(); return
-                asm.add(words_from_event(ev), ev.get("pass_ms", 0.0))
-                asm.tick(float(ev.get("received", 0.0)), ev.get("pending", ""), ev.get("pass_ms", 0.0))
-            self.streamer.start_stream(on_event)
-            self._wstream = {"buf": [], "n": 0, "chunk": int(self.wcfg.get("chunk_s", 1.0) * SR)}
-        st = self._wstream
-        gate = self.wcfg.get("vad_threshold", 0.6)
-        st["buf"].append(fr if p >= gate else np.zeros_like(fr))
-        st["n"] += len(fr)
-        if st["n"] >= st["chunk"]:
-            self.streamer.feed(np.concatenate(st["buf"]))
-            st["buf"], st["n"] = [], 0
-        return True
-
-    def _stop_whistle_stream(self, wait: bool = True) -> None:
-        """End the English stream. Its tail is still recognised and emitted by the stream's own
-        thread; only end of input waits for it (so eof comes after the last clause)."""
-        if self._wstream is not None:
-            if self._wstream["buf"]:
-                self.streamer.feed(np.concatenate(self._wstream["buf"]))
-            self.streamer.end_stream(**({} if wait else {"wait": 0}))
-            self._wstream = None
 
     def run(self, q: queue.Queue, stop: threading.Event | None = None, hold: bool = False,
             idle_watch: bool = True) -> None:
@@ -808,7 +732,6 @@ class Engine:
                     audio_state("no_frames", f"no audio from the input device for {time.time() - last_frame:.0f} s")
                 continue
             if item is None:
-                self._stop_whistle_stream()
                 commit_all()
                 emit({"type": "eof"})
                 return
@@ -824,7 +747,6 @@ class Engine:
                                 c.reset()                # no context from before this service
                         self._held_t = None
                     elif not on and listening:           # Stop: commit what was said, then hold
-                        self._stop_whistle_stream()
                         commit_all()
                         listening = False
                     emit({"type": "listen", "on": listening})   # after the last clause of the run
@@ -842,7 +764,7 @@ class Engine:
                     audio_state(item["fault"], item.get("msg", ""))
                     continue
                 m = item.get("mode")
-                if m and m != "ro-en" and not self.english_ok:
+                if m and m != "ro-en" and self.multi is None:
                     self._refuse(m)                      # stays RO→EN; the app is told why
                 elif m and m != self.mode:
                     commit_all()
@@ -876,8 +798,6 @@ class Engine:
                 ctl.voiced(ts, p >= self.pt.threshold)      # the automatic gain steers by speech only
             if not listening:                            # hold: meter only; keep the pre-roll
                 pre = (pre + [(ts, fr)])[-self.pre_roll:]
-                continue
-            if self._whistle_streaming(ts, fr, p):
                 continue
             if not frames and p < self.pt.threshold:
                 pre = (pre + [(ts, fr)])[-self.pre_roll:]

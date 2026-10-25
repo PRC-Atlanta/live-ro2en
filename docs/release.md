@@ -30,19 +30,19 @@ Live RO2EN.app/Contents/
   Resources/app/                         the code root (src/live/paths.py REPO)
     src/live/…  src/{model_lock,scoring,stt_run,textnorm}.py   (packaging/app_files.py)
     defaults.yaml glossary.csv keywords_en.txt terms.txt requirements/models.lock.txt
-    models/vad/silero_vad.onnx models/whistle/{libneedle.dylib,whistle.cact}
+    models/vad/silero_vad.onnx
     data/samples/en_sermon_sample.wav    the rehearsal recording
 ```
 
-The bundled models sit under `app/models/` (not `Resources/models/`) because that is where
-`vad.py` and `whistle_en.py` look (`paths.resource`). `packaging/app_files.py` follows the
+The bundled model sits under `app/models/` (not `Resources/models/`) because that is where
+`vad.py` looks (`paths.resource`). `packaging/app_files.py` follows the
 imports of `src/live`, so a new `src/*.py` dependency is bundled without editing anything.
 Tests, logs, `work/`, `results/`, `config.yaml`, `.env` and the venvs are never bundled.
 
-The three model files and the rehearsal WAV are git-ignored. `assemble_app.sh` takes them from
+The bundled model file and the rehearsal WAV are git-ignored. `assemble_app.sh` takes them from
 `MODELS_DIR` / `SAMPLES_DIR`, else from this checkout or (in a git worktree) the main
-checkout, else downloads the models at their pins (`packaging/fetch_bundled_models.sh`). The
-models are always checked against the sha256 lines in `requirements/models.lock.txt`.
+checkout, else downloads it at its pin (`packaging/fetch_bundled_models.sh`). It is always checked
+against the sha256 lines in `requirements/models.lock.txt`.
 `BUNDLE_SAMPLES` lists the rehearsal files to ship (default `en_sermon_sample.wav`, a
 synthetic reading). **Never add a church recording**: the DMG is distributed.
 

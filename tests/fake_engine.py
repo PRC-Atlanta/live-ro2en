@@ -24,19 +24,19 @@ class FakeEngine(E.Engine):
     def __init__(self, stt, mode, cfg):     # noqa: D401  (no models: Engine.__init__ is skipped)
         E.loading("Loading speech recognition", 5)
         time.sleep(float(os.environ.get("FAKE_LOAD_S", "0.3")))
-        self.mode, self.multi, self.whistle, self.streamer, self.en_rec = mode, None, None, None, "parakeet"
+        self.mode, self.multi = mode, object()    # a stand-in Parakeet: English modes are accepted
         self.pt = PauseTracker(frame_ms=32, min_pause_ms=int(cfg.get("min_pause_ms", 350)), max_clause_s=7.0)
         self.pre_roll, self.partial_every, self.min_commit, self.max_commit = 8, 0, 0, 0
         self.no_audio_s = float(cfg.get("audio_watchdog_s", 2.0))
         self.silent_s = float(cfg.get("digital_silence_s", 10.0))
-        self.realtime, self.backlog_s, self.catchup_max, self.english_ok = True, 0, 0, True
+        self.realtime, self.backlog_s, self.catchup_max = True, 0, 0
         self.n, self._id_lock = 0, threading.Lock()
-        self.wcfg, self._wstream, self._held_t = {}, None, None
+        self._held_t = None
         self.vad = lambda fr: 1.0 if float(np.abs(fr).max()) > 0.1 else 0.0
         E.loading("Ready", 100)
 
     def transcribe(self, audio, t_start, t_end, t_speech=None, final=True):
-        E.emit({"type": "clause", "id": self._next_id(), "ro": SENT, "multi": "", "en": "",
+        E.emit({"type": "clause", "id": self._next_id(), "ro": SENT, "multi": "",
                 "t_start": t_start, "t_speech": t_speech or t_start, "t_end": t_end, "t_emit": time.time(),
                 "stt_s": 0.01, "audio_s": round(len(audio) / E.SR, 3)})
 

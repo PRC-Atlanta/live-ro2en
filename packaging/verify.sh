@@ -113,7 +113,7 @@ print("\n".join(bad)); sys.exit(1 if bad else 0)' "$@") > "$T/imports.log" 2>&1
 }
 # the engine runs with HOME = <caches>/engine-home (paths.engine_env), as the app does
 mkdir -p "$IH/caches/engine-home"
-if imp "$IH/caches/engine-home" "$RES/site/common:$RES/site/nemo" engine vad context_stt whistle_en stt_run torch parakeet_mlx mlx.core needle \
+if imp "$IH/caches/engine-home" "$RES/site/common:$RES/site/nemo" engine vad context_stt stt_run torch parakeet_mlx mlx.core \
        onnxruntime soxr soundfile sounddevice nemo.collections.asr; then ok "engine side (site/nemo)"
 else bad "engine side (site/nemo):"; tail -15 "$T/imports.log" | sed 's/^/        /'; fi
 if imp "$IH" "$RES/site/common:$RES/site/mt" app model_setup preflight report translate ctranslate2 mlx_lm transformers; then

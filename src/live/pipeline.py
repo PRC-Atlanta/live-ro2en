@@ -27,7 +27,7 @@ from segmenter import split_clauses
 from textnorm import apply_spellings, fold_diacritics, tokens
 
 # A change of these needs a new engine process; every other profile setting is applied live.
-RESTART_KEYS = ("stt_model", "stt_venv", "en_recognizer")
+RESTART_KEYS = ("stt_model", "stt_venv")
 AUTO_ACTIONS_KEEP = 20
 
 
@@ -525,8 +525,7 @@ class PipelineMixin:
         ro, multi = ev.get("ro") or "", ev.get("multi") or ""
         auto = self.lang.mode == "auto"
         lang = self.lang.update(multi or ro, ro=ro if multi else None)
-        # English text: Whistle when configured (ev["en"]), else the Parakeet text (A/B switch)
-        english = ev.get("en") or multi
+        english = multi                                   # English is Parakeet's text
         if lang == "en":
             return "en", english or ro, {}
         if ro.strip() or not multi.strip():
@@ -577,7 +576,7 @@ class PipelineMixin:
         if kept and not cut:
             return src, lang, {}
         other = "en" if lang == "ro" else "ro"
-        alt = ((ev.get("en") or ev.get("multi")) if other == "en" else ev.get("ro")) or ""
+        alt = (ev.get("multi") if other == "en" else ev.get("ro")) or ""
         alt = apply_spellings(alt, self.cfg.get("spellings") or {})
         if (not kept and self.lang.mode == "auto" and alt.strip() and alt.strip() != src.strip()
                 and (lang_score(alt) < -0.15 if other == "en" else lang_score(alt) > 0.15)
@@ -700,7 +699,7 @@ class PipelineMixin:
         n_g, ok_g = self.gloss.adherence(src_text, translation, lang)
         rec = {"id": ev["id"], "outcome": outcome, "t_start": ev["t_start"], "t_end": ev["t_end"], "t_display": t_disp,
                "lang": lang, "source": src_text, "ro": ev.get("ro", ""), "multi": ev.get("multi", ""), **src_info,
-               "en_recognizer": (ev.get("source") or ("whistle" if ev.get("en") else "parakeet")) if lang == "en" else None, "translation": translation, "latency_s": round(latency, 3),
+               "translation": translation, "latency_s": round(latency, 3),
                # average delay per word, approximating words as evenly spread over the commit
                "word_lag_s": round(latency + (ev["t_end"] - ev["t_start"]) / 2, 3), "profile": self.profile,
                "t_speech": ev.get("t_speech", ev["t_start"]),

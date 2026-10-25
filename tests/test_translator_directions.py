@@ -84,7 +84,7 @@ def test_switch_shares_nllb_and_loads_only_gemma(tmp_path, monkeypatch):
     live._handle(_clause(1, "Frați și surori, astăzi citim."))
     assert _log(live)[-1]["translation"].startswith("[fake:quality]")
     live.lang.set_mode("en-ro")
-    live._handle({**_clause(2, ""), "en": "Brothers and sisters, today we read."})
+    live._handle({**_clause(2, ""), "multi": "Brothers and sisters, today we read."})
     assert _log(live)[-1]["translation"].startswith("[fake:nllb]")
     gemma = live.tr.trs[("ro", "en")]
     live.set_profile("fast")

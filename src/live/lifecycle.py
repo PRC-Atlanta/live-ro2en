@@ -32,7 +32,7 @@ from translate import WARMUP, assemble, direction_specs, make_translator, member
 HERE = pathlib.Path(__file__).resolve().parent
 ENGINE_SCRIPT = HERE / "engine.py"       # tests point this at an engine without models
 ENGINE_CFG_KEYS = ("vad_threshold", "min_pause_ms", "max_clause_s", "partial_every_s", "min_commit_s",
-                   "max_commit_s", "en_recognizer", "context_s", "lookahead_words", "audio_watchdog_s",
+                   "max_commit_s", "context_s", "lookahead_words", "audio_watchdog_s",
                    "digital_silence_s", "stt_backlog_s", "catchup_max_s", "level_hz", "input_gain_db",
                    "input_gain_auto", "input_gain_target_db", "ro_name_boost")
 RESTARTS, RESTART_WINDOW_S = 2, 600.0    # automatic engine restarts allowed per window (long
@@ -106,7 +106,7 @@ class LifecycleMixin:
         self._engine_ready = False               # ... and has sent `ready`
         self._engine_src: str | None = None      # the file it plays (None: the sound input)
         self._engine_device = None               # the input it was told to use
-        self._engine_spec: tuple | None = None   # (stt model, English recognizer) it loaded
+        self._engine_spec: tuple | None = None   # (speech model, its venv) it loaded
         self._engine_cfg_sent: dict | None = None
         self._ready_evt = threading.Event()
         self._listening = False                  # the engine is transcribing (live)
@@ -147,8 +147,7 @@ class LifecycleMixin:
                 return
             new, old = self._profile_cfg(name), self.profile
             engine_up = self.engine is not None and self.engine.poll() is None   # also in hold mode
-            keys = self.RESTART_KEYS + tuple(k for k in {*new, *self.lc} if k.startswith("whistle_"))
-            restart = self.running and engine_up and any(new.get(k) != self.lc.get(k) for k in keys)
+            restart = self.running and engine_up and any(new.get(k) != self.lc.get(k) for k in self.RESTART_KEYS)
             if restart:
                 self.stop()
             sp = self._spares_thread                   # it may be loading this very translator:
@@ -352,10 +351,7 @@ class LifecycleMixin:
     def _engine_cfg(self) -> dict:
         return {**{k: self.lc[k] for k in ENGINE_CFG_KEYS if k in self.lc},
                 "input_gain_db": self._gain_now(),     # a restarted engine carries on from the auto gain
-                "parakeet_stream": self.cfg.get("parakeet_stream") or {},
-                "ro_names": list(self.cfg.get("ro_names") or []),   # boosted by the Romanian recogniser
-                "whistle": {**(self.cfg.get("whistle") or {}),   # whistle_<key> in live/profile overrides
-                            **{k[len("whistle_"):]: v for k, v in self.lc.items() if k.startswith("whistle_")}}}
+                "ro_names": list(self.cfg.get("ro_names") or [])}   # boosted by the Romanian recogniser
 
     def _start_engine(self, device=None):
         """A service on a new engine (file runs, or nothing warm): live as soon as it is ready."""
@@ -424,10 +420,9 @@ class LifecycleMixin:
         return self._engine_alive() and self._engine_hold and not self._listening
 
     def _spec(self) -> tuple:
-        """What a running engine cannot change live (S4's RESTART_KEYS and whistle_* options)."""
-        keys = tuple(getattr(self, "RESTART_KEYS", ("stt_model", "stt_venv", "en_recognizer")))
-        return tuple(self.lc.get(k) for k in keys) + tuple(sorted(
-            (k, json.dumps(v, sort_keys=True, default=str)) for k, v in self.lc.items() if k.startswith("whistle_")))
+        """What a running engine cannot change live (S4's RESTART_KEYS: the speech model)."""
+        keys = tuple(getattr(self, "RESTART_KEYS", ("stt_model", "stt_venv")))
+        return tuple(self.lc.get(k) for k in keys)
 
     def _swap_profile(self, name: str, new: dict) -> dict:
         """S4 swaps the profile (pipeline.py); a warm engine that cannot run the new profile
@@ -593,7 +588,7 @@ class LifecycleMixin:
         if "live.language_mode" in changed and not self.running:
             self._send({"cmd": "mode", "mode": self.lang.mode})   # a warm engine listens for it at Start
         if not self.running and self._warm_alive() and self._engine_spec != self._spec():
-            # e.g. the English recogniser changed: the warm engine can't take it live, replace it now
+            # e.g. the speech model changed: the warm engine can't take it live, replace it now
             threading.Thread(target=self._rewarm, daemon=True, name="rewarm").start()
         if "live.keep_both_translators" in changed and hasattr(self, "_spare_tr"):
             if not self._keep_both_translators():          # Never: free the spare now
@@ -827,7 +822,7 @@ class LifecycleMixin:
             return False
 
     def _on_engine_error(self, ev: dict):
-        """The engine survived a failure (one chunk, the English stream, the audio device):
+        """The engine survived a failure (one chunk, the audio device, anything else):
         count and log it, and keep it visible."""
         where = ev.get("where", "engine")
         if where == "transcribe":

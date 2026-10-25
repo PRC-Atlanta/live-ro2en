@@ -105,16 +105,15 @@ def test_failed_and_empty_chunks_are_logged_and_counted(tmp_path):
     assert len(live.lat) == 1 and live.caps.text == "Brothers and sisters, today we read"   # the period waits for a pause
 
 
-def _bare_engine(mode="auto", streamer=None):
+def _bare_engine(mode="auto"):
     """An Engine without models: VAD reads the frame's first sample as speech probability."""
     e = engmod.Engine.__new__(engmod.Engine)
     e.mode, e.pt, e.pre_roll, e.partial_every = mode, PauseTracker(frame_ms=32), 8, 0
     e.min_commit = e.max_commit = 0
     e.no_audio_s = e.silent_s = 0                # watchdog off unless a test turns it on
-    e.realtime, e.backlog_s, e.catchup_max, e.english_ok = False, 0, 0, True
+    e.realtime, e.backlog_s, e.catchup_max, e.multi = False, 0, 0, object()
     e.n, e._id_lock = 0, threading.Lock()
     e.vad = lambda fr: float(fr[0])
-    e.streamer, e.wcfg, e._wstream = streamer, {"chunk_s": 0.064}, None
     e.calls = []
     e.transcribe = lambda audio, t0, t1, t_speech=None, final=True: e.calls.append((e.mode, len(audio), final))
     return e
@@ -142,20 +141,18 @@ def test_stop_commits_buffered_speech_then_eof(monkeypatch):
 
 
 def test_mode_switch_commits_speech_under_old_mode(monkeypatch):
-    fed = []
-    streamer = types.SimpleNamespace(start_stream=lambda cb: None, feed=fed.append, end_stream=lambda **k: None)
-    e = _bare_engine("auto", streamer)
+    e = _bare_engine("auto")
     q = queue.Queue()
     _frames(q, 20, speech=True)          # Romanian half sentence
-    q.put({"mode": "en-ro"})             # operator locks EN->RO: streaming takes over
+    q.put({"mode": "en-ro"})             # operator locks EN->RO
     _frames(q, 10, speech=True, t0=1.0)
     q.put({"mode": "auto"})
     _frames(q, 15, speech=True, t0=2.0)
     q.put(None)
     _run(e, q, monkeypatch)
-    # the half sentence was transcribed before the switch and not spliced onto later audio
-    assert e.calls == [("auto", 20 * engmod.FRAME, True), ("auto", 15 * engmod.FRAME, True)]
-    assert sum(len(f) for f in fed) == 10 * engmod.FRAME
+    # each part was transcribed under its own mode, never spliced onto later audio
+    assert e.calls == [("auto", 20 * engmod.FRAME, True), ("en-ro", 10 * engmod.FRAME, True),
+                       ("auto", 15 * engmod.FRAME, True)]
 
 
 def test_watchdog_reports_dead_and_silent_input(monkeypatch):
@@ -185,28 +182,6 @@ def test_transcribe_error_does_not_kill_engine(monkeypatch):
     q.put(None)
     out = _run(e, q, monkeypatch)
     assert [x["type"] for x in out] == ["error", "eof"] and out[0]["where"] == "transcribe"
-
-
-def test_dead_english_stream_is_reported_and_not_fed():
-    from live.whistle_en import WhistleSTT
-    w = WhistleSTT.__new__(WhistleSTT)
-    w.lock, w.keywords, w._q, w._thread, w.error = threading.Lock(), None, None, None, None
-
-    def stream(chunks, **k):
-        next(chunks)
-        raise RuntimeError("engine crashed")
-        yield
-    w.model = types.SimpleNamespace(stream=stream)
-    events = []
-    w.start_stream(events.append)
-    w.feed(np.zeros(160)); w._thread.join(2)
-    assert events == [{"error": "RuntimeError: engine crashed"}]
-    w.feed(np.zeros(160))
-    assert w._q.qsize() == 0             # nothing piles up behind a dead stream
-    w.end_stream(wait=1)
-    # the engine stops streaming and falls back to the clause path
-    e = _bare_engine("en-ro", w)
-    assert e._whistle_streaming(0.0, np.zeros(engmod.FRAME, dtype=np.float32), 1.0) is False
 
 
 def test_stage_success_does_not_hide_caption_error():
@@ -246,12 +221,12 @@ def test_lag_and_audio_alerts(tmp_path):
     live._handle(_clause(2, ago=0.5, ro="Pavel le scrie romanilor despre har."))
     assert live.alerts() == [] and live.counts["late"] == 1
     live.engine = FakeEngine([{"type": "audio", "ok": False, "msg": "no audio from the input device for 3 s"},
-                              {"type": "error", "where": "english stream", "msg": "RuntimeError: x"}], rc=0)
+                              {"type": "error", "where": "engine", "msg": "RuntimeError: x"}], rc=0)
     live._stopping = True
     live._reader(live.engine)
     live.running = True                               # alerts show while the service runs
     assert live.alerts()[0] == "NO AUDIO: no audio from the input device for 3 s"
-    assert live.warnings == ["english stream: RuntimeError: x"]
+    assert live.warnings == ["engine: RuntimeError: x"]
     live.audio_fault = None
     assert live.alerts() == []
 
@@ -347,30 +322,6 @@ def test_llm_context_carries_over_a_language_switch(monkeypatch):
     assert "Previous pieces" not in prompts[-1] and tr.context == []      # use_context off: none
 
 
-def test_mode_switch_does_not_wait_for_stream_tail():
-    from live.whistle_en import WhistleSTT
-    w = WhistleSTT.__new__(WhistleSTT)
-    w.lock, w.keywords, w._q, w._thread, w.error = threading.Lock(), None, None, None, None
-    events = []
-
-    def stream(chunks, **k):
-        for c in chunks:
-            yield {"text": "x"}
-        time.sleep(1.0)                  # a slow final pass over the tail
-        yield {"text": "tail"}
-    w.model = types.SimpleNamespace(stream=stream)
-    w.start_stream(events.append)
-    w.feed(np.zeros(160))
-    t = time.time()
-    w.end_stream(wait=0)
-    assert time.time() - t < 0.2         # the audio loop is not held up
-    w.start_stream(events.append)        # switching straight back gets a fresh queue
-    new_q = w._q
-    w._thread.join(3)                    # (waits for the old stream's lock)
-    assert w._q is new_q and {"text": "tail"} in events
-    w.end_stream(wait=2)
-
-
 def test_skipped_pause_commits_once_long_enough(monkeypatch):
     e = _bare_engine()
     e.min_commit = 40                               # quality profile: at least 40 frames per commit
@@ -405,27 +356,9 @@ def test_backlog_is_reported_and_recognised_in_fewer_calls(monkeypatch):
     assert len(e.calls) == 1                        # one longer call instead of three
 
 
-def test_whistle_skipped_on_clearly_romanian_clauses(monkeypatch):
-    e = _bare_engine("auto")
-    e.multi = e.stt = object()
-    e.multi_ctx, e._held_t, e.n = None, None, 0
-    text = {"t": ""}
-    e.stt_ctx = lambda audio, final: text["t"]
-    runs = []
-    e.whistle = lambda audio: runs.append(1) or "english"
-    del e.transcribe
-    out = []
-    monkeypatch.setattr(engmod, "emit", out.append)
-    text["t"] = "Și Dumnezeu a zis să fie lumină și a fost lumină"
-    e.transcribe(np.zeros(1600, dtype=np.float32), 0, 1)
-    text["t"] = "And God said let there be light and there was light"
-    e.transcribe(np.zeros(1600, dtype=np.float32), 1, 2)
-    assert runs == [1] and out[0]["en"] == "" and out[1]["en"] == "english"
-
-
 def test_no_multilingual_model_means_romanian_only(monkeypatch, tmp_path):
     e = _bare_engine("ro-en")
-    e.english_ok = False
+    e.multi = None                       # Parakeet did not load: no English, no auto
     q = queue.Queue()
     q.put({"mode": "auto"}); q.put(None)
     out = _run(e, q, monkeypatch)
@@ -464,7 +397,7 @@ def test_setup_downloads_are_pinned():
     assert needed <= hf
     assert all(len(l[2]) in (40, 64) for l in lock if l[0] in ("hf", "dataset", "sha256"))
     setup = (root / "setup.sh").read_text()
-    assert "/master/" not in setup and "check models/whistle/libneedle.dylib" in setup
+    assert "/master/" not in setup and "check models/vad/silero_vad.onnx" in setup
 
 
 def test_double_start_loads_and_spawns_once(tmp_path):
@@ -621,13 +554,13 @@ def test_recurring_faults_do_not_flood_warnings(tmp_path):
     live = _live(tmp_path)
     evs = [{"type": "error", "where": "audio input", "msg": f"PortAudioError: lost ({k})"} for k in range(50)]
     evs += [{"type": "warn", "msg": "audio input reopened"}]
-    evs += [{"type": "error", "where": "english stream", "msg": "RuntimeError: x"}] * 5
+    evs += [{"type": "error", "where": "engine", "msg": "RuntimeError: x"}] * 5
     evs += [{"type": "warn", "msg": f"note {k}"} for k in range(30)]
     live.engine = FakeEngine(evs, rc=0)
     live._stopping = True
     live._reader(live.engine)
     assert live.audio_fault is None                          # cleared when the device came back
-    assert len(live.warnings) == 20 and live.warnings.count("english stream: RuntimeError: x") <= 1
+    assert len(live.warnings) == 20 and live.warnings.count("engine: RuntimeError: x") <= 1
     assert not any("audio input" in w for w in live.warnings)
 
 

@@ -83,7 +83,7 @@ def subset(profile: str, lock: pathlib.Path | None = None) -> list[dict]:
 
 def pin_all(cache_dir: str | pathlib.Path | None = None) -> list[str]:
     """Point refs/main at the locked commit for every pinned repo present in the cache
-    (whatever downloaded it: fetch, the CT2 converter, needle)."""
+    (whatever downloaded it: fetch, the CT2 converter)."""
     if cache_dir is None:
         from huggingface_hub import constants
         cache_dir = constants.HF_HUB_CACHE

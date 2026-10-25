@@ -71,7 +71,6 @@ live:
   context_s: 6.0              # each short chunk is recognised with the previous 6 s of audio (halves errors)
   lookahead_words: 0          # look-ahead (hold last word at mid-speech cuts): tested, breaks the 6 s ceiling for RO, no RO gain
   ro_name_boost: 1.0          # today's names boosted in the Romanian beam search (0 = off; 2+ writes names into garbled audio)
-  en_recognizer: parakeet     # English speech (EN→RO): parakeet | parakeet-stream | whistle  — A/B switch
   context_clauses: 2          # previous commits shown to an LLM translator as context
   audio_watchdog_s: 2.0       # no frames from the input device this long -> NO AUDIO alert
   digital_silence_s: 10.0     # exact zeros this long (muted/dead interface) -> NO AUDIO alert
@@ -94,26 +93,6 @@ live:
 
 # Profiles override the `live` settings above. fast = lowest delay (~1.5 s after each phrase);
 # quality = whole sentences, stronger decoding, LLM translation (~3-5 s budget).
-# English streaming (EN→RO locked): chunk_s / vad_threshold / pause_s / max_chunk_s below apply to
-# both streaming recognizers (whistle, parakeet-stream). Cactus Whistle — English only. Fully offline: telemetry off,
-# engine + weights vendored in models/whistle (fetched once by setup.sh).
-whistle:
-  weights: models/whistle/whistle.cact      # depth "full" (the shipped model)
-  lib: models/whistle/libneedle.dylib
-  depth: full                 # decoder depth; other depths need a .cact built with
-  weights_by_depth: {}        #   `needle whistle build --layers N` (2..8), e.g. {4: models/whistle/whistle-d4.cact}
-  keywords_file: keywords_en.txt
-  stream: true                # EN→RO locked: stream and send only committed words
-  chunk_s: 0.5                # audio per streaming pass: 0.5 s commits ~1.3 s sooner than 1.0 s and was more accurate
-  vad_threshold: 0.6          # frames below this VAD score (music, choir) are sent as silence
-  pause_s: 0.35               # gap between committed words that closes a clause
-  max_chunk_s: 2.5            # longest clause (keeps the first word within the 6 s ceiling)
-
-# Parakeet streaming English recognizer (live.en_recognizer: parakeet-stream)
-parakeet_stream:
-  context_size: [256, 256]    # left/right attention context (frames)
-  depth: 1
-
 # Preferred spellings applied to every transcript the system shows or translates
 # (live captions, translator input, correction-tool starting text). variant: preferred
 spellings:

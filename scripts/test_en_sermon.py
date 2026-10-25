@@ -1,10 +1,10 @@
 """Offline end-to-end test of the English→Romanian path on a recorded English sermon.
 
   .venv-mt/bin/python scripts/test_en_sermon.py data/samples/en_sermon_sample.wav \
-      [--recognizer whistle|parakeet] [--name NAME] [--set KEY=VALUE ...] [--no-sandbox]
+      [--name NAME] [--set KEY=VALUE ...] [--no-sandbox]
 
 Plays the WAV in real time as live input (EN→RO locked) through the full pipeline (VAD →
-English STT → clause segmentation → translation → mock ProPresenter) with outbound network
+English STT (Parakeet) → clause segmentation → translation → mock ProPresenter) with outbound network
 DENIED by macOS sandbox-exec (localhost allowed for the mock) and a Python network audit.
 Writes results/en_test/<name>/:
   transcript_en.txt   [mm:ss.s] committed English, one segment per line
@@ -42,7 +42,6 @@ def en_wer(ref: str, hyp: str) -> float:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("audio")
-    ap.add_argument("--recognizer", default="whistle", choices=["whistle", "parakeet", "parakeet-stream"])
     ap.add_argument("--name")
     ap.add_argument("--set", action="append", default=[])
     ap.add_argument("--translator")
@@ -57,15 +56,15 @@ def main() -> None:
             subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-i", str(audio), "-ac", "1",
                             "-ar", "16000", str(wav)], check=True)
         audio = wav
-    name = a.name or f"{audio.stem}_{a.recognizer}"
+    name = a.name or f"{audio.stem}_parakeet"
     out = ROOT / "results" / "en_test" / name
     out.mkdir(parents=True, exist_ok=True)
     netlog = out / "net_audit.log"
     netlog.write_text("")
-    env = {**os.environ, "NET_AUDIT_LOG": str(netlog), "NEEDLE_TELEMETRY": "0", "DO_NOT_TRACK": "1",
+    env = {**os.environ, "NET_AUDIT_LOG": str(netlog), "DO_NOT_TRACK": "1",
            "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1", "HF_DATASETS_OFFLINE": "1"}
     cmd = [str(ROOT / ".venv-mt/bin/python"), str(ROOT / "src/live/e2e.py"), "--audio", str(audio),
-           "--mode", "en-ro", "--name", f"en_{name}", "--set", f"en_recognizer={a.recognizer}"]
+           "--mode", "en-ro", "--name", f"en_{name}"]
     for kv in a.set:
         cmd += ["--set", kv]
     if a.translator:
@@ -88,7 +87,7 @@ def main() -> None:
         for r in recs:
             f.write(f"[{mmss(r['t_display'] - t0)}] {r['translation']}\n")
     fields = ["segment", "speech_start", "audio_end", "sent_to_propresenter", "latency_s", "first_word_s",
-              "stt_s", "vad_wait_s", "mt_s", "pp_s", "words", "recognizer"]
+              "stt_s", "vad_wait_s", "mt_s", "pp_s", "words"]
     with open(out / "latency.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
@@ -96,13 +95,12 @@ def main() -> None:
             w.writerow({"segment": i, "speech_start": mmss(r["t_speech"] - t0), "audio_end": mmss(r["t_end"] - t0),
                         "sent_to_propresenter": mmss(r["t_display"] - t0), "latency_s": r["latency_s"],
                         "first_word_s": r["first_word_s"], "stt_s": r["stt_s"], "vad_wait_s": r["vad_wait_s"],
-                        "mt_s": r["mt_s"], "pp_s": r["pp_s"], "words": len(r["source"].split()),
-                        "recognizer": r.get("en_recognizer")})
+                        "mt_s": r["mt_s"], "pp_s": r["pp_s"], "words": len(r["source"].split())})
     lat = sorted(r["latency_s"] for r in recs)
     fw = sorted(r["first_word_s"] for r in recs)
     q = lambda xs, p: xs[min(len(xs) - 1, int(p * (len(xs) - 1)))] if xs else None
     attempts = [l for l in netlog.read_text().splitlines() if l.strip()]
-    res = {"name": name, "recognizer": a.recognizer, "translator": summary["translator"], "segments": len(recs),
+    res = {"name": name, "recognizer": "parakeet", "translator": summary["translator"], "segments": len(recs),
            "latency_median_s": round(statistics.median(lat), 3) if lat else None, "latency_p90_s": q(lat, 0.9),
            "share_latency_le_2s": round(sum(x <= 2 for x in lat) / max(len(lat), 1), 3),
            "first_word_median_s": round(statistics.median(fw), 3) if fw else None, "first_word_p90_s": q(fw, 0.9),

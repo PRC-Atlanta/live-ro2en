@@ -163,7 +163,7 @@
      "about": "variant -> preferred; replaces the user's spellings"},
     {"method": "GET",  "path": "/api/terms",        "owner": "S3", "built": true, "response": "@terms"},
     {"method": "POST", "path": "/api/terms",        "owner": "S3", "built": true, "request": {"lines": {"list": "str"}, "save": "bool"}, "response": "@state", "errors": {"400": ["@settings_invalid"]},
-     "about": "today's names: 'ro = en' or a bare name per line; replaces the previous list and applies live (glossary, spellings, Whistle keywords); save also keeps them for next time"},
+     "about": "today's names: 'ro = en' or a bare name per line; replaces the previous list and applies live (glossary, spellings, the names boosted in Romanian recognition); save also keeps them for next time"},
     {"method": "POST", "path": "/api/import_config", "owner": "S3", "built": true, "request": {"text": "str?", "path": "str?"},
      "response": {"object": {"schema_version": "int", "values": {"map": "bool|num|str|null"}, "defaults": {"map": "bool|num|str|null"}, "overrides": {"list": "str"}, "fields": {"map": {"object": {"group": {"enum": ["basic", "propresenter", "advanced"]}, "type": {"enum": ["bool", "int", "num", "str", "enum", "device"]}, "apply": {"enum": ["now", "start", "launch"]}}}}, "applies": {"map": {"enum": ["now", "start", "launch"]}}, "restart_required": "bool", "notes": {"list": "str"}, "imported": {"list": "str"}, "spellings_added": "int", "ignored": {"list": "str"}}},
      "about": "the exposed settings and spellings from an old config.yaml (its text, or a .yaml path)"},
@@ -188,12 +188,12 @@
     "events": {
       "ready":   {"built": true,  "fields": {"stt": "str", "multi": "bool", "source": "str", "hold": "bool?"}},
       "partial": {"built": true,  "fields": {"text": "str"}},
-      "clause":  {"built": true,  "fields": {"id": "int", "ro": "str", "multi": "str", "en": "str", "source": "str?",
+      "clause":  {"built": true,  "fields": {"id": "int", "ro": "str", "multi": "str",
                                              "t_start": "num", "t_speech": "num", "t_end": "num", "t_emit": "num",
                                              "stt_s": "num", "audio_s": "num"}},
       "eof":     {"built": true,  "fields": {}},
       "warn":    {"built": true,  "fields": {"msg": "str"}},
-      "error":   {"built": true,  "fields": {"where": {"enum": ["transcribe", "audio input", "english stream", "engine"]}, "msg": "str"}},
+      "error":   {"built": true,  "fields": {"where": {"enum": ["transcribe", "audio input", "engine"]}, "msg": "str"}},
       "mode":    {"built": true,  "fields": {"mode": "str", "msg": "str"}},
       "backlog": {"built": true,  "fields": {"ok": "bool", "s": "num", "msg": "str"}},
       "audio":   {"built": true,  "fields": {"ok": "bool", "fault": {"enum": ["no_frames", "digital_silence", "mic_denied", null]}, "msg": "str"}},
@@ -218,7 +218,7 @@
                    "about": "input gain in dB (-12..+30), applied to every frame from the next one (the control page's fader, live.input_gain_db)"},
       "agc":      {"built": true, "owner": "S1", "fields": {"on": "bool", "target_db": "num"},
                    "about": "automatic input gain (live.input_gain_auto, live.input_gain_target_db -30..-10 dBFS): levels the speech toward target_db at <= 1 dB/s, frozen in silence, a limiter cuts at once past -1 dBFS peak; off keeps the gain reached"},
-      "keywords": {"built": true, "owner": "S1", "fields": {"words": {"list": "str"}}, "about": "sent by S3: the user's + today's additions; the engine calls WhistleSTT.set_keywords(words) (bundled file + these, replacing earlier additions)"}
+      "keywords": {"built": true, "owner": "S1", "fields": {"words": {"list": "str"}, "ro": {"list": "str"}}, "about": "sent by S3: the user's + today's additions (words) and the names as Romanian speech has them (ro, from the glossary); the engine boosts ro in the Romanian beam search (replacing the earlier list); words has no consumer in the engine"}
     }
   },
 

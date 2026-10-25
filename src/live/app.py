@@ -28,7 +28,7 @@ import yaml
 # setup.sh. Set LIVE_ALLOW_NETWORK=1 only for setup/updates.
 if os.environ.get("LIVE_ALLOW_NETWORK") != "1":
     for _k, _v in (("HF_HUB_OFFLINE", "1"), ("TRANSFORMERS_OFFLINE", "1"), ("HF_DATASETS_OFFLINE", "1"),
-                   ("NEEDLE_TELEMETRY", "0"), ("DO_NOT_TRACK", "1")):
+                   ("DO_NOT_TRACK", "1")):
         os.environ[_k] = _v
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import netaudit  # noqa: E402

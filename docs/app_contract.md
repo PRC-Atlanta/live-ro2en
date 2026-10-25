@@ -108,10 +108,11 @@ listed here.
 
 - `ready {stt, multi, source}`
 - `partial {text}`
-- `clause {id, ro, multi, en, source?, t_start, t_speech, t_end, t_emit, stt_s, audio_s}`
+- `clause {id, ro, multi, t_start, t_speech, t_end, t_emit, stt_s, audio_s}` (`multi` = Parakeet's
+  transcript: language detection and the English text)
 - `eof`
 - `warn {msg}`
-- `error {where: transcribe|audio input|english stream, msg}`
+- `error {where: transcribe|audio input|engine, msg}`
 - `mode {mode, msg}`
 - `backlog {ok, s, msg}`
 - `audio {ok, fault: no_frames|digital_silence|null, msg}`
@@ -126,7 +127,8 @@ Audio faults always go on `audio`. There is no separate `audio_error` event.
 
 **Commands** (all built): `mode {mode}`, `stop`, `listen {on}` (leave or re-enter hold mode),
 `cfg {cfg}` (pause settings with no restart), `device {device}` (switch input while holding),
-`keywords {words}`.
+`keywords {words, ro}` (`ro`: today's names as Romanian speech has them, boosted in the Romanian
+beam search; `words`, the English side, has no consumer in the engine).
 
 ## Environment variables
 
@@ -160,7 +162,7 @@ Live RO2EN.app/Contents/
   Resources/site/{common,nemo,mt}/     packages (uv pip install --target)
   Resources/app/src/…                  src/live + the src/*.py it imports, defaults.yaml, glossary.csv,
                                        keywords_en.txt, terms.txt, requirements/models.lock.txt
-  Resources/app/models/                vad/silero_vad.onnx, whistle/{libneedle.dylib,whistle.cact}
+  Resources/app/models/                vad/silero_vad.onnx
                                        (signed; under app/ because paths.resource() resolves there)
   Resources/app/data/samples/          the rehearsal recording
   Frameworks/Sparkle.framework         not yet (docs/release.md)

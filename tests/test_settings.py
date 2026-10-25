@@ -67,7 +67,7 @@ def test_defaults_yaml_matches_config_yaml():
     d = yaml.safe_load(open(ROOT / "defaults.yaml"))
     c = yaml.safe_load(open(ROOT / "config.yaml"))
     assert "google" not in d and "bible_testset" not in d
-    for sec in ("whistle", "parakeet_stream", "spellings", "profiles", "propresenter"):
+    for sec in ("spellings", "profiles", "propresenter"):
         assert d[sec] == c[sec], sec
     assert {k: v for k, v in d["live"].items() if k != "autostart"} == c["live"]
     assert d["paths"]["glossary"] == c["paths"]["glossary"]
@@ -133,12 +133,28 @@ def test_hidden_keys_are_rejected(home):
     assert cfg["live"]["translator"] == base["live"]["translator"] and cfg["live"]["hold_s"] == 3.0
 
 
+def test_a_saved_setting_that_no_longer_exists_is_dropped(home):
+    """Whistle and Parakeet-stream were removed (2026-10-24): a settings.yaml saved before then
+    may still say live.en_recognizer: whistle. The app starts on the rest, and the next save
+    leaves the stale key out."""
+    home.mkdir(exist_ok=True)
+    (home / "settings.yaml").write_text("schema_version: 1\nlive: {en_recognizer: whistle, hold_s: 2.0}\n")
+    cfg, base, notes = S.load_config(None, None, ROOT)
+    assert "en_recognizer" not in cfg["live"] and cfg["live"]["hold_s"] == 2.0 and notes == []
+    live = make_live(home)
+    assert "en_recognizer" not in live.lc and "live.en_recognizer" not in client(live).get("/api/settings").json()["values"]
+    assert client(live).put("/api/settings", json={"values": {"live.hold_s": 2.5}}, headers=ME).status_code == 200
+    assert yaml.safe_load((home / "settings.yaml").read_text())["live"] == {"hold_s": 2.5}
+    r = client(live).put("/api/settings", json={"values": {"live.en_recognizer": "parakeet"}}, headers=ME)
+    assert r.status_code == 400 and r.json()["error"] == "rejected"     # no longer a setting
+
+
 def test_restart_required_only_for_start_keys_while_live(home):
     live = make_live(home, running=True)
     c = client(live)
-    r = c.put("/api/settings", json={"values": {"live.en_recognizer": "whistle"}}, headers=ME).json()
-    assert r["restart_required"] is True and r["applies"] == {"live.en_recognizer": "start"}
-    assert live.lc["en_recognizer"] == "whistle"             # used by the next engine start
+    r = c.put("/api/settings", json={"values": {"live.partial_every_s": 1}}, headers=ME).json()
+    assert r["restart_required"] is True and r["applies"] == {"live.partial_every_s": "start"}
+    assert live.lc["partial_every_s"] == 1                   # used by the next engine start
     r = c.put("/api/settings", json={"values": {"live.lag_warn_s": 9}}, headers=ME).json()
     assert r["restart_required"] is False and live.lc["lag_warn_s"] == 9.0
     live.running = False
@@ -196,10 +212,10 @@ def test_session_term_reaches_glossary_and_spellings_live(home):
     live._handle({"id": 1, "ro": "Îl salutăm pe fratele Ionut Pop.", "multi": "", "en": "",
                   "t_start": now - 2, "t_end": now - 1, "t_emit": now - 0.9, "stt_s": 0.1, "audio_s": 1.0})
     assert "Ionuț Pop" in live.history[-1]["source"]
-    # Whistle: the running engine gets the keywords command, a restarted one gets them in its cfg
+    # the running engine gets the keywords command, a restarted one gets the names in its cfg
     cmd = live.engine.sent()[-1]
     assert cmd["cmd"] == "keywords" and {"Ionuț Pop", "John"} <= set(cmd["words"])
-    assert {"Ionuț Pop", "John"} <= set(live.cfg["whistle"]["keywords_extra"])
+    assert "whistle" not in live.cfg
     # the Romanian recogniser: the Romanian side of the names ('Ioan', not the English 'John')
     assert "Ionuț Pop" in cmd["ro"] and "John" not in cmd["ro"] and live.cfg["ro_names"] == cmd["ro"]
     assert c.get("/api/terms").json() == {"lines": ["Ionuț Pop", "Ioan = John"], "n": 2}
@@ -219,7 +235,7 @@ def test_saved_terms_are_there_next_time(home):
     assert [h["ro"] for h in again.gloss.relevant("cu Ionuț Pop")] == ["Ionuț Pop"]
     assert again.cfg["spellings"]["Ionut Pop"] == "Ionuț Pop" and again.state()["session_terms_n"] == 0
     assert {"Ionuț Pop", "John"} <= set(again.user_keywords())
-    assert {"Ionuț Pop", "John"} <= set(again.cfg["whistle"]["keywords_extra"])
+    assert "Ionuț Pop" in again.cfg["ro_names"]                               # boosted at the next engine start
     assert again.gloss.relevant("Dumnezeu")[0]["en"] == "God"                 # the bundled glossary stays
 
 
@@ -292,13 +308,6 @@ def test_import_config(home, tmp_path):
     assert c.post("/api/import_config", json={"path": str(ROOT / "glossary.csv")}, headers=ME).status_code == 400
     assert c.post("/api/import_config", json={"text": "- a\n- b\n"}, headers=ME).status_code == 400
     assert c.post("/api/import_config", json={}, headers=ME).status_code == 400
-
-
-def test_whistle_keywords_include_the_additions():
-    from whistle_en import WhistleSTT, load_keywords
-    kw = load_keywords("keywords_en.txt", ["Ionuț Pop", "Nebuchadnezzar", " "]).split("\n")
-    assert "Ionuț Pop" in kw and kw.count("Nebuchadnezzar") == 1 and "" not in kw
-    assert callable(WhistleSTT.set_keywords)
 
 
 def test_nothing_is_written_into_the_repo_when_live_home_is_set(home, tmp_path):

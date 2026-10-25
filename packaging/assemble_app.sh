@@ -12,11 +12,11 @@
 #   Contents/Resources/app/                   the code root (paths.REPO = app/):
 #       src/live/…, the src/*.py modules it imports, defaults.yaml, glossary.csv,
 #       keywords_en.txt, terms.txt, requirements/models.lock.txt   (packaging/app_files.py)
-#       models/vad/silero_vad.onnx, models/whistle/{libneedle.dylib,whistle.cact}  (bundled models)
+#       models/vad/silero_vad.onnx           (bundled model)
 #       data/samples/<BUNDLE_SAMPLES>         rehearsal recordings
 #
 # Inputs that are not in git:
-#   MODELS_DIR       where the three bundled model files are; default: <repo>/models, then the
+#   MODELS_DIR       where the bundled model file is; default: <repo>/models, then the
 #                    main checkout's models/ (for a git worktree), else they are downloaded at
 #                    their pins (packaging/fetch_bundled_models.sh). Always checked against the
 #                    sha256 lines in requirements/models.lock.txt.
@@ -65,13 +65,13 @@ echo "  $(wc -l < "$LIST" | tr -d ' ') files; src/*.py: $(grep -E '^src/[^/]+\.p
 # --- 4. bundled models and rehearsal samples (git-ignored) -------------------------------------
 say "bundled models"
 lock_sha() { awk -v p="$1" '$1 == "sha256" && $2 == p {print $3}' "$LOCK"; }
-MODEL_FILES="models/vad/silero_vad.onnx models/whistle/libneedle.dylib models/whistle/whistle.cact"
+MODEL_FILES="models/vad/silero_vad.onnx"
 main_checkout() {   # the main working tree of a git worktree (its .venv, models/ and samples)
   local common; common=$(git -C "$REPO" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 0
   [ "$(basename "$common")" = .git ] && dirname "$common"
 }
 MAIN="$(main_checkout || true)"
-models_ok() {   # $1 = a folder holding models/…: all three files present with the pinned sha256
+models_ok() {   # $1 = a folder holding models/…: every MODEL_FILES file present with the pinned sha256
   local f
   for f in $MODEL_FILES; do
     [ -f "$1/$f" ] && [ "$(shasum -a 256 "$1/$f" | cut -d' ' -f1)" = "$(lock_sha "$f")" ] || return 1
@@ -87,7 +87,7 @@ else
     [ -n "$c" ] && models_ok "$c" && { SRC_ROOT="$c"; break; }
   done
   if [ -z "$SRC_ROOT" ]; then
-    "$HERE/fetch_bundled_models.sh" "$RUNTIME" "$REPO/build/cache/bundled"
+    "$HERE/fetch_bundled_models.sh" "$REPO/build/cache/bundled"
     models_ok "$REPO/build/cache/bundled" || die "fetched models do not match models.lock.txt"
     SRC_ROOT="$REPO/build/cache/bundled"
   fi

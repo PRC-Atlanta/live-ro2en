@@ -1,6 +1,6 @@
 """Runtime network audit (used by the offline tests). When NET_AUDIT_LOG is set, every
 DNS lookup or socket connection to a non-loopback address is appended to that file.
-Native code (e.g. the Whistle engine dylib) bypasses Python sockets; the offline test also
+Native code (e.g. a model library's own HTTP client) bypasses Python sockets; the offline test also
 runs under `sandbox-exec` with outbound network denied to cover that."""
 from __future__ import annotations
 

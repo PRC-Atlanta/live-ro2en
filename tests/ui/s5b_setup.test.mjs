@@ -169,13 +169,13 @@ test("an edit survives a reload", async () => {
 
 test('restart_required shows "Applies next time you press Start"', async () => {
   B.use("settings_live", memStorage());           // captioning: a Start setting can't apply now
-  const r = await api("PUT", "settings", fields.patch("live.en_recognizer", "whistle"));
+  const r = await api("PUT", "settings", fields.patch("live.vad_threshold", 0.65));
   assert.equal(r.data.restart_required, true);
-  assert.equal(r.data.applies["live.en_recognizer"], "start");
+  assert.equal(r.data.applies["live.vad_threshold"], "start");
   assert.equal(flow.saveNote(r).text, "Applies next time you press Start");
   assert.equal(flow.saveNote(await api("PUT", "settings", fields.patch("propresenter.max_lines", 3))).text, "Saved");
   B.use("settings", memStorage());                // not captioning: it simply applies at the next Start
-  assert.equal(flow.saveNote(await api("PUT", "settings", fields.patch("live.en_recognizer", "whistle"))).text, "Saved");
+  assert.equal(flow.saveNote(await api("PUT", "settings", fields.patch("live.vad_threshold", 0.65))).text, "Saved");
   assert.equal(flow.saveNote(await api("PUT", "settings", fields.patch("live.autostart", true))).text, "Saved");
   const hidden = await api("PUT", "settings", { values: { "live.translator": "x" } });
   assert.equal(hidden.status, 400);

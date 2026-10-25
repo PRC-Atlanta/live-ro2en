@@ -19,7 +19,7 @@ import sys
 # Data the orchestrator and the engine read at run time (paths relative to the repo root):
 #   defaults.yaml           the base settings layer when LIVE_HOME is set (paths.base_config)
 #   glossary.csv            translate.Glossary / preflight (defaults.yaml paths.glossary)
-#   keywords_en.txt         Whistle keywords (defaults.yaml whistle.keywords_file)
+#   keywords_en.txt         bundled names & words (Settings → Names & Spellings, src/live/gate.py)
 #   terms.txt               STT hot words (stt_run.terms, defaults.yaml paths.terms)
 #   requirements/models.lock.txt   model pins (src/model_lock.py), read by the first-run download
 #   data/lexicon/*.txt      word lists of the confidence gate (src/live/gate.py)

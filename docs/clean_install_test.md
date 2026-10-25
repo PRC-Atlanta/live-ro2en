@@ -42,7 +42,7 @@ Anyway**. Note that in the result.
 9. **Nothing written outside the app's folders.** The app may only write to
    `~/Library/Application Support/Live RO2EN`, `~/Library/Logs/Live RO2EN` and
    `~/Library/Caches/Live RO2EN` (plus the Desktop, if you exported). Check:
-   - `ls -a ~` shows no new `.cache`, `.huggingface`, `.config/needle` or similar;
+   - `ls -a ~` shows no new `.cache`, `.huggingface`, `.config/...` or similar;
      `~/.cache` does not exist or is unchanged;
    - nothing mentions a developer checkout:
      `grep -rl "/Code/" ~/Library/Application\ Support/Live\ RO2EN 2>/dev/null` prints nothing;

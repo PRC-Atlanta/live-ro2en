@@ -60,7 +60,7 @@ CALLS = [
     ["settings", "POST", "terms", {"lines": 3}],
     ["settings", "GET", "terms", None],
     ["settings", "POST", "mode", {"mode": "en-ro"}],
-    ["settings_live", "PUT", "settings", {"values": {"live.en_recognizer": "whistle"}}],
+    ["settings_live", "PUT", "settings", {"values": {"live.vad_threshold": 0.65}}],
     ["settings_live", "POST", "setup/download", {"profile": "fast"}],
     ["after", "POST", "rate", {"score": 4, "tags": ["Too slow"], "note": "fine"}],
     ["after", "POST", "rate", {"score": 0}],

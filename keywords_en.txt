@@ -1,6 +1,6 @@
-# English keywords for Whistle (English speech recognition, EN→RO).
-# One word or phrase per line; lines starting with # are ignored. Loaded at startup:
-# restart the live app after editing.
+# Bundled names & words (biblical names, places, church terms). They count as real words for
+# the confidence gate and are listed in Settings → Names & Spellings. One word or phrase per
+# line; lines starting with # are ignored. Loaded at startup: restart the live app after editing.
 
 # --- Biblical names and places ---
 Nebuchadnezzar

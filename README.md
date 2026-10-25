@@ -19,7 +19,7 @@ ProPresenter. **Not yet tested:** a real ProPresenter, and a real English-speaki
   (median 4.3 s, real sermon audio). Each short chunk is recognised with the previous 6 s of
   audio as context, which halves the errors short chunks would otherwise cause (live WER 7.3%).
 - **English speakers (EN→RO):** Parakeet with context, 2.7% WER on a real English sermon,
-  99% of first words within 6 s. Whistle is available as an alternative (6.7%).
+  99% of first words within 6 s.
 - **Fast profile** (one click on the control page): NLLB instead of Gemma. 98% within 6 s
   (median 3.5 s), but translations are more literal.
 - Dev only: Google Chirp 3 is used for scoring, never for training (Google terms §17b).
@@ -168,58 +168,27 @@ Each service is logged to `logs/services/<date>_<time>.jsonl` (in the app:
 
 Test without ProPresenter: `.venv-mt/bin/python src/live/mock_propresenter.py --port 50001`.
 
-## 4b. English speakers: Whistle (English → Romanian)
+## 4b. English speakers (English → Romanian)
 
-English speech is recognised by **Parakeet-TDT-0.6B-v3** by default (most accurate).
-**Cactus Whistle** (`cactus-needle`, Apache-2.0, a 17 MB on-device CPU model) is the faster
-alternative: `en_recognizer: whistle` in config.yaml, ~0.6 s sooner, somewhat less accurate.
-Only English uses either; Romanian keeps Jackrabbit.
+English speech is recognised by **Parakeet-TDT-0.6B-v3**, the same model that tells Romanian
+from English in **Auto** mode; Romanian keeps Jackrabbit. Each short chunk is recognised with the
+previous `context_s` seconds of audio (2.7% WER on a real English sermon, see DECISIONS.md).
+With the language locked to **EN → RO**, only Parakeet runs. If Parakeet cannot load, the app
+runs RO → EN only and says why. It runs fully offline: Hugging Face offline mode is forced before
+any model loads, and **nothing goes to the network while it runs** (`LIVE_ALLOW_NETWORK=1` only
+when updating models).
 
-**Setup.** `./setup.sh` installs `cactus-needle` into `.venv-nemo` and fetches the engine
-(`libneedle.dylib`) and weights (`whistle.cact`) **once** into `models/whistle/`. At runtime the
-app pins those files (`NEEDLE3_LIB_PATH`, `NEEDLE_WHISTLE_WEIGHTS`), turns telemetry off
-(`NEEDLE_TELEMETRY=0`, `DO_NOT_TRACK=1`), and forces Hugging Face offline mode before any model
-loads. **Nothing goes to the network while it runs.** Use `LIVE_ALLOW_NETWORK=1` only when
-updating models.
+**Names & words: `keywords_en.txt`.** One name or phrase per line, `#` for comments, seeded with
+biblical names, places and theological terms; loaded when the app starts (restart after editing).
+They count as real words for the confidence gate and are listed in Settings → Names &
+Spellings, next to the names you add there. Today's names (`ro = en` lines on the control page)
+are also boosted in the Romanian recogniser and kept as names in the translation.
 
-**How it works.** With the language locked to **EN → RO**, the engine streams audio to Whistle in
-1 s chunks. Whistle commits words only once two passes agree, and **only committed words go
-downstream**, so the Romanian on screen is never rewritten. Committed words are cut into clauses
-at punctuation, at pauses taken from the word timestamps (`pause_s`), or at `max_chunk_s`, then
-translated. Frames the voice detector doesn't score as speech (music, choir, noise) are sent as
-silence, which Whistle returns as no text. In **Auto** mode, Romanian/English detection still
-uses Parakeet + Jackrabbit; once a clause is English, Whistle transcribes it.
-
-**Keywords file: `keywords_en.txt`.** One name or phrase per line, `#` for comments. It's loaded
-when the app starts (restart after editing). It is seeded with biblical names and theological
-terms. **Add your pastors', guest speakers' and ministry names at the bottom.**
-
-**Settings** (`config.yaml`):
-
-```yaml
-live:
-  en_recognizer: whistle      # A/B switch: whistle | parakeet (the previous English recognizer)
-whistle:
-  depth: full                 # decoder depth (see below)
-  chunk_s: 0.5                # audio per streaming pass
-  vad_threshold: 0.6          # below this voice score, audio is sent as silence (music/choir gate)
-  pause_s: 0.35               # gap between words that ends a clause
-  max_chunk_s: 2.5            # longest clause before it is sent anyway
-```
-
-**Depth.** Whistle's decoder can be cut to fewer layers (2–8) for speed, at some cost in
-accuracy. In cactus-needle 3.2.8 that choice is fixed in the weights file: the Python API and
-engine have no runtime depth switch. `depth: full` uses the shipped `whistle.cact`. To try a
-shallower model, build one with `needle whistle build --layers N` (needs the `[train]` extra),
-list it under `whistle.weights_by_depth` (e.g. `{4: models/whistle/whistle-d4.cact}`) and set
-`depth: 4`.
-
-**Test / A/B on a recording (offline).**
+**Test on a recording (offline).**
 
 ```bash
-.venv-mt/bin/python scripts/test_en_sermon.py path/to/english_sermon.wav --recognizer whistle
-.venv-mt/bin/python scripts/test_en_sermon.py path/to/english_sermon.wav --recognizer parakeet
-scripts/en_ab.sh path/to/english_sermon.wav            # Parakeet vs Whistle, each with Gemma and NLLB
+.venv-mt/bin/python scripts/test_en_sermon.py path/to/english_sermon.wav
+.venv-mt/bin/python scripts/test_en_sermon.py path/to/english_sermon.wav --translator nllb:nllb-200-distilled-1.3B
 ```
 
 Each run plays the WAV in real time through the full pipeline (VAD → English STT → clauses →

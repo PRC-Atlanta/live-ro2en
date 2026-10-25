@@ -5,8 +5,8 @@
              (only those) + `spellings:` additions. Written atomically, migrated on load.
   lists      bundled glossary.csv / keywords_en.txt / config `spellings`, plus the user's
              additions files next to settings.yaml (paths.user_glossary, paths.user_keywords)
-  session    today's names and terms (POST /api/terms): glossary, spellings and Whistle
-             keywords, applied live; kept for this run unless saved.
+  session    today's names and terms (POST /api/terms): glossary, spellings and the names
+             the Romanian recogniser boosts, applied live; kept for this run unless saved.
 
 Only the keys in FIELDS can be read or written through the API ("hidden keys are rejected"):
 model ids, venvs, chunk internals, `paths`, `google`, `bible_testset` are never exposed.
@@ -60,7 +60,6 @@ FIELDS: dict[str, dict] = {
     "display.colors":          {"group": "propresenter", "type": "enum", "choices": ["white_on_black", "yellow_on_black", "black_on_white"], "apply": "now"},
     "display.network":         {"group": "propresenter", "type": "bool", "apply": "now"},
     # Advanced
-    "live.en_recognizer":      {"group": "advanced", "type": "enum", "choices": ["parakeet", "parakeet-stream", "whistle"], "apply": "start"},
     "live.input_gain_target_db": {"group": "advanced", "type": "num", "min": -30, "max": -10, "apply": "now", "default": -20},
     "live.vad_threshold":      {"group": "advanced", "type": "num", "min": 0.1, "max": 0.95, "apply": "start"},
     "live.hold_min_words":     {"group": "advanced", "type": "int", "min": 0, "max": 12, "apply": "now"},
@@ -237,7 +236,9 @@ def migrate(d: dict) -> tuple[dict, int]:
 
 
 def clean(d: dict, cfg: dict) -> tuple[dict, list[str]]:
-    """Only exposed keys with valid values, plus spellings (str -> str). Returns (user, notes)."""
+    """Only exposed keys with valid values, plus spellings (str -> str). Returns (user, notes).
+    Keys no longer in FIELDS (e.g. a saved `live.en_recognizer: whistle` from before Whistle was
+    removed) are dropped silently, and leave the file at the next save."""
     out, notes = {}, []
     for key in FIELDS:
         if not _has(d, key):
@@ -470,8 +471,7 @@ class SettingsMixin:
 
     # --- word lists ---------------------------------------------------------------------
     def _bundled_keywords(self) -> list[str]:
-        return read_lines(paths.resource((self.cfg.get("whistle") or {}).get("keywords_file", "keywords_en.txt"),
-                                         self.root))
+        return read_lines(paths.resource("keywords_en.txt", self.root))
 
     def user_keywords(self) -> list[str]:
         return read_lines(paths.user_keywords(self.root))
@@ -499,7 +499,7 @@ class SettingsMixin:
             return 400, {"error": "invalid", "detail": {"user": f"not a word or phrase (max {MAX_LEN} characters): {bad[:5]}"}}
         with self._settings_lock:
             write_lines(paths.user_keywords(self.root), list(dict.fromkeys(clean_word(w) for w in words)),
-                        "Names & words you added (English speech). Edited in Settings → Names & Spellings.")
+                        "Names & words you added. Edited in Settings → Names & Spellings.")
             self._apply_lists()
         return 200, self.keywords_view()
 
@@ -557,7 +557,7 @@ class SettingsMixin:
         new = {r["en"] for r in rows}
         words = [w for w in self.user_keywords() if w not in new] + [r["en"] for r in rows]
         write_lines(paths.user_keywords(self.root), list(dict.fromkeys(words))[-MAX_ITEMS:],
-                    "Names & words you added (English speech). Edited in Settings → Names & Spellings.")
+                    "Names & words you added. Edited in Settings → Names & Spellings.")
         sp = term_spellings(rows)
         if sp:                                     # newest kept when a list is full (stays editable)
             user = copy.deepcopy(self._user)
@@ -571,16 +571,12 @@ class SettingsMixin:
 
     def _apply_lists(self):
         """Push the merged lists into the running service: glossary session layer, the
-        spellings the pipeline applies, the Whistle keywords and the names the Romanian
-        recogniser boosts (next engine start via whistle.keywords_extra and ro_names, the
-        running engine via the `keywords` command)."""
+        spellings the pipeline applies and the names the Romanian recogniser boosts (next
+        engine start via ro_names, the running engine via the `keywords` command)."""
         self.gloss.set_session(self.session_terms)
         self.cfg["spellings"] = merge_spellings(self._base_cfg.get("spellings"), self._user.get("spellings"),
                                                 term_spellings(self.session_terms))
         words = list(dict.fromkeys(self.user_keywords() + self._session_words()))
-        if not isinstance(self.cfg.get("whistle"), dict):
-            self.cfg["whistle"] = {}
-        self.cfg["whistle"]["keywords_extra"] = words
         ro = self.cfg["ro_names"] = namelist.ro_names(self.gloss)
         eng = getattr(self, "engine", None)
         if eng is not None and eng.poll() is None:

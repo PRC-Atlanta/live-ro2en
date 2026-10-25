@@ -109,7 +109,7 @@ class FakeSTT:
 
 def _engine():
     e = engmod.Engine.__new__(engmod.Engine)
-    e.stt, e.whistle, e.name_boost = FakeSTT(), None, 1.0
+    e.stt, e.name_boost = FakeSTT(), 1.0
     return e
 
 

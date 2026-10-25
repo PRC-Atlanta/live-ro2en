@@ -36,22 +36,6 @@ done
 # speech models, NLLB tokenizer and every profile's translator: the app's own downloader
 # (pinned files, resumable, checksummed; profile tags in models.lock.txt)
 LIVE_ALLOW_NETWORK=1 .venv-mt/bin/python src/live/model_setup.py download --profile quality
-# Whistle (English STT): fetch the engine + weights ONCE, vendored in models/whistle so the
-# runtime never downloads anything (telemetry off for this step too).
-mkdir -p models/whistle
-if [ ! -f models/whistle/whistle.cact ] || [ ! -f models/whistle/libneedle.dylib ]; then
-  export NEEDLE_TELEMETRY=0 DO_NOT_TRACK=1
-  .venv-nemo/bin/needle fetch            # engine build for the pinned cactus-needle package
-  .venv-nemo/bin/python -c "
-import shutil, sys; sys.path.insert(0, 'src')
-from huggingface_hub import hf_hub_download
-from model_lock import revision
-shutil.copy(hf_hub_download('Cactus-Compute/whistle', 'whistle.cact', revision=revision('Cactus-Compute/whistle')),
-            'models/whistle/whistle.cact')"
-  LIB=$(.venv-nemo/bin/python -c "import os; os.environ['NEEDLE_TELEMETRY']='0'; import needle; print(needle._library_path(3))")
-  cp "$LIB" models/whistle/libneedle.dylib
-fi
-check models/whistle/whistle.cact; check models/whistle/libneedle.dylib   # native code: verify before use
 [ "${1:-}" = "live" ] || [ -f data/ref/cornilescu/data/data.parquet ] || .venv/bin/python -c "
 from huggingface_hub import hf_hub_download
 hf_hub_download('k-mktr/romanian_cornilescu_ro','data/data.parquet',repo_type='dataset',local_dir='data/ref/cornilescu',

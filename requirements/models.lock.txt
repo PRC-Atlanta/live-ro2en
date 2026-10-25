@@ -20,9 +20,6 @@ hf PRC-Media/nllb-200-distilled-1.3B-ct2-int8 c2ba844b276bfd6f2527fe93c258656c7c
 hf facebook/nllb-200-3.3B 1a07f7d195896b2114afcb79b7b57ab512e7b43e size=17599743779 profile=bench
 hf mlx-community/gemma-4-12B-it-qat-4bit e70c6b3ba0979b3357dcd2f223ad8bde7787a6b6 size=11020140534 profile=quality files=model-00001-of-00003.safetensors,model-00002-of-00003.safetensors,model-00003-of-00003.safetensors,model.safetensors.index.json,config.json,generation_config.json,processor_config.json,tokenizer.json,tokenizer_config.json,chat_template.jinja,README.md,.gitattributes
 hf mlx-community/EuroLLM-22B-Instruct-2512-mlx-4bit dcb329c32383c834402db9c0dc569593a6bc529c size=12750497964 profile=bench
-hf Cactus-Compute/whistle 741118687e1f008f06d1351a402a731274789790 size=16920010 profile=bundled files=whistle.cact,config.json
 dataset k-mktr/romanian_cornilescu_ro 62a67a985458a9e0df4165ce721fe83d3609ff70 profile=bench files=data/data.parquet
 url models/vad/silero_vad.onnx https://raw.githubusercontent.com/snakers4/silero-vad/v6.2/src/silero_vad/data/silero_vad.onnx
 sha256 models/vad/silero_vad.onnx 1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3
-sha256 models/whistle/whistle.cact b6e02f048568ac5d01a2042556c658061e699acbc0aa2a1439f52f3d461dffeb
-sha256 models/whistle/libneedle.dylib 0137354250a85fa52d100de948ccff9d9f7d8dd73ced0eea19c38f6e351aef55

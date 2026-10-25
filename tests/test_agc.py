@@ -154,10 +154,9 @@ def test_engine_run_feeds_the_voice_verdicts_to_the_controller(monkeypatch):
     e.mode, e.pt, e.pre_roll, e.partial_every = "ro-en", PauseTracker(frame_ms=32), 8, 0
     e.min_commit = e.max_commit = 0
     e.no_audio_s = e.silent_s = 0
-    e.realtime, e.backlog_s, e.catchup_max, e.english_ok = False, 0, 0, True
+    e.realtime, e.backlog_s, e.catchup_max, e.multi = False, 0, 0, object()
     e.n, e._id_lock = 0, threading.Lock()
     e.vad = lambda fr: 0.9                               # everything is speech
-    e.streamer, e.wcfg, e._wstream, e.whistle = None, {}, None, None
     e.transcribe = lambda *a, **k: None
     e.ctl = ctl = auto_ctl()
     q = queue.Queue()

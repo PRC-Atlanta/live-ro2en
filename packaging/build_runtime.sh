@@ -171,7 +171,7 @@ rm -f "$OUT/.compile.log"
 say "smoke imports"
 NEMO_PP="$OUT/site/common:$OUT/site/nemo"; MT_PP="$OUT/site/common:$OUT/site/mt"
 PYTHONNOUSERSITE=1 PYTHONPATH="$NEMO_PP" HF_HUB_OFFLINE=1 "$PY" -s -B -c '
-import torch, numpy, soundfile, sounddevice, onnxruntime, soxr, mlx.core, parakeet_mlx, needle
+import torch, numpy, soundfile, sounddevice, onnxruntime, soxr, mlx.core, parakeet_mlx
 import nemo.collections.asr
 print("  nemo ok: torch", torch.__version__, "numpy", numpy.__version__)'
 PYTHONNOUSERSITE=1 PYTHONPATH="$MT_PP" HF_HUB_OFFLINE=1 "$PY" -s -B -c '

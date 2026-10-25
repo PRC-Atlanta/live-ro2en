@@ -43,10 +43,9 @@ def _bare(mode="ro-en"):
     e.mode, e.pt, e.pre_roll, e.partial_every = mode, PauseTracker(frame_ms=32), 8, 0
     e.min_commit = e.max_commit = 0
     e.no_audio_s = e.silent_s = 0
-    e.realtime, e.backlog_s, e.catchup_max, e.english_ok = False, 0, 0, True
+    e.realtime, e.backlog_s, e.catchup_max, e.multi = False, 0, 0, object()
     e.n, e._id_lock = 0, threading.Lock()
     e.vad = lambda fr: float(fr[0])
-    e.streamer, e.wcfg, e._wstream, e.whistle = None, {}, None, None
     e.calls = []
     e.transcribe = lambda audio, t0, t1, t_speech=None, final=True: e.calls.append(len(audio))
     return e
@@ -114,18 +113,17 @@ def test_listen_is_always_answered(monkeypatch):
 def test_cfg_and_keywords_apply_without_a_restart(monkeypatch):
     e = _bare()
     got = []
-    e.whistle = types.SimpleNamespace(set_keywords=got.append)
-    e.en_rec = "parakeet"
+    e.set_ro_names = got.append
     q = queue.Queue()
     q.put({"cfg": {"min_pause_ms": 700, "vad_threshold": 0.6, "min_commit_s": 3.2, "max_commit_s": 6.4,
-                   "digital_silence_s": 4, "en_recognizer": "whistle", "whistle": {"x": 1}}})
-    q.put({"keywords": ["Ionuț Pop", "Efeseni"]})
+                   "digital_silence_s": 4, "stt_model": "other"}})
+    q.put({"keywords": ["Ionut Pop", "Efeseni"], "ro": ["Ionuț Pop"]})
     q.put(None)
     out = _run(e, q, monkeypatch)
     assert (e.pt.min_pause_ms, e.pt.threshold, e.min_commit, e.max_commit, e.silent_s) == \
         (700, 0.6, int(3.2 * 16000 / 512), int(6.4 * 16000 / 512), 4.0)
-    assert got == [["Ionuț Pop", "Efeseni"]]
-    assert {"type": "warn", "msg": "applied at the next start: en_recognizer"} in out
+    assert got == [["Ionuț Pop"]]                     # the Romanian names; the English side has no consumer
+    assert {"type": "warn", "msg": "applied at the next start: stt_model"} in out
 
 
 def test_mic_denied_is_not_reported_as_digital_silence(monkeypatch):
@@ -516,21 +514,6 @@ def test_two_services_in_the_same_second_get_their_own_logs(sandbox):
     assert len({first, second, live.log_path}) == 3
     assert sorted([live.log_path, second, first]) == [first, second, live.log_path]
     assert report.log_start(second) is not None and abs(report.log_start(second) - time.time()) < 5
-
-
-def test_changing_the_english_recogniser_while_idle_rewarms(sandbox):
-    live = _live(sandbox)
-    live.settings_path = sandbox / "settings.yaml"
-    try:
-        live.preload(wait=True)
-        assert until(lambda: live.state()["phase"] == "ready", 10)
-        first = live.engine
-        other = "whistle" if live.lc.get("en_recognizer") != "whistle" else "parakeet"
-        assert live.put_settings({"values": {"live.en_recognizer": other}})[0] == 200
-        assert until(lambda: live.engine is not first and live.state()["phase"] == "ready", 10)
-        assert live._engine_spec == live._spec()
-    finally:
-        live.shutdown()
 
 
 def test_engine_dying_during_stop_is_not_reported_warm(sandbox):
