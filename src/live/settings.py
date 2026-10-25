@@ -365,8 +365,10 @@ class SettingsMixin:
                 "restart_required": bool(self.running and any(FIELDS[k]["apply"] == "start" for k in changed)),
                 "notes": list(self.settings_notes)}
 
-    def put_settings(self, body: dict) -> tuple[int, dict]:
-        """{"values": {key: value}} (or the keys at the top level), or {"reset": true}."""
+    def put_settings(self, body: dict, by_hand: bool = True) -> tuple[int, dict]:
+        """{"values": {key: value}} (or the keys at the top level), or {"reset": true}.
+        `by_hand`: a person changed these (not a reset or an imported file), so a gain set by
+        hand switches Auto gain off as the knob does."""
         if body.get("reset") is True:
             vals = {k: get(self._base_cfg, k) for k in FIELDS if _has(self._user, k)}
         else:
@@ -387,7 +389,7 @@ class SettingsMixin:
         if bad:
             return 400, {"error": "invalid", "detail": bad}
         with self._settings_lock:
-            if get(self.cfg, "live.input_gain_auto"):    # as the gain knob does it on the Live screen:
+            if by_hand and body.get("reset") is not True and get(self.cfg, "live.input_gain_auto"):
                 eng = getattr(self, "_eng_gain", None)
                 if ok.get("live.input_gain_auto") is False and "live.input_gain_db" not in ok \
                         and isinstance(eng, (int, float)):
@@ -465,7 +467,7 @@ class SettingsMixin:
         d, _ = migrate(d)
         found, notes = clean(d, self.cfg)
         vals = {k: get(found, k) for k in FIELDS if _has(found, k) and get(found, k) != get(self.cfg, k)}
-        code, out = self.put_settings({"values": vals}) if vals else (200, self.settings_view())
+        code, out = self.put_settings({"values": vals}, by_hand=False) if vals else (200, self.settings_view())
         if code != 200:
             return code, out
         base_sp = self._base_cfg.get("spellings") or {}

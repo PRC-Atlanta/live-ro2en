@@ -54,6 +54,19 @@ def test_english_numbers_to_digits_before_translation(text, out):
     assert G.to_digits(text, "en") == out
 
 
+@pytest.mark.parametrize("text, lang, vals", [
+    ("Dumnezeu ne dă o nouă viață", "ro", set()),                # a new life, not nine
+    ("spune-o mie", "ro", set()),                                # say it to me, not 1000
+    ("cele nouă porunci", "ro", {9}), ("o mie de oameni", "ro", {1000}),
+    ("twenty thirty years ago", "en", {20, 30}),                 # a range, not 2030
+    ("we were fifteen twenty people", "en", {15, 20}),
+    ("back in nineteen eighty times were hard", "en", {1980}),   # a year after "in"
+    ("in twenty twenty people came", "en", {2020}),
+])
+def test_numbers_that_are_not_what_they_look_like(text, lang, vals):
+    assert G.numbers(text, lang) == vals
+
+
 def test_romanian_retry_source_gets_digits():
     assert G.to_digits("cei paisprezece copii și doi nepoți", "ro", min_value=2) == "cei 14 copii și 2 nepoți"
     assert G.to_digits("al paisprezecelea", "ro", min_value=2) == "al paisprezecelea"   # ordinals stay
@@ -177,6 +190,12 @@ def test_control_tokens_and_thinking_are_cleaned(raw, clean):
     ("Translation: Și a muri este câștig.", "Și a muri este câștig."),
     ("Note: the source is unclear.", ""),
     ("Am notat: da.", "Am notat: da."),                       # "notat" is not a note label
+    ("el știa că trebuie să ne ab *Note: Since the sentence is incomplete", "el știa că trebuie să ne ab"),
+    ("și noi ne rugăm Note: the source is incomplete", "și noi ne rugăm"),
+    ("Amen.” Note: x", "Amen.”"),
+    # a label word inside a sentence is the translation, not a note
+    ("And here is the explanation: God loves us.", "And here is the explanation: God loves us."),
+    ("Take note: God is faithful.", "Take note: God is faithful."),
 ])
 def test_notes_to_the_reader_are_cut(raw, clean):
     assert T.clean_output(raw) == clean

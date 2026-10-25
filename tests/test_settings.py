@@ -390,6 +390,17 @@ def test_input_gain_applies_live_and_reaches_the_engine(home):
     assert live._engine_cfg()["input_gain_db"] == 12.0        # and the next engine starts with it
 
 
+def test_reset_does_not_switch_auto_gain_off(home):
+    live = make_live(home, running=True)
+    live._send = lambda cmd: True
+    c = client(live)
+    c.put("/api/settings", json={"values": {"live.input_gain_db": 12}}, headers=ME)     # Auto gain off
+    c.put("/api/settings", json={"values": {"live.input_gain_auto": True}}, headers=ME)  # and on again
+    c.put("/api/settings", json={"reset": True}, headers=ME)
+    assert live.state()["audio"]["gain_auto"] is True
+    assert c.get("/api/settings", headers=ME).json()["overrides"] == []
+
+
 def test_auto_gain_off_in_settings_keeps_the_gain_it_reached(home):
     live = make_live(home, running=True)
     sent = []

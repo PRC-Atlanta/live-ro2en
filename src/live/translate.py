@@ -101,10 +101,12 @@ def clean_output(out: str) -> str:
     elif "<|channel>" in out:                           # a thought that never closed
         out = out.split("<|channel>")[0]
     out = _NOTE_RE.sub("", out)
-    # a label opens the output, a line or a sentence: "Note: ..." after the translation, not
-    # "here is the explanation: God loves us" inside it
+    # a note: a label that opens the output, a line or a sentence, or is set apart ("*Note:",
+    # "Note:" capitalised after an unfinished phrase), not "here is the explanation: God
+    # loves us" inside a sentence
     m = next((m for m in _LABEL_RE.finditer(out)
-              if re.search(r"(?:^|[.!?)\]\n\">]|\*\*)[\s*_(\[]*$", out[:m.start()])), None)
+              if m.group(1)[0].isupper() or re.search(r"[*_]\s*$", out[:m.start()])
+              or re.search(r"(?:^|[.!?)\]\n\"”>])[\s(\[]*$", out[:m.start()])), None)
     if m:
         lead = not out[:m.start()].strip(" *_\"\n")
         if lead and m.group(1).lower() in ("translation", "traducere"):

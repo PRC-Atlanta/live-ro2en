@@ -50,6 +50,10 @@ def _close(heard: str, name: str) -> bool:
     return r >= 0.9 or (r >= 0.75 and a[0] == b[0] and a[-1] == b[-1])
 
 
+def _sounds_ratio(heard: str, name: str) -> float:
+    return difflib.SequenceMatcher(None, skeleton(heard), skeleton(name)).ratio()
+
+
 def candidates(names: list[str]) -> list[str]:
     """Full names, and each word of a person's name ('Dragoș Puha' → 'Dragoș', 'Puha');
     a place with a small word in it ('Vicovu de Sus') only as a whole."""
@@ -83,9 +87,11 @@ def map_back(text: str, names: list[str], known: set[str] = frozenset()) -> str:
                 if fold(heard) in exact:
                     best = (n, None)                     # already right: leave it
                     break
-                if all(fold(w.group(0)) in known for w in win):
-                    continue
-                hit = next((c for c in cands if len(skeleton(heard)) >= 3 and _close(heard, c)), None)
+                # a dictionary word ('Bethany', 'Sceva') only when it sounds nearly the same as the
+                # name: 'Pua' (a Bible name too) is still Puha, 'Such Ava' still Suceava
+                strict = all(fold(w.group(0)) in known for w in win)
+                hit = next((c for c in cands if len(skeleton(heard)) >= 3 and _close(heard, c)
+                            and not (strict and _sounds_ratio(heard, c) < 0.85)), None)
                 if hit:
                     best = (n, hit)
                     break

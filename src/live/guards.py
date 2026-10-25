@@ -128,6 +128,14 @@ _EN_COUNTED = set("""years months weeks days hours minutes seconds times people 
 kids families brothers sisters members pastors churches dollars miles pages chapters verses""".split())
 
 
+def _a_range(toks, i: int, k: int, first: int, second: int) -> bool:
+    """"twenty thirty years ago", "fifteen twenty people": two counts, the second the larger,
+    before a counted noun. Not "in nineteen eighty times were hard" (a year after "in")."""
+    nxt = toks[k + 1][0].lower() if k + 1 < len(toks) else ""
+    prev = toks[i - 1][0].lower() if i else ""
+    return nxt in _EN_COUNTED and second > first and prev not in ("in", "since", "from", "by", "until", "of")
+
+
 def _month(toks, i) -> bool:
     if i < 0:
         return False
@@ -185,7 +193,7 @@ def _runs(text: str, lang: str) -> list[dict]:
                 cur += nv                               # a hundred and twenty / două mii doisprezece
             elif (lang == "en" and not year and kind in ("teen", "ten") and 10 <= cur < 100
                   and nk in ("teen", "ten") and k == j
-                  and (k + 1 >= len(toks) or toks[k + 1][0].lower() not in _EN_COUNTED)):
+                  and not _a_range(toks, i, k, cur, nv)):
                 cur, year = cur * 100 + nv, True        # nineteen sixty / twenty twenty
             elif year and kind == "ten" and cur % 10 == 0 and nk == "unit":
                 cur += nv                               # nineteen sixty three
