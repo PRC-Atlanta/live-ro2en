@@ -574,6 +574,9 @@ class SettingsMixin:
         spellings the pipeline applies and the names the Romanian recogniser boosts (next
         engine start via ro_names, the running engine via the `keywords` command)."""
         self.gloss.set_session(self.session_terms)
+        # the names typed in Settings → Names & words (Whistle used to be their only reader):
+        # boosted and repaired like today's names
+        self.gloss.extra_names = [w.strip() for w in self.user_keywords() if w.strip()[:1].isupper()]
         self.cfg["spellings"] = merge_spellings(self._base_cfg.get("spellings"), self._user.get("spellings"),
                                                 term_spellings(self.session_terms))
         words = list(dict.fromkeys(self.user_keywords() + self._session_words()))

@@ -177,3 +177,12 @@ def test_nemo_set_names_swaps_the_fusion_models(monkeypatch):
     assert sa.fusion_models == [lm] and sa.fusion_models_alpha == [0.5]
     s.ctc = False
     assert s.set_names(["Puha"], 1.0) is False            # greedy/TDT decoding: nothing to boost
+
+
+def test_settings_names_reach_the_romanian_name_list():
+    """Names typed in Settings → Names & words used to feed only Whistle (removed 2026-10-24);
+    they now join the names the Romanian recogniser boosts and the repair brings back."""
+
+    gloss = types.SimpleNamespace(session=[], user=[], names=["Dragoș"], extra_names=["Paraschiva", "Puha"])
+    names = N.ro_names(gloss)
+    assert "Paraschiva" in names and "Puha" in names and "Dragoș" in names

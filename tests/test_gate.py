@@ -2,6 +2,8 @@
 and name lists (idea 15). Examples are from the 2026-10-23/24 service logs."""
 import json
 import pathlib
+
+import pytest
 import sys
 import time
 import types
@@ -90,6 +92,13 @@ def test_short_home_phrase_does_not_end_an_english_reading():
 
 
 # --- in the pipeline ------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _no_developer_lists(tmp_path, monkeypatch):
+    """The app reads the user's saved names and words (user/ in a dev checkout); these tests
+    must not depend on what the developer saved there."""
+    monkeypatch.setenv("LIVE_HOME", str(tmp_path / "home"))
+
 def _live(tmp_path, translate=lambda t, *a, **k: f"EN: {t}"):
     live = Live(yaml.safe_load(open(CFG)), types.SimpleNamespace(file=None))
     live.log_path = tmp_path / "log.jsonl"

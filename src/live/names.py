@@ -110,7 +110,8 @@ def ro_names(gloss) -> list[str]:
     before translating."""
     rows = list(getattr(gloss, "session", None) or []) + list(getattr(gloss, "user", None) or [])
     out = [r["ro"].strip() for r in rows if r.get("ro", "").strip()[:1].isupper()]
-    return list(dict.fromkeys(out + list(getattr(gloss, "names", None) or [])))
+    extra = list(getattr(gloss, "extra_names", None) or [])     # Settings → Names & words
+    return list(dict.fromkeys(out + extra + list(getattr(gloss, "names", None) or [])))
 
 
 # a word after one of these is a person's name more often than not ("familia Pha", "fratele Drago")
