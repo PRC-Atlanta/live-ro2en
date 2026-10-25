@@ -14,7 +14,8 @@ import sys
 import threading
 
 PAGE = pathlib.Path(__file__).resolve().parent / "ui" / "display.html"
-DEFAULTS = {"size": "large", "lines": 2, "colors": "white_on_black", "network": False, "port": 8766}
+DEFAULTS = {"size": "large", "lines": 2, "colors": "white_on_black", "network": False, "port": 8766,
+            "show_hidden": False}
 
 
 def local_name() -> str:
@@ -45,13 +46,15 @@ class DisplayMixin:
         d = self._display_cfg()
         on = self._net_server is not None and self._net_error is None
         return {"size": d["size"], "lines": int(d["lines"]), "colors": d["colors"],
-                "network": bool(d["network"]),
+                "network": bool(d["network"]), "show_hidden": bool(d["show_hidden"]),
                 "url": f"http://{self._net_host}:{d['port']}/" if on and self._net_host else None,
                 "network_error": self._net_error}
 
     def display_feed(self) -> dict:
-        """What the view-only page gets: the caption box and how to show it, nothing else."""
-        return {"screen": self.caps.text, "paused": getattr(self, "paused", False),
+        """What the view-only page gets: the caption box and how to show it, nothing else.
+        With `display.show_hidden` Hide is ProPresenter's alone, so the page is told it is off."""
+        paused = getattr(self, "paused", False) and not self._display_cfg()["show_hidden"]
+        return {"screen": self.caps.text, "paused": paused,
                 "held": getattr(self, "held", False), "running": self.running,
                 "display": self._display_state()}
 

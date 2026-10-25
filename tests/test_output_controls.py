@@ -118,6 +118,25 @@ def test_hide_blanks_and_makes_no_propresenter_call(tmp_path, mock):
     assert [r["on"] for r in _log(live) if r.get("event") == "pause"] == [True, False]
 
 
+def test_show_hidden_keeps_the_captions_display_but_not_propresenter(tmp_path, mock):
+    live = _live(tmp_path, mock.port)
+    live.cfg.setdefault("display", {})["show_hidden"] = True
+    live._show("Brothers and sisters")
+    live.pause(True)
+    assert mock.visible == {}
+    n = len(mock.events)
+    shown, ok, outcome = live._show("Heard while hidden")
+    assert outcome == "paused" and ok is None and "Heard while hidden" in shown
+    assert len(mock.events) == n                                      # still no ProPresenter call
+    feed = live.display_feed()
+    assert feed["paused"] is False and "Heard while hidden" in feed["screen"]
+    assert live.state()["paused"] is True                             # the Hide button stays on
+    live.pause(False)
+    assert live.caps.text == ""                                       # Show starts clean
+    assert live._show("After the prayer")[0] == "After the prayer"
+    assert mock.visible["Live Translation"] == "After the prayer"
+
+
 @pytest.mark.skipif("self._show(" not in (ROOT / "src" / "live" / "pipeline.py").read_text(),
                     reason="pipeline.py (S4) does not call OutputMixin._show yet")
 def test_hidden_clauses_are_logged_as_paused(tmp_path, mock):

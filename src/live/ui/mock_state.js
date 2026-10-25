@@ -24,7 +24,7 @@ export function baseState() {
     phase: "ready", progress: null,
     audio: { device: "Behringer UMC204HD", rms_db: -60, peak_db: -60, speech: false, last_voice_s: null, ok: true, engine: true, gain_db: 0, gain_auto: false },
     pp: { connected: true, since: Date.now() / 1000 - 600, last_ms: 3, error_code: null, enabled: true },
-    display: { size: "large", lines: 2, colors: "white_on_black", network: false, url: null, network_error: null },
+    display: { size: "large", lines: 2, colors: "white_on_black", network: false, show_hidden: false, url: null, network_error: null },
     pace: { state: "ok", behind_s: null }, backlog: { n: 0, oldest_s: null },
     paused: false, held: false, song: false, song_auto: false, problem: null, auto_actions: [],
     elapsed_s: null, first_word_ok_pct: null, rehearsal: false, session_terms_n: 0, corrections_n: 0, preflight: null,
@@ -129,6 +129,7 @@ const MOCK_FIELDS = {
   "display.lines": { group: "propresenter", type: "int", min: 1, max: 3, apply: "now" },
   "display.colors": { group: "propresenter", type: "enum", choices: ["white_on_black", "yellow_on_black", "black_on_white"], apply: "now" },
   "display.network": { group: "propresenter", type: "bool", apply: "now" },
+  "display.show_hidden": { group: "propresenter", type: "bool", apply: "now" },
   "ui.show_latency": { group: "advanced", type: "bool", apply: "now", default: false },
   "ui.show_counts": { group: "advanced", type: "bool", apply: "now", default: false },
 };
@@ -140,7 +141,7 @@ const MOCK_DEFAULTS = {
   "live.hold_min_words": 4, "live.hold_s": 1.2, "live.phrase_min_words": 6, "live.hold_dangling": true, "live.hold_slow_s": 6.5, "live.overlap_trim": true, "live.song_detect": false, "live.song_symbol": "♪", "live.sentence_pause_s": 1.0, "live.caption_min_line_s": 2.5, "live.caption_reveal": true, "live.caption_reveal_wps": 3, "live.partial_every_s": 0, "live.lag_warn_s": 6.0, "live.gate_min_real": 0.6,
   "propresenter.health_every_s": 5, "live.keep_both_translators": "auto", "live.engine_restarts": 2,
   "propresenter.enabled": true, "display.size": "large", "display.lines": 2, "display.colors": "white_on_black",
-  "display.network": false,
+  "display.network": false, "display.show_hidden": false,
   "ui.show_latency": false, "ui.show_counts": false,
 };
 // model_lock.py items: each profile includes the ones before it

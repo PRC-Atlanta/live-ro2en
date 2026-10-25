@@ -45,6 +45,8 @@ export const FIELDS = {
       options: [["white_on_black", "White on black"], ["yellow_on_black", "Yellow on black"], ["black_on_white", "Black on white"]] },
     { key: "display.network", label: "Also show on other devices on this network", kind: "toggle",
       hint: "View only: a phone, tablet or TV browser on the church Wi-Fi can show the captions. It has no controls." },
+    { key: "display.show_hidden", label: "Keep showing while captions are hidden", kind: "toggle",
+      hint: "Hide then blanks ProPresenter only: this display and the app's own screen keep showing the translation." },
   ],
   advanced: [
     { key: "live.input_gain_target_db", label: "Auto gain: speech level (dBFS)", kind: "number", min: -30, max: -10, step: 1,

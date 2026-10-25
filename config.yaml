@@ -147,6 +147,7 @@ display:
   colors: white_on_black      # white_on_black | yellow_on_black | black_on_white
   network: false
   port: 8766
+  show_hidden: false          # true: Hide blanks ProPresenter only; the captions display goes on
 
 # Words or phrases that never reach the screen (any case, diacritics optional)
 safety:

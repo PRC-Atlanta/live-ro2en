@@ -277,7 +277,7 @@ export function render(el, store) {
     const hidden = !!s.paused;
     const hb = q("[data-hide]");
     hb.classList.toggle("on", hidden); hb.setAttribute("aria-pressed", hidden);
-    q("[data-mirror]").classList.toggle("hidden", hidden);
+    q("[data-mirror]").classList.toggle("hidden", hidden && !s.display?.show_hidden);   // show_hidden: Hide is ProPresenter's only
 
     // the speaker's language and the captions' language
     const srcLang = s.mode === "en-ro" ? "en" : s.mode === "ro-en" ? "ro" : s.lang || "ro";

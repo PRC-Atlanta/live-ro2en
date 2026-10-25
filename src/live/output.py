@@ -45,13 +45,18 @@ class OutputMixin:
     def _show(self, translation: str, close: str = "", audio_s: float | None = None) -> tuple[str, bool | None, str]:
         """Add a translation to the captions and send them, unless hidden or held.
         Returns (screen text, sent ok or None when nothing was sent, outcome) where outcome
-        is "ok", "paused" (Hide is on: not added, so Show starts clean), "song" (Song came on
+        is "ok", "paused" (Hide is on: not sent; not added either, so Show starts clean, unless
+        `display.show_hidden` keeps the captions display going), "song" (Song came on
         while it was translated: not added) or "held".
         `close` ends the previous caption first; with its speaking time `audio_s` the rest
         of a long translation is revealed by the pace timer (RollingCaptions.add)."""
         with self._out_lock:
             if self.paused:
-                return "", None, "paused"
+                if not self._show_hidden():
+                    return "", None, "paused"
+                shown = self.caps.add(translation, close, audio_s=audio_s)   # the display only
+                self._pace()
+                return shown, None, "paused"
             if self.song_on:
                 return "", None, "song"
             shown = self.caps.add(translation, close, audio_s=audio_s)
@@ -107,19 +112,25 @@ class OutputMixin:
 
     def pause(self, on: bool = True):
         """Hide (on) / Show (off). Hide blanks ProPresenter and the stage display; recognition,
-        translation and the log carry on. Show starts clean: nothing from the hidden time is
-        dumped, and the translator's context is reset."""
+        translation and the log carry on, and with `display.show_hidden` so does the captions
+        display. Show starts clean: nothing from the hidden time is dumped, and the
+        translator's context is reset."""
         on = bool(on)
         with self._out_lock:
             if on == self.paused:
                 return
             self.paused = on
-            self.caps.clear()
+            if not (on and self._show_hidden()):
+                self.caps.clear()
             self.pp.clear()
         if not on:
             self._reset_translator_context()
         self._log_event({"event": "pause", "on": on})
         self._broadcast()
+
+    def _show_hidden(self) -> bool:
+        """`display.show_hidden`: Hide is for ProPresenter only; the captions display goes on."""
+        return bool((self.cfg.get("display") or {}).get("show_hidden", False))
 
     def _reset_translator_context(self):
         tr = self.tr

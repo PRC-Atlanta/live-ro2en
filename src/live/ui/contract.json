@@ -91,7 +91,7 @@
                        "built": true, "owner": "S2"},
     "display":        {"type": {"object": {"size": {"enum": ["medium", "large", "x-large"]}, "lines": "int",
                                            "colors": {"enum": ["white_on_black", "yellow_on_black", "black_on_white"]},
-                                           "network": "bool", "url": "str|null", "network_error": "str|null"}},
+                                           "network": "bool", "show_hidden": "bool", "url": "str|null", "network_error": "str|null"}},
                        "built": true, "owner": "S11"},
     "pace":           {"type": {"object": {"state": {"enum": ["ok", "slow", "behind"]}, "behind_s": "num|null"}}, "built": true, "owner": "S4"},
     "backlog":        {"type": {"object": {"n": "int", "oldest_s": "num|null"}}, "built": true, "owner": "S4"},
