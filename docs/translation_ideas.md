@@ -34,6 +34,15 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
 - **Change:** boost today's names in the CTC beam search (word boosting / hotwords in the LM
   decoder), and add fuzzy spelling fixes for near-misses (Pha → Puha) before translation.
 - **Effort:** medium (decoder support needs checking in NeMo's beam decoder).
+- **Church phrases, not just names (2026-10-25):** "slăvit să fie Domnul" is heard as "**să vii
+  să fie Domnul**" again and again (09:50:46 → "come let the Lord be", 10:47:16 → "that the
+  Lord should come"), "Frați și surori" as "Fra și surori" (09:27, 09:21:53), "Lăudat" as
+  "Ludați" (10:10:18), "Doamne" as "domnule" → "sir" (09:55:42, 11:11:33), "vrednic de laudă"
+  as "vremii de laudă" (11:32:23, Ps 145:3), "Slăviți să fie Domnul" as "**Loviți** să fie
+  Domnul" → "may the Lord be with us" (10:58:37), "**Iov** a fost" as "Eu v-a fost" → "**I** was
+  blessed… His flocks" (11:45:18; Bible names, not only today's). **Change:** add a short list of stock church phrases (slăvit/lăudat să
+  fie Domnul, frați și surori, binecuvântat să fie, pace vouă…) to the same beam boost and
+  near-miss repair as today's names. Small; bench on today's clips.
 
 ## 3. Bible references: show the published verse — `done` — stream D: announced references tell Gemma the verse (step 1); stream H: verses recognised by their words are captioned with WEB / Cornilescu (step 2)
 
@@ -80,6 +89,33 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   verse's Romanian text and caption the published English (NKJV/ESV-style) instead of
   translating fragment by fragment.
 - **Effort:** medium; needs a full RO/EN Bible text with a license that allows it.
+- **A verse's first chunk misses the match (2026-10-25 09:48:32, Quality, Daniel 3:17-18,
+  announced: "versetul 17 din 3, Daniel", "versetul 18 spune așa"):** "să știi, împărate, că
+  noi vom sluji Dumnezeu." → "know, **emperor**, that we will serve God." then the verse
+  matcher caught the next chunk: "your gods or worship the golden | image which you have set
+  up." On screen: "we will serve God. your gods or worship the golden image": the verse's
+  meaning ("we will **not** serve your gods") reversed. The recogniser dropped "nu" and heard
+  "dumnezeilor" as "Dumnezeu." on the chunk boundary. **Change:** when a verse is matched,
+  look back one chunk: if the previous chunk overlaps the verse's opening words (here "să
+  știi, împărate, că noi"), replace/retract it (Remove last) and caption the verse from its
+  start; also glossary `împărat(e)` = king (Bible usage). Small-medium (stream H code).
+- **A paraphrase spliced with the published verse (09:49:32):** "și 139 și multe versete din
+  Biblie sunt care. că el ascultă rugăciunea, de aceea, toți oam[enii]" matched Psalm 65:2
+  (score 0.97, 9 words, no reference announced) and came out "…many verses in the Bible are
+  which that **He You who hear prayer, all men will come to you. the**": third person turned
+  to "You", the verse glued mid-sentence. **Change:** with no announced reference, take a
+  matched verse only when the chunk *is* the verse (covers most of the chunk, starts near a
+  clause start), else translate normally; never splice a verse into the middle of a chunk.
+  Small (stream H thresholds), bench on this clip.
+- **Junk where the spoken chunk and the verse don't line up (2026-10-25):** Genesis 32:28-31
+  (10:11:59-10:12:21): "but you will be called Israel. **who fights against God but Israel**";
+  "called the name of the place **on Him**, the face of God"; "as he passed over **Please**"
+  (a cut "Pl[enuel]"); "the man touched **conclusions**" (the reader's self-correction
+  "încheieri… încheietura"). Matthew 28:20 (10:43:39): "all things that I commanded **And
+  behold.** | **you.** Behold, I am with you always": the chunk's own "Și iată" translated and
+  then the verse's "Behold" again. **Change:** inside a matched verse, caption only verse
+  text; drop the chunk's leftover words that fall within the verse span (keep words before
+  its start / after its end), and never mix Gemma's output into the verse.
 
 ## 4. Give Gemma its own previous translations as context — `done` — stream D: Gemma sees its own previous (source, translation) pairs and continues cut sentences
 
@@ -131,7 +167,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   flow carry over; ask it to continue the sentence when the previous chunk ended mid-sentence.
 - **Effort:** small; check the prompt stays short enough for ~2 s.
 
-## 5. Numbers, negations and facts: a guard — `done` — stream A: `src/live/guards.py` (numbers to digits before EN→RO, number/negation check with one re-translation)
+## 5. Numbers, negations and facts: a guard — `done` — stream A: `src/live/guards.py` (numbers to digits before EN→RO, number/negation check with one re-translation) · follow-up `next` (2026-10-25: four reversed meanings on screen, two false alarms costing 9-10 s)
 
 - **Evidence:** "Nouă copii au rămas" (nine children were left) → "They left behind two
   children"; "în urmă cu aproximativ 9 ani" kept correctly in another chunk.
@@ -143,6 +179,11 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   "cei **doi** frați" → "the eldest of the two brothers and sisters" (the English reading a
   minute earlier said twelve). A guard can't catch that; boosting number words in the
   Romanian decoder or comparing with the earlier English reading could.
+  **Again 2026-10-25 11:53:50**, same word: "Iacov, tatăl celor **doisprezece** fii" → primary
+  recogniser "celor **doi** fii" → "the father of the **two** sons"; the second recogniser
+  (the `multi` field in the log) heard "celor **12** fii". **Change:** when the two transcripts
+  disagree on a number, prefer the longer number word (doisprezece ⊃ doi, paisprezece ⊃
+  patru…) or the multi transcript's digits; cheap and both are already computed.
 - **RO→EN, translator side (11:58):** "cei paisprezece copii" → "their **fifteen** children"
   (fourteen; the next chunk "celor 14 nepoți" → "14" was right). Number *words* are the risk
   in both directions; a guard comparing number words/digits would have caught this one.
@@ -152,9 +193,73 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   negations (nu/n-/nici ↔ not/no/never).
 - **(13:29):** "dar privită de sus, nu-i așa?" (but seen from above, isn't it [different]?) →
   "but seen from above, **it isn't**, is it?": the tag question "nu-i așa" read as a negation.
+  Again 2026-10-25 11:44:47: "**nu-i așa că** uneori avem impresia că binecuvântare înseamnă
+  doar…?" (isn't it true that sometimes…?) → "**it is not that** sometimes we have the
+  impression…". And 11:10:35 "nu de asta v-am cumpărat adidași, [să-i] purtați?" (isn't that
+  why…?) → "I didn't buy you these sneakers just to wear them". The guard ignores tag
+  questions (so it can't catch these); an idiom row "nu-i așa că … ?" = "isn't it true that
+  …?" and a prompt line on rhetorical "nu … ?" questions would.
 - **Change:** compare digits / number words in source and translation; on a mismatch,
   re-translate once or log it for review.
 - **Effort:** small.
+- **After the guard, both tries wrong (2026-10-25 09:10:26, Quality, prayer):** "Ne-ai **mai**
+  dat o zi binecuvântată." (You have given us **another** blessed day) → "You have **not** given
+  us a blessed day." The guard flagged it (source false, translation true), the retry said
+  "You haven't given a blessed day." too, and `kept: first` showed the reversed meaning.
+  Gemma reads "mai" as "nu mai". **Follow-up:** when the retry fails the same check, (a) retry
+  with a hint in the prompt ("the source has no negation; 'mai' here means again/another"),
+  or (b) fall back to the other translator (NLLB) for that line, or (c) strip the "not" and
+  show the result; never show a flagged negation unchanged. Also an idiom row: "ne-ai mai dat"
+  → "you have given us another". Small.
+- **Again, on ProPresenter (2026-10-25 11:00:50):** "Doamne, dacă tu ne-ai chemat să ne mutăm
+  în Filipine, dacă tu ne-ai arătat… terenul" → "Lord, if **You didn't call us** to move to
+  the Philippines, if **You didn't show us**…". The guard flagged it; the retry was negative
+  too; `kept: first` put the reversed meaning on screen. Likely cause: the same prayer a
+  minute earlier (10:59:19) was misheard as "dacă tu **nu** ne-a chemat" (the second
+  recogniser even heard "tu nu ai chemat" now), and Gemma followed its context. Three
+  occurrences today → the follow-up above is worth doing first: retry *without* context and
+  with the "no negation in the source" hint, and never show a still-flagged negation.
+- **"mai" = "nu mai" again (11:04:56, ProPresenter):** "domnule Manuel, ne **mai** trebuie fonduri"
+  (we need **more** funds) → "we **don't need any more** funds"; flagged, retry identical, kept.
+  Two of today's four reversals are bare "mai" (more/again/another). **Change:** before
+  translating, when "mai" has no "nu"/"n-" before it, add the hint "'mai' here means
+  more/again, not 'no longer'" — or substitute "încă" for the translator.
+
+- **Negation inside a verse-matched chunk (2026-10-25 10:13:47, prayer):** "pentru ascultă
+  rugăciunea. de aceea. toți oamenii vor reveni la tine, **de ne putere** să ascultăm" (dă-ne
+  putere: give us strength) → "for hear the prayer. all men will come to you. that we have
+  **no power** to listen" (Psalm 65:2 matched). The guard skips phrases with a verse
+  (`pipeline.py`: "a published verse is not checked"), so the invented "no" in the
+  non-verse part passed. **Change:** check the part of a chunk outside the matched verse.
+
+- **A spoken range run together (10:51:41):** "sunt în jur de vreo patru, cinci, șase, șapte
+  mii de copii" (about 4-7 thousand) was written by the recogniser as "**4567.000**" →
+  "about **4,567,000** children". The guard flagged it (4567 vs 4567000), the retry said the
+  same, `kept: first`. Two fixes: the recogniser's number formatting should not glue a list of
+  single digits ("4567" from "patru cinci șase șapte"), and when guard and retry both fail on
+  a number, show the digits as heard ("4-7 thousand") or drop the number rather than keep it.
+  Again on ProPresenter at 11:07:55: "cinci, șase, șapte mii de dolari" → "50067.000" →
+  "worth **50,067.000 dollars**" (the next chunk said "5.000-6.000 7.000" correctly). Same
+  speaker habit twice in 15 minutes: worth fixing in the number formatting.
+- **A money figure in the announcements (11:22:01, hidden):** the church loan balance, said
+  slowly in pieces ("un milion două sute șaptezeci și unu de mii șapte sute"), came out across
+  three chunks as "1,207." | "1.271701 million. 271,700,000." | "dollars." (likely
+  $1,271,700). Numbers spoken over a chunk boundary need to be joined before formatting;
+  failing that, a figure the recogniser formats oddly (decimal point inside "milion",
+  9+ digits) should be flagged, not shown.
+
+- **False alarm that costs seconds (11:03:09):** "Domnul a [întrebat] a **doua** oară" → "the
+  Lord asked me a **second** time" was right, but the guard counts "doua" as 2 and finds no
+  "2"/"two" in the English (ordinals not mapped) → retry, translation 8.9 s, first word 19 s.
+  **Change:** map ordinals both ways (prima/primul = first/1st, a doua = second, a treia =
+  third… and "1st/2nd") before comparing. Tiny; cuts guard retries (idea 24).
+- **Another false alarm (12:05:20, closing prayer):** "dacă sunt suflete nete. ne mântuite"
+  (= nemântuite, unsaved; split by the recogniser) → first answer "souls who are **not** saved"
+  was right, but the guard saw no "nu" in the source, retried (translation 10.2 s, first word
+  22 s) and kept the retry "souls lost". **Change:** count the Romanian "ne-" prefix of a
+  known adjective (nemântuit, necredincios, nepocăit, neascultător…) and a lone "ne" before
+  a participle as a negation; also skip the retry when the only "not" in the English is
+  "not" + a participle matching such a word.
 
 ## 6. Words that are also names — `done` — stream D: today's names and glossary names are kept as written
 
@@ -166,6 +271,20 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   glossary, passed to the translator as names; lower-case recogniser capitals on common words
   ("Dânșiilor") before translation.
 - **Effort:** small.
+- **(2026-10-25, announcements, on ProPresenter):** 11:18:42 "fratele Benu și fratele **Ilie**
+  Puha" → "Brother **Elijah** Puha" (a person's name, translated as the prophet); 11:17:27
+  "luați legătură cu fratele Emmanuel și Dumnezeu [să binecuvinteze]" → "get in touch with
+  **Fratele Emanuel și Dumnezeu**" — left in Romanian, as if "Fratele Emanuel … și …" were one
+  of today's names (the name repair matched "Fratele Emanuel Pop" and swallowed "și
+  Dumnezeu"). **Change:** Romanian given names before a surname (Ilie, Ioan, Petru, Pavel,
+  Iacov…) stay as written when preceded by frate/sora or followed by a capitalised surname;
+  the near-miss repair must not extend a name across "și" + a common word.
+- **Iacov = Jacob or James (2026-10-25 11:57:18, sermon on Genesis 32):** after 20 minutes of
+  "Iacov" = Jacob, "în versetul 30, Iacov a pus locului acelui numele" → "**James** changed
+  that name" (Gemma's other reading of Iacov). **Change:** today's context decides: when the
+  announced/matched passage is Old Testament (or "Iacov" co-occurs with Israel, Esau, Laban,
+  Isaac), hint "Iacov = Jacob"; with apostle/epistle context, "Iacov = James". A one-line
+  prompt hint from the last matched verse's book.
 
 ## 7. Glossary misses in Quickest — `done` — via the glossary rows (stream D) and NLLB only where it is good
 
@@ -231,6 +350,18 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   Jesus) → "the **miracle** of Jesus"; "când mirele pe nori" → "when the **bride** on the
   clouds" (bridegroom → bride). Glossary `mire / mirele` = `bridegroom`.
 - **Effort:** tiny (glossary.csv), no code.
+- **Inflected forms miss the glossary (2026-10-25 09:45:19, Quality, after a funeral):** "cum
+  se perindau **sicriile** în față" (how the coffins passed before us) → "how the **cicadas**
+  were wandering in front"; glossary.csv has `sicriu` and `sicriul` but not the plural
+  `sicriile`/`sicriele`, so Gemma got no hint. Same minute: "te **fiori**!" (shivers) → "the
+  **flowers**!"; 09:44:52 "acum din **cântare**" (from the song) → "now from the heart".
+  **Change:** match glossary rows on the stem/lemma (or list the common forms: -ul, -ului,
+  -ele/-ile, -elor/-ilor) and add `fiori` = shivers, `cântare` = song/hymn. Small.
+- **More glossary rows from 2026-10-25 (on ProPresenter):** "ce **minister**, ce biserică e în
+  spatele dumneavoastră" (which ministry/organisation) → "which **ministers**" (11:04:30);
+  "ani de zile" → "years **of days**" (11:09:38); "Te rog frumos" → "We humbly pray" (11:06:34,
+  should be "please"); "pui" = puppies (not chicks) when dogs are the topic (11:08:12);
+  "baza de misiune **Gosen**" = **Goshen** (Bible place; came out Gosen/Goshen/"broadcast base").
 
 ## 10. Empty-phrase fallback misses short Romanian words — `done` — stream B
 
@@ -447,6 +578,18 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   and show a ♪ or nothing while it lasts; or a one-key "song" toggle for the operator that
   holds captions. Lyrics, if wanted, belong on ProPresenter's own song slides.
 - **Effort:** small for the toggle; medium for detection.
+- **Garbage through the gate (2026-10-25 10:14:30-10:15:30, a song about sheaves/harvest,
+  song detection off):** ~12 phrases like "snopul strâns la vederea lui, da, sav pe nasul
+  Barta", "tăiește spinile Zodra nasul de la Baba, vai, tenes", "cumperi ta, Zgaal" all passed
+  the confidence gate (real Romanian words mixed in) and became "Sav on Barta's nose", "cut off
+  Zodra's spines from Baba's nose", "buy it, Zgaal, I still need you with me". Only hidden
+  from ProPresenter by luck. **Change:** turn automatic song detection on for a bench run on
+  this clip; add to the gate an "unknown capitalised words" count (Barta, Zodra, Baba, Zgaal,
+  Balba, Shor: not in today's names, the lexicon or the Bible names) — 2+ in one phrase or
+  over consecutive phrases = garbled.
+- **(10:34:27, the gulag song sung partly in Russian):** "eu zic sa te gaspoddi, mă iubi mai
+  ucite", "Upavanie mai pac" (Господи, Упование) went through as Romanian. A third language
+  the recognisers don't know; the same unknown-word count would catch it.
 
 ## 19. Automatic gain: level each speaker to the ideal volume — `done` — stream F: on by default (bench: 26/52 vs 21/52 at a fixed +15 dB)
 
@@ -466,6 +609,19 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
 - **Check:** replay today's service audio, if recorded, or a rehearsal with level changes;
   compare speech_db spread and empty/garbled phrases before and after.
 - **Effort:** medium (engine controller + UI switch + tests).
+- **Slow to come back after a long quiet (2026-10-25 09:39, Quality; the user noticed it too):**
+  after the worship group and ~10 min of near-silence, the next speaker started at gain
+  **-9.8 dB** (pulled down by the singing), speech **-54 dB** in. It climbed ~3.5 dB per
+  phrase: -9.8, -6.5, -3.0, -1.0, +3.1, +6.9 → speech only reached -32 dB after ~25 s (target
+  -20). The first 3-4 phrases went to the recogniser 30 dB too quiet. Cause, `AutoGain` in
+  `src/live/engine.py`: after the pause the 20 s window is empty, so it waits 2 s of speech,
+  then moves at `rate_db_s` 1 dB per second *of speech*, the same rate up as down.
+  **Change:** (a) after a pause longer than the window (or when the error is > 10 dB), jump
+  most of the way at once on the first 2 s median (the limiter already catches a peak on
+  the very frame); (b) or a faster rate up while the error is large (e.g. 4 dB/s above 6 dB
+  error, 1 dB/s near the target); (c) don't let singing pull the gain down for the next
+  speaker: freeze or ignore frames while a song is detected/keyed. Small; bench on the
+  09:39 clip (mark below) and a quiet-then-loud rehearsal.
 
 ## 20. Cut phrases by words, not seconds, for slow speakers — `done` — stream C: `phrase_min_words` 6 in Best, no phrase ending on a preposition
 
@@ -479,6 +635,13 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   (din, de, la, în, cu, pe, și, că, care…) unless max_commit_s is reached; the hold for short
   fragments (hold_min_words 4, hold_s 1.2) is too short for slow speech.
 - **Effort:** small (pipeline hold logic + tests); watch the delay.
+- **Still happens (2026-10-25 09:09:34, Quality, after the fix):** "…pentru cele trei familii."
+  then "famili." alone → its own caption "families." A one-word echo of the previous phrase's
+  last word (the speaker repeating, or the recogniser re-hearing the tail) passes as a phrase.
+  Drop a ≤ 1-word phrase that repeats the end of the previous one, or merge it forward.
+  Again 10:55:32 (on ProPresenter): "…experiențele mele trecute." then "trecut." alone →
+  "past." on its own line. And 11:16:53: "…învățătoare de școală duminicală." then
+  "dominicală." → "Sunday school." alone. Three times today, always the last word echoed.
 
 ## 21. Smoother caption flow: reveal words at speaking pace — `done` — word-paced reveal + smooth roll-up (2026-10-24); the display window also lays out its own lines
 
@@ -515,3 +678,56 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   "Translation:" onwards, then the token cleanup (idea 8), then the filters; and don't send
   1-2 character fragments to the translator at all (idea 17).
 - **Effort:** tiny.
+
+## 23. Meaning slips in Quality: a dropped word, a misread time phrase, a wrong person — `idea`
+
+- **Evidence (2026-10-25, Quality, sermon on the ten virgins; marked in the recording):**
+  - 09:09:24 "Celelalte nechibzuite ce spune Biblia, plecați că nu vă cunosc." → "The others, as
+    the Bible says, depart, for I do not know you." **nechibzuite** (the foolish ones) dropped:
+    the key word of the parable is lost. Translator.
+  - 09:09:49 "Domnul Isus a plecat de două zile." → "the Lord Jesus has departed for two days."
+    Should be "left two days ago" (the speaker's two-millennia "days"). The Romanian "de + time"
+    = "since/ago" is a known trap. Translator (prompt/idiom row).
+  - 09:09:52 "…cum am înviat din morți a treia zi." → "as I rose from the dead". Almost
+    certainly the recogniser hearing "a înviat" as "am înviat"; the translator faithfully made it
+    first person. Recogniser, but a translator rule could catch it: Jesus/God as the subject of
+    the sentence + a 1st-person verb with no quote → read as 3rd person.
+  - 09:50:56 "să ne rugăm ca Dumnezeu din ei să scoată. | vase de lucrare, … oameni care să
+    se folosească D[umnezeu de ei]" → "that God may **take them out**." | "… people who will
+    **use God**.": the cut between "scoată" and its object turned "raise up from them vessels"
+    into "take them out", and the cut-off end made God the object. Segmentation + translator;
+    Gemma continuing the previous piece (idea 4) didn't fix the first half, already shown.
+  - 10:33:39 "dacă într-o localitate **după** cimitir, **după** vorbă, poți să înțelegi cine au
+    trăit acolo" (judging **by** the cemetery, by the speech…) → "**after** the cemetery. after
+    the word": "după" = by/according to, not "after", when no time is involved. Idiom row.
+    Also 10:56:08 "până după masa" (until the afternoon; "după-masa" = afternoon) → "until
+    after the meal". Idiom row: după-masa / după-amiaza = afternoon.
+  - 10:54:28 (on ProPresenter) "nu-i mai bine ca să. vină o dată pe an sau de două ori sau de
+    trei ori pe an" → "wouldn't it be better if it came once a year **or does all these things,
+    twice, yes three times, with a man,** per year": words with no source at all, in a long
+    (12 s) phrase. 10:54:43 "nu-i mai bine casa în bani" (likely "cu bani") → "**turn the house
+    into money**". Translator inventing; a length/word-coverage check (b) would flag the first.
+- **Change:** (a) idioms row for "a … de N zile/ani" → "N days/years ago" / "for N days" by
+  tense (perfect + de = ago); (b) a coverage check like the number/negation guard (idea 5):
+  Romanian content words (adjectives/nouns) with no counterpart in the English trigger one
+  re-translation; (c) an "am"/"a" before a past participle, when the subject is God/Jesus,
+  fixed before translation.
+- **Effort:** (a) tiny; (b) medium (needs a RO→EN word map or Gemma self-check, watch latency);
+  (c) small but risky (false fixes when the speaker really speaks in the 1st person). Bench on
+  the marked clips.
+
+## 24. Translation got slower with the richer prompt: cache the fixed part — `idea`
+
+- **Evidence (median, Quality, same Gemma model):** 2026-10-24 service (11:31, before the
+  14:33 prompt commit): translation **1.46 s**, first word on screen **6.35 s**. 2026-10-25
+  09:05 / 09:28 logs: plain translation (no guard, no verse) **2.5 s / 1.86 s**, first word
+  **7.6 s / 7.2 s**. Per word of output 0.19 → 0.20 s, so it is not longer answers: it is the
+  longer prompt (previous pairs, idiom rows, names, Scripture hint) processed again for every
+  phrase. On top: the negation/number guard re-translates (5 phrases at 09:05, 2.4-5.8 s each),
+  and phrases are a little longer (median 8 → 10 words, audio 3.65 → 3.7-4.2 s: word holds).
+- **Change:** (a) keep the fixed instructions + glossary/idioms as a cached prefix (mlx-lm
+  prompt cache: compute once per service, reuse the KV cache; only the context pairs and the
+  phrase are new); (b) send only the idiom/glossary rows that match the phrase (already done
+  for some? check); (c) context pairs 2 → 1 if (a) is not enough; (d) run the guard's retry
+  only when the first answer differs in negation *and* the phrase is not a question tag.
+- **Effort:** (a) small-medium, measure on the bench (mt_s and the error list); (b-d) small.
