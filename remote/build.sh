@@ -29,6 +29,7 @@ otool -l "$APP/Contents/MacOS/Live Remote" | awk '/cmd LC_RPATH$/ {r=1; next} r 
     install_name_tool -delete_rpath "$rp" "$APP/Contents/MacOS/Live Remote"
   done
 cp "$HERE/Info.plist" "$APP/Contents/Info.plist"
+cp "$HERE/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"   # packaging/icons/make_icons.swift
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 if [ "$ID" = "-" ]; then TS=--timestamp=none; else TS=--timestamp; fi
