@@ -210,7 +210,7 @@ def test_a_verse_is_captioned_when_nllb_serves_english_to_romanian():
     bd = T.ByDirection({("ro", "en"): G(), ("en", "ro"): nl}, {("ro", "en"): "g", ("en", "ro"): "n"})
     bd.verses = T.verses.Matcher(background=False)        # loaded up front (in the app: a background thread)
     bd.translate("As the Bible says in Philippians 1 21, to live is Christ.", "en", "ro", None, use_context=True)
-    out = bd.translate("and to die is gain. Dragur says run his race.", "en", "ro", None, use_context=True)
+    out = bd.translate("and to die is gain.", "en", "ro", None, use_context=True)   # all verse (idea 27)
     assert "a muri este un câștig" in out and bd.last_verse and bd.last_verse["ref"] == "Philippians 1:21"
     bd.translate("we will meet again", "en", "ro", None, use_context=True)
     assert bd.last_verse is None and nl.calls[-1] == "we will meet again"

@@ -589,6 +589,9 @@ class PipelineMixin:
         fixed = guards.unglue(text)
         if fixed != text:
             info["numbers_unglued"] = text
+        split = guards.split_ne(fixed, gate.lexicon()["ro"])
+        if split != fixed:
+            info["ne_split"], fixed = fixed, split
         alt = ev.get("multi") or ""
         if alt and lang_score(alt) > 0:                 # the other transcript is Romanian too
             fixed, longer = guards.longer_numbers(fixed, alt)

@@ -38,11 +38,12 @@ def gloss():
     return g
 
 
-# --- idea 4: the previous (source, translation) pairs -----------------------------------
-def test_prompt_shows_previous_pairs_and_asks_to_continue(tr):
+# --- idea 4: the previous pieces (as spoken; idea 27: not Gemma's translations of them) ---------
+def test_prompt_shows_previous_pieces_and_asks_to_continue(tr):
     tr.context = [("Dacă nu știm asta, nu suntem", "If we don't know this, we are not", "ro")]
     p = tr._prompt("pregătiți pentru momentul morții.", "ro", "en", None)
-    assert "Romanian: Dacă nu știm asta, nu suntem\nEnglish: If we don't know this, we are not" in p
+    assert "Romanian: Dacă nu știm asta, nu suntem\n" in p
+    assert "If we don't know this" not in p                          # its own translation is not shown
     assert p.endswith("Translate the next piece into English:\npregătiți pentru momentul morții.")
     assert "continue that sentence" in T.SYSTEM[("ro", "en")]
     assert "never complete it with words" in T.SYSTEM[("ro", "en")]
@@ -54,7 +55,7 @@ def test_context_is_bounded_and_survives_a_switch(tr):
         tr.translate(t, "ro", "en", use_context=True)
     assert [c[0] for c in tr.context] == ["doi", "trei", "patru", "cinci"]
     tr.translate("but it wasn't right by the Bible", "en", "ro", use_context=True)
-    assert "Romanian: cinci\nEnglish: out" in tr.prompts[-1] and "Romanian: patru" in tr.prompts[-1]
+    assert "Romanian: cinci\n" in tr.prompts[-1] and "Romanian: patru" in tr.prompts[-1]
     assert "Romanian: trei" not in tr.prompts[-1]                    # only the last two after a switch
     tr.reset_context()
     tr.translate("șase", "ro", "en", use_context=True)

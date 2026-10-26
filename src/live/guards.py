@@ -261,7 +261,7 @@ def to_digits(text: str, lang: str, min_value: int = 11) -> str:
 _NEG = {"ro": {"nu", "n", "nici", "niciodată", "nimeni", "nimic", "nicăieri", "niciun", "nicio",
                "niciunul", "niciuna", "nicidecum"},
         "en": {"not", "no", "never", "none", "nobody", "nothing", "nowhere", "neither", "nor",
-               "cannot", "unless", "noone", "dont", "doesnt", "didnt", "cant", "wont", "isnt",
+               "cannot", "unless", "lest", "noone", "dont", "doesnt", "didnt", "cant", "wont", "isnt",
                "arent", "wasnt", "werent", "havent", "hasnt", "hadnt", "couldnt", "wouldnt",
                "shouldnt", "aint"}}
 _NEG["ro"] |= {fold_diacritics(w) for w in _NEG["ro"]}
@@ -373,13 +373,28 @@ def _note(issues: dict, src: str, lang: str) -> str:
     return " ".join(parts)
 
 
+def _invented_not(issues: dict) -> bool:
+    """The translation says "not" and the source doesn't: the reversal Gemma makes ("Ne-ai mai
+    dat o zi" -> "You have not given us", 2026-10-25)."""
+    neg = issues.get("negation")
+    return bool(neg) and not neg["source"] and neg["translation"]
+
+
+def _fallback_may_fix(issues: dict) -> bool:
+    """NLLB is asked only for numbers or an invented "not". A "not" in the source that the
+    translation lacks is most often the recogniser's stray «nu» («Vă nu salută») or a "lest" said
+    otherwise; NLLB put it back as "It does not greet you" and "Holy shit, let's not…" (bench on
+    the corrected sermons, 2026-10-26), so Gemma's answer stays."""
+    return "numbers" in issues or _invented_not(issues)
+
+
 def check(tr, src: str, out: str, lang: str, tgt: str, gloss=None, fallback=None) -> tuple[str, dict]:
     """Compare numbers and negations of `src` and its translation `out`. On a mismatch,
     translate again: (1) without context, number words as digits; (2) the same with a note
-    naming the problem (Gemma); (3) with `fallback` (NLLB: literal, it neither invents nor
-    drops a "not"). The first version that matches is kept. If none does, a negation mismatch
-    takes the fallback's version (never the reversed meaning of the first), anything else the
-    first. Returns (translation, log fields): {} when all agreed, else {"guard": {"issues",
+    naming the problem (Gemma); (3) with `fallback` (NLLB: literal), only for numbers or a
+    "not" the translation invented. The first version that matches is kept. If none does, an
+    invented "not" takes the fallback's version (never the reversed meaning of the first),
+    anything else the first. Returns (translation, log fields): {} when all agreed, else {"guard": {"issues",
     "kept": "first"|"retry"|"note"|"fallback", "first"|"retry"|"tries"}}."""
     if not out.strip() or re.findall(r"\w+", src.lower()) == re.findall(r"\w+", out.lower()):
         return out, {}                                  # nothing, or the source echoed (a quote)
@@ -405,7 +420,8 @@ def check(tr, src: str, out: str, lang: str, tgt: str, gloss=None, fallback=None
     got = attempt("retry", lambda: _retranslate(tr, text, lang, tgt, gloss)) if plain else None
     if got is None and "negation" in issues and _takes_note(tr, lang, tgt):   # numbers alone: often a false alarm
         got = attempt("note", lambda: _retranslate(tr, text, lang, tgt, gloss, note=_note(issues, src, lang)))
-    if got is None and fallback is not None and fallback is not getattr(tr, "trs", {}).get((lang, tgt), tr):
+    if got is None and fallback is not None and fallback is not getattr(tr, "trs", {}).get((lang, tgt), tr) \
+            and _fallback_may_fix(issues):
         got = attempt("fallback", lambda: fallback.translate(text, lang, tgt, gloss))
     if got is not None:
         name = next(k for k, v in tries.items() if v == got)
@@ -413,7 +429,7 @@ def check(tr, src: str, out: str, lang: str, tgt: str, gloss=None, fallback=None
         if len(tries) > 1:
             rec["tries"] = tries
         return got, {"guard": rec}
-    if "negation" in issues and tries.get("fallback") and \
+    if _invented_not(issues) and tries.get("fallback") and \
             "negation" not in mismatches(src, tries["fallback"], lang, tgt):
         rec.update(kept="fallback", first=out, tries=tries, unresolved=True)
         return tries["fallback"], {"guard": rec}
@@ -424,6 +440,24 @@ def check(tr, src: str, out: str, lang: str, tgt: str, gloss=None, fallback=None
     else:
         rec["tries"] = tries
     return out, {"guard": rec}
+
+
+# --- «ne» glued to the next word after a hyphen ---------------------------------------------------
+_GLUED_NE = re.compile(r"(?<=[^\W\d_])-ne([a-zăâîșț]{3,})\b", re.I)
+
+
+def split_ne(text: str, known: set[str] = frozenset()) -> str:
+    """«mărește-ne credința» (increase our faith), written by the recogniser as «mărește-necredință»
+    (increase our unbelief): after a verb's hyphen «ne» is the pronoun «us», never the negating
+    prefix, so the rest goes back to its own word when it is a known word (folded word list) and
+    the whole is not («ducă-ne» etc. stay). The old prompt fixed it by luck; since idea 27 Gemma
+    translates what it is given (bench on the corrected sermons, 2026-10-26)."""
+    def fix(m):
+        rest = m.group(1)
+        if known and fold_diacritics(rest.lower()) not in known:
+            return m.group(0)
+        return "-ne " + rest
+    return _GLUED_NE.sub(fix, text)
 
 
 # --- numbers the recogniser mangles ------------------------------------------------------------

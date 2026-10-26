@@ -330,6 +330,21 @@ def test_longer_number_only_when_the_other_did_not_hear_the_small_one():
     assert G.longer_numbers("cinci pâini și doi pești", "5 pâini și 2 pești, 12 coșuri")[1] == []
 
 
+def test_lest_is_the_negation_of_nu_cumva():
+    assert G.mismatches("frică sfântă, nu cumva să greșim", "holy fear, lest we should err", "ro", "en") == {}
+
+
+def test_a_source_not_missing_from_the_translation_never_goes_to_nllb():
+    """Bench on the corrected sermons (2026-10-26): the recogniser's stray «nu» put back by NLLB
+    as "It does not greet you"; Gemma's answer stays."""
+    src = "Vă nu salută din Sălsig, județul Maramureș."
+    tr = NoteLLM({src: "I greet you from Sălsig, Maramureș County."})
+    nllb = FakeNLLB("It does not greet you from Salsig, Maramures County.")
+    out, rec = G.check(tr, src, "They greet you from Sălsig, Maramureș County.", "ro", "en", fallback=nllb)
+    assert out == "They greet you from Sălsig, Maramureș County." and nllb.calls == 0
+    assert rec["guard"]["kept"] == "first"
+
+
 def test_no_fallback_keeps_the_first_as_before():
     src = "ne mai trebuie fonduri"
     tr = NoteLLM({src: "we don't need any more funds"})
@@ -416,3 +431,14 @@ def test_te_rog_frumos_is_please():
     rows = {r["ro"]: r["en"] for r in g.idioms("Te rog frumos, că trebuie să-mi supraveghez fabrica.")}
     assert rows.get("te rog frumos", "").startswith("please")
     assert {r["ro"]: r["en"] for r in g.idioms("te rugăm frumos, Doamne")}["te rugăm frumos"] == "we humbly pray"
+
+
+@pytest.mark.parametrize("text,expect", [
+    ("Doamne, mărește-necredință astăzi.", "Doamne, mărește-ne credință astăzi."),   # bench 2026-10-26
+    ("Doamne, ajută-ne să mergem", "Doamne, ajută-ne să mergem"),
+    ("dă-ne pâinea", "dă-ne pâinea"),
+    ("un om necredincios", "un om necredincios"),                                   # no hyphen: the prefix
+])
+def test_ne_glued_after_a_hyphen_is_split(text, expect):
+    import gate
+    assert G.split_ne(text, gate.lexicon()["ro"]) == expect

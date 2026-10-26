@@ -73,15 +73,17 @@ def test_psalm_71_3_with_recognition_errors(m):
     assert out[0].log() == {"ref": "Psalm 71:3", "score": 1.0, "words": 7, "near": False}
 
 
-def test_a_verse_in_one_piece_and_the_words_around_it(m):
-    o = m.match("Și Pavel spunea foarte frumos: pentru mine a trăi este Hristos și a muri este un câștig")
-    assert o.ref == "Philippians 1:21" and o.caption == "For to me to live is Christ, and to die is gain."
-    assert o.before == "Și Pavel spunea foarte frumos"                # translated by the model
+def test_a_verse_inside_the_speakers_own_sentence_is_translated(m):
+    """Idea 27 (2026-10-26): the published text spliced between the speaker's own words broke the
+    English translation ("says, I I have fought the good I am exhausted"); only a piece that is all
+    verse gets it."""
+    assert m.match("Și Pavel spunea foarte frumos: pentru mine a trăi este Hristos și a muri este un câștig") is None
     m.reset()
-    o = m.match("Căci El știe din ce suntem făcuți, își aduce aminte că suntem țărână, dragii mei, "
-                "și asta ne smerește.")
-    assert o.ref == "Psalm 103:14" and o.caption == "For he knows how we are made. He remembers that we are dust."
-    assert o.after == "dragii mei, și asta ne smerește"
+    assert m.match("Căci El știe din ce suntem făcuți, își aduce aminte că suntem țărână, dragii mei, "
+                   "și asta ne smerește.") is None
+    m.reset()
+    o = m.match("pentru mine a trăi este Hristos și a muri este un câștig")
+    assert o.ref == "Philippians 1:21" and o.caption == "For to me to live is Christ, and to die is gain."
 
 
 def test_does_not_run_ahead_or_repeat(m):
@@ -94,10 +96,9 @@ def test_does_not_run_ahead_or_repeat(m):
 
 
 def test_announced_reference_allows_short_pieces(m):
-    out = read(m, ["Evrei 9, versetul 27, oamenilor le este rânduit să moară o singură dată."])
-    assert out[0].ref == "Hebrews 9:27" and out[0].near
-    assert out[0].before == "Evrei 9, versetul 27"
-    assert "appointed for men to die once" in out[0].caption
+    out = read(m, ["Evrei 9, versetul 27.", "oamenilor le este rânduit să moară o singură dată."])
+    assert out[1].ref == "Hebrews 9:27" and out[1].near
+    assert "appointed for men to die once" in out[1].caption
 
 
 def test_english_quote_gives_cornilescu(m):
@@ -150,10 +151,8 @@ def tr(monkeypatch, m):
 
 
 def test_translator_captions_the_verse_and_translates_the_rest(tr):
-    out = tr.translate("Și Pavel spunea foarte frumos: pentru mine a trăi este Hristos și a muri este un câștig",
-                       "ro", "en", use_context=True)
-    assert out == "MODEL For to me to live is Christ, and to die is gain."
-    assert tr.prompts[-1].endswith("Și Pavel spunea foarte frumos")     # only the words around the verse
+    out = tr.translate("pentru mine a trăi este Hristos și a muri este un câștig", "ro", "en", use_context=True)
+    assert out == "For to me to live is Christ, and to die is gain." and not tr.prompts
     assert tr.last_verse["ref"] == "Philippians 1:21"
     assert tr.context[-1][1] == out                                      # context for the next piece
     assert tr.translate("Desigur că pot rămâne întrebări.", "ro", "en", use_context=True) == "MODEL"
@@ -188,14 +187,16 @@ def test_a_paraphrase_is_not_spliced_with_the_verse(m):
     assert out[-1] is None
 
 
-def test_short_verse_words_are_held_for_the_next_caption(m):
+def test_short_verse_words_between_verse_pieces(m):
     """Matthew 28:20: "Și iată." between two verse pieces is not translated ("And behold."
     before the verse's own "Behold")."""
     out = read(m, ["Matei 28, versetul 19.", "Duceți-vă și faceți ucenici din toate neamurile.",
                    "botezindu-i în numele Tatălui și al Fiului.",
                    "și al Duhului Sfânt, și învățați-i să păzească.", "tot ce v-am poruncit.", "Și iată.",
                    "eu sunt cu voi în toate zilele."])
-    assert out[5] is not None and out[5].caption == "" and out[5].log()["held"]
+    # idea 27: a held piece is translated after all (the next piece might not qualify, and the held
+    # words would never be shown); the verse goes on from the next piece
+    assert out[5] is None
     assert "Behold" in out[6].caption
 
 

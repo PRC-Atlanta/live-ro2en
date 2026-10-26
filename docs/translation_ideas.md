@@ -44,6 +44,31 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   fie Domnul, frați și surori, binecuvântat să fie, pace vouă…) to the same beam boost and
   near-miss repair as today's names. Small; bench on today's clips.
 
+- **More evidence (2026-10-25 evening, recogniser; captions were paused so nothing was shown;
+  marked):** 18:35:24–18:35:44 "vino afară… **Ești** din confortul tău, **Ești** din
+  religiozitatea ta, **ești** din nebunia…" — the speaker says «**ieși** din…» (come out of…),
+  a Lazarus call; translated as heard it becomes "You are from your comfort". 18:35:55
+  "botezați cu **un sân**" for «cu Duh Sfânt»; 18:30:27 / 18:36:10 «**Dul**» for «Duhul» /
+  «Domnul». Candidates for the church-phrase boost: «Duh Sfânt», «Duhul Sfânt», «ieși afară»,
+  «vino afară», **«m-am pocăit» / «pocăință»** (19:26:30 and 19:26:43 «când **m-am păcălit**» = «m-am pocăit», "when I repented" → would read "when I was fooled", twice; also «Modim» for «Nicodim» 19:26:17; but 19:42:05 «numai tu **pocăită**? tu ești **păcălită**» is a real taunt, pocăit/păcălit wordplay: boost «pocăit», never rewrite «păcălit»); and a repair rule: «Ești din» at the start of a piece after «vino afară» → «Ieși
+  din». Effort: tiny for the phrases; bench on the marked clip.
+  Also the sermon's own topic word: «mânie» heard as «mie» (19:45:20 «piciorul pe frână la
+  mie», 19:52:41 «la mie aprinsă», 19:53:01 «nu se mie») and «îmbăie» (19:52:53 «să nu se
+  mânie»). Too common to boost alone (the comment in `engine.CHURCH_PHRASES`); phrases would do:
+  «la mânie», «se mânie», «iute la mânie», «încet la mânie». «Iacov» heard as «Iov» (19:44:43,
+  James → Job) and «ca Nabal» as «canabal» (19:51:08): the day's Bible names could join today's
+  names when a reference is announced (James 1, 1 Samuel 25).
+
+- **Bench (2026-10-25 evening): the church-phrase boost costs accuracy on the corrected
+  sermons.** The 521 human-verified segments (br-random-1, nelu-suciu; 5,585 words) re-decoded
+  with the live recogniser: no boost 3.96 % WER, saved names + `CHURCH_PHRASES` 4.08 % (+7
+  errors). «Slăvit să fie Domnul», heard right without the boost, becomes «slăviți să fie
+  Domnul» 3× (the «slăviți să fie» phrase wins); «frați, surori» / «frații surori» get an
+  inserted «și» 2× («frați și surori»); «Frate, la același Domn» loses «Frate». Adding
+  «Cornilescu» changed nothing (identical output; the word isn't in these sermons). **Change:**
+  drop «slăviți să fie» (or only «Slăviți să fie Domnul» whole) and bench the rest phrase by
+  phrase on these segments plus the clips where the phrases were misheard.
+
 ## 3. Bible references: show the published verse — `done` — stream D: announced references tell Gemma the verse (step 1); stream H: verses recognised by their words are captioned with WEB / Cornilescu (step 2) · 2026-10-25: paraphrase not spliced, short verse words held, a verse matched one piece late redoes the previous caption, trailing mis-heard verse words dropped
 
 - **Evidence:** readings are announced ("Evrei, capitolul 6, versetul 10", "Proverbe,
@@ -116,6 +141,18 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   then the verse's "Behold" again. **Change:** inside a matched verse, caption only verse
   text; drop the chunk's leftover words that fall within the verse span (keep words before
   its start / after its end), and never mix Gemma's output into the verse.
+
+- **More evidence (2026-10-25 evening, marked):** 18:10:14 "Să nu vă înșelați, prea iubiții mei
+  frați." → "**Let** Don’t be deceived, my beloved brothers.": the verse caption (James 1:16 WEB)
+  was put after a stray "Let" left from the previous piece. Also 18:10:36 «Știți bine lucrul
+  acesta, prea iubiții mei frați?» (James 1:19a) → "So, then, my beloved brothers, let": the
+  verse text runs one clause ahead of the speaker, fine here but it reads as cut off.
+
+- **(2026-10-25 evening, shown) 18:16:05** «să facem tot ce este bine și plăcut înaintea
+  Domnului» → "to do everything **that which was** good and right in the Lord": a verse
+  (Deuteronomy 12:28-style wording) spliced into a prayer phrase, its tense and its cut-off end
+  ("…in the Lord['s sight]") kept. The no-reference rule in this idea's 09:49:32 entry would
+  have translated it normally.
 
 ## 4. Give Gemma its own previous translations as context — `done` — stream D: Gemma sees its own previous (source, translation) pairs and continues cut sentences
 
@@ -260,6 +297,19 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   known adjective (nemântuit, necredincios, nepocăit, neascultător…) and a lone "ne" before
   a participle as a negation; also skip the retry when the only "not" in the English is
   "not" + a participle matching such a word.
+
+- **More evidence (2026-10-25 evening, captions paused so nothing was shown; marked):**
+  - 19:25:43 Ezekiel 36:26 «Vă voi da o inimă nouă… Vă voi da inima **nouă**» came out of the
+    recogniser as «Vă voi dau inima **9**.»: Jackrabbit itself writes the digit, so the guard's
+    «nouă» = new rules (o nouă viață, ne-a spus nouă) never see the word. Would read "I will give
+    you heart 9" (or a number-guard retry). **Change:** before translation, a lone «9» right after
+    a noun/adjective and not followed by a counted noun (zile, ani, oameni, capitolul, versetul…)
+    goes back to «nouă»; same for «a 9-a» style only with a counted noun. Tiny.
+  - 19:19:30 «ca **un** păcătos» (as a sinner) → recognised «ca și **nu** păcătos»; 19:20:44
+    «**Noi am** fost vânduți robi păcatului» (likely) → «**N-am** fost vânduți…». Two negations
+    the speaker didn't say, in one sermon; the guard checks that RO and EN agree, so it would pass
+    both. The verse matcher could catch the second (Romans 7:14 «vândut rob păcatului»). Nothing
+    simple for the first; note for the recogniser fine-tune list.
 
 ## 6. Words that are also names — `done` — stream D: today's names and glossary names are kept as written · 2026-10-25: «Fratele» alone no longer brings in saved names; «fratele Ilie Puha» kept; Iacov = Jacob in Old Testament context
 
@@ -707,6 +757,17 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
     twice, yes three times, with a man,** per year": words with no source at all, in a long
     (12 s) phrase. 10:54:43 "nu-i mai bine casa în bani" (likely "cu bani") → "**turn the house
     into money**". Translator inventing; a length/word-coverage check (b) would flag the first.
+  - 2026-10-25 evening 19:34:26 (paused, not shown; marked) «Suntem scutiți de ispite, Suntem
+    scutiți de provocări. | nu sunt ele la tot pasul» — spoken as rhetorical questions ("Are we
+    spared temptation? Aren't they at every step?"), recognised with full stops: translated as
+    written it says "We are exempt from temptations", the opposite of the sermon. The recogniser
+    doesn't mark questions; a rule could: a «Suntem/Sunt/Nu sunt … ?» clause followed by a
+    contradicting clause (nu…, ba da) → keep the question mark. Hard in general; note only.
+  - 2026-10-25 evening, shown: 18:12:05 «după masa aceasta **pentru cei mai mulți**, de prima
+    dată pentru unii» (this afternoon for **most**, the first time for some) → "in the afternoon
+    **for many more**". 18:16:21 «Sora Pina… vă zice **bun venit**» recognised «vă zice bun
+    păstor» → "the good pastor says". 18:16:49 «va intona **un imn**» recognised «unim» → "will
+    play **in unison**" (Gemma made sense of a recogniser slip).
 - **Change:** (a) idioms row for "a … de N zile/ani" → "N days/years ago" / "for N days" by
   tense (perfect + de = ago); (b) a coverage check like the number/negation guard (idea 5):
   Romanian content words (adjectives/nouns) with no counterpart in the English trigger one
@@ -736,3 +797,147 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   translation median 2.44 → 2.26 s, 90th percentile 7.1 → 4.7 s. The cache's gain is partly
   spent on the longer prompts (notes, more glossary rows) and the extra guard tries; recognition
   varied ±0.15 s between runs (not the new phrase boost: the same without it).
+
+## 25. A Romanian word cut in two at a piece boundary is translated as two words — `idea`
+
+- **Evidence (2026-10-25 evening, Quality; marked in the recording):**
+  - 18:11:09 "…vrea să ne păzim și noi de **auto**." | "**autoînșelare**. Ne putem înșela…" →
+    "…protect ourselves from **the author**." | "self-deception.": the recogniser closed the
+    piece in the middle of «autoînșelare», heard the first half as «autor», and the translator
+    made a word of it. The next piece repeats the whole word, so the meaning is there once the
+    cut-off half is dropped. Segmentation + recogniser.
+  - 18:09:50 / 18:10:02 "din cartea **omului.** | Dumnezeu, Iacov" (din cartea omului lui
+    Dumnezeu Iacov = from the book of **the man of God** James) → "from the book of **humans**"
+    and again "the book of humans, God James": the cut fell inside «omului lui Dumnezeu», «lui»
+    was lost, and neither half makes sense alone. Segmentation; a phrase row would also help
+    (omul lui Dumnezeu = the man of God, the Romanian way to announce a Bible writer).
+  - 19:32:36 again, same sermon: "…că poate să fie și **auto.**" | "**autoînșelare**. Și
+    apostolul…": the same word cut at the same place, this time left as «auto» (paused, not
+    shown). A cut word repeated in full at the start of the next piece is a reliable pattern.
+  - More from the same service, shown: 18:16:30 "…împreună cu **Sf.**" | "soția lui" →
+    "together with the **Holy**" | "wife" (a cut «S[ora]…/so[ția]» read as «Sfânt»);
+    18:16:58 "fratele Mitică **Maf**" | "**Maftean**, și…" → "brother Mitică Maf" | "**tean**, and
+    may he…" (the name split, the second half shown alone); 18:15:49 "**înați.**" → "ahead." (a
+    re-heard tail of «înainte», a caption of its own: `echo_word` misses it because the
+    fragment isn't the whole word).
+- **Change:** (a) when a piece ends on a word that the next piece's first word starts with
+  (autor / autoînșelare), or on a non-word fragment, drop that last word before translating and
+  let the next piece carry it (like idea 16's English repeat check and idea 20's `echo_word`, the
+  other way round); (b) don't close a piece after a genitive noun that usually takes «lui +
+  name» (omului, cartea, Cuvântul) when the next word comes within ~0.5 s; (c) glossary row
+  «omul lui Dumnezeu» → "the man of God", «cartea omului lui Dumnezeu X» → "the book of X".
+- **Effort:** (a) small (string check on the last/first word, both are in hand before the
+  translation); (b) small, segmentation rule, watch delay; (c) tiny. Bench on the marked clips.
+
+## 26. Name repair turns a real word into today's name: «înșeală» → «Ionela» — `done` (2026-10-25): a lower-case word with no cue needs sound ratio ≥ 0.85 and is never a name after nu/ne/te/se/să…; bench on all 14 logs with the saved names: 12 → 6 repairs, the 6 false ones gone (Ionela ×4, Barbu, Dragoș), the 6 real kept
+
+- **Evidence (2026-10-25 evening, Quality, on ProPresenter; marked):** 18:11:45 the recogniser
+  heard it right, «care nu **înșeală** niciodată, Dumnezeu nu înșală, Duhul Sfânt nu **înșeală**»
+  and «Evanghelia nu o să ne **înșeală** niciodată», and `names.repair_ro` rewrote both to the
+  name «Ionela» (log `names_fixed: [["înșeală", "Ionela"]]`): on screen "which **Ionela** never,
+  God does not deceive, the Holy Spirit, not **Ionela**" and "the Gospel will never **Ionela**
+  us." A third time at 19:32:08 (paused) → "if someone like Ionela Rus". In a sermon about
+  self-deception, the key verb became a woman's name. Also «tros» → «Dragoș» (19:44:00, «trosnet»
+  context). Name repair, not recogniser or translator.
+- **Cause:** a lower-case word not in `data/lexicon/ro.txt` is matched fuzzily against today's
+  names. The lexicon has «insala» but not «inseala» (the common spoken form of «înșală»), so the
+  verb counted as unknown, and «înșeală»/«Ionela» are close enough for `_ro_match`.
+- **Change:** (a) add the verb's forms to the lexicon (înșeală, înșală, înșeală-te, înșelat, …)
+  and rebuild it with the Romanian verb forms seen in the logs' translator output; (b) in
+  `repair_ro`, an uncued **lower-case** word never becomes a name unless it is an exact
+  case-fold of it (keep 'paraschiva' → 'Paraschiva'; drop fuzzy lower-case hits like
+  înșeală → Ionela); (c) never replace right after a verb clitic or negation («nu», «ne», «te»,
+  «o să», «se»): a name doesn't go there. Bench: the four logs used for idea 2 (35 fixes, 0
+  false before) plus this one; (b) may lose a few real fixes like 'familia pha' (cued, so still
+  allowed).
+- **Effort:** small: (b)+(c) are a few lines in `src/live/names.py` with tests; (a) a lexicon
+  rebuild.
+
+## 27. Bench on the corrected sermons: the translation work since Sat 10-24 14:00 made Quality worse — fixes 1-3 `done` (2026-10-26), gap to Sat 14:00 remains
+
+- **Setup (2026-10-26):** br-random-1 (29 min, all corrected) + nelu-suciu (first 8 min corrected),
+  5,588 words of corrected Romanian transcript, replayed through each checkpoint (`scripts/bench.py run --code`,
+  gain 0, x3, no `--terms`). English translation judged blind (a model judge, A/B shuffled, ~20 s windows,
+  against the corrected Romanian transcript; the decisive cases checked by hand). Two runs of the same code
+  differ in 15 windows (the noise floor). Runs: `logs/bench/runs/cmp-*`.
+- **Overall:** c10a191 (Sat 14:00) vs now: English translation 31 wins to 14 (47 ties; major 8–2) for the old
+  code; Romanian transcript WER 5.85 % → 6.05 %.
+- **By step.** For each step: in how many ~20 s windows the English translation got better or
+  worse *because of that step* (blind judge; the rest no clear difference), and serious errors
+  (wrong/reversed meaning, invented or vulgar words, dropped verses) the step fixed or introduced.
+  Steps with fewer than ~20 differing windows are within the noise floor (15).
+  | step | windows changed | better | worse | no clear diff. | serious fixed | serious introduced | verdict |
+  |---|---|---|---|---|---|---|---|
+  | guards + gate (76d320f, f886409) | 11 | – | – | – | – | – | no measurable effect |
+  | **prompt (2c51583)** | 92 | 13 | **18** | 61 | 0 | **5** | **hurt** |
+  | phrase holds (bd79bb2) | 35 | 3 | 2 | 30 | 1 | 0 | no effect (the first "hurt" was a windowing artifact, see below) |
+  | **verse captions (17854ae)** | 24 | 4 | **9** | 11 | 0 | **3** | **hurt** |
+  | names (de15ea2; no names given) | 17 | 1 | 3 | 13 | 0 | 0 | no measurable effect |
+  | auto gain on (42e113d) | 71 | 18 | 14 | 39 | 3 | 3 | mixed; Romanian transcript +12 errors |
+  | review fixes (1d7dd5a) | 16 | 3 | 8 | 5 | 1 | 1 | no measurable effect |
+  | **Sunday fixes (6fc52e4)** | 73 | 10 | **14** | 49 | 1 | **2** | **hurt** (negation fallback) |
+  | *all, Sat 14:00 → now* | 92 | 14 | **31** | 47 | 2 | **8** | **worse overall** |
+- **Causes seen:**
+  - Prompt: the previous translations pull Gemma along: «pierzi premiul ceresc» → "you **receive**
+    the heavenly reward"; «Policar» → "**Paul**" (named just before); the older prompt fixed the
+    recogniser's «mărește-necredință» to "increase our faith", the new one writes "increase our
+    **unbelief**". The glossary row «Vicovu de Sus» (added with the prompt) is pulled in by the
+    plain word «sus»: "it leads into **Vicovu de Sus**".
+  - Phrase holds: content dropped or chopped at the holds: «fii credincios până la moarte»
+    (Rev 2:10) and «dincolo de moartea asta Hristos ne așteaptă» missing.
+  - Verse captions: the spliced published text breaks the sentence: "says, I I have fought the
+    good I am exhausted", "you were with me my body and bring it into submission", 2 Tim 4:7 split
+    "the good | fight." across captions (near matches at score 0.7–0.8 replace the speaker's words).
+  - Negation fallback (3 uses, 2 bad): «frică sfântă, nu cumva să greșim» ("lest") → NLLB "**Holy
+    shit**, let's not… lose this sport"; recognition slip «Vă nu salută» → "It does not greet you".
+- **Change (in order of how much harm each fix removes for its effort):**
+  (a) **Negation check:** treat "lest" / «nu cumva» as a negation, and stop the NLLB fallback from
+  replacing Gemma's English translation over a negation mismatch alone (show Gemma's first
+  answer). Removes "Holy shit" and "It does not greet you". Tiny; small risk: a genuinely dropped
+  "not" stays dropped, as it did before Sunday.
+  (b) **Prompt:** keep the previous *Romanian transcript* pieces as context but take out Gemma's
+  previous *English translations*, and match multi-word glossary names only as a whole («sus» no
+  longer pulls in «Vicovu de Sus»). Aims at "receive the reward", "Paul" for Polycarp,
+  "unbelief". Small to change; must be benched, since previous translations also helped cut
+  sentences read on.
+  (c) **Verse captions:** use the published verse only when the whole piece is the verse and the
+  match is strong (score ≥ 0.9); otherwise translate normally. Removes the broken splices
+  ("I I have fought the good I am exhausted"). Small.
+  (d) **Phrase holds:** find why a held piece sometimes never reaches the screen ("be faithful
+  until death" missing) and make sure it always gets flushed. Needs investigation first.
+  Re-bench each on these two sermons (blind A/B as above).
+- **Windowing artifact (found 2026-10-26):** the first judging cut fixed 20 s windows and put each
+  caption in the window of its midpoint; phrase holds make longer captions, so a caption landed in
+  the next window and the one it started in looked "dropped". Re-judged with windows cut only
+  where both runs have a caption boundary (`blind3.py` in that session): phrase holds 2 – 3 with 30
+  ties, Sat 14:00 vs now still 31 – 17 (major 10 – 4). Fix (d) needed no code change.
+- **Fixes done (2026-10-26):** (a) `guards.py`: "lest" is a negation; NLLB is asked only for numbers
+  or a "not" the translation invented, never for a source "not" it lacks. (b) `translate.py`: the
+  previous pieces go into the prompt as Romanian transcript only, not Gemma's English translations;
+  `names.mentioned`: a name with a small word («Vicovu de Sus») only as a whole. (c) `verses.py`:
+  the published verse only when the whole piece is the verse and the match is ≥ 0.85 (`shown`),
+  held pieces translated. Plus `guards.split_ne`: «mărește-necredință» → «mărește-ne credință»
+  (added after the bench run, not in it).
+- **Result (blind, fair windows):** fixed vs now: **29 better, 19 worse, 52 same; serious errors
+  7 fixed, 0 added** ("Holy shit", "It does not greet you", "Vicovu de Sus", "receive the reward"
+  gone). Fixed vs Sat 14:00: 14 better, 30 worse, 56 same; serious 0 fixed, 4 added (garbled names
+  Sandurcal/Destina, 1 Cor 9:27 garbled, "unbelief" — now repaired by `split_ne`). The rest of the
+  gap is small wording slips; candidates: auto gain (Romanian transcript +12 errors; the garbled
+  names come with it) and the remaining prompt additions (idioms, notes, Scripture hint).
+- **Variants (2026-10-26, fair windows; "fixed" = fixes a-c + `split_ne`):**
+  | comparison | better | worse | same | serious fixed | serious added | Romanian transcript WER |
+  |---|---|---|---|---|---|---|
+  | fixed + auto gain off, vs fixed | 18 | 12 | 39 | 6 | 1 | 6.19 % → 5.94 % |
+  | fixed without idioms/notes/Scripture hint, vs fixed | 7 | 12 | 26 | 0 | 2 | 6.19 % → 6.14 % |
+  | fixed + auto gain off, vs Sat 14:00 | 11 | 21 | 69 | 2 | 2 | 5.85 % → 5.94 % |
+  | (noise: fixed vs fixed rerun) | 8 | 9 | 27 | 1 | 1 | |
+  Keep the prompt additions. Auto gain hurts on these recordings (clean, speech ≈ -28 dBFS at 0 dB):
+  the garbled names, "Holy Mary", "the Bed of God" come with it. With auto gain off the serious
+  errors are level with Sat 14:00; Saturday still reads slightly better in small wording (21 vs 11
+  windows). Auto gain was chosen on the live feed of 10-24 (26 vs 21 of 52 known errors): before
+  changing its default, bench it on a live recording (e.g. tonight's clips) too.
+
+- **Auto gain stays on (decision 2026-10-26):** the services so far took the audio from every mic,
+  crowd and room mics included, so the recogniser heard room reverb. From the next service the
+  app gets its own feed: the speaking mics only, no effects, summed to one channel. Auto gain is
+  judged again on a recording of that feed before its default changes.

@@ -19,6 +19,8 @@ was captioned already is not repeated. Three or more words of the piece around t
 translated as usual (Match.before / after), and so are 1-2 words unless they are the verse's
 own words split differently ("prea iubiților" = "Preaiubiților"). Unsure means no match: the translator then works
 as before, with the reference hint of scripture.py.
+Since 2026-10-26 (translation idea 27) a match is used only when the whole piece is the verse
+and it matches closely (`shown`); otherwise the piece is translated as usual.
 
 The texts are data/bible/verses.tsv.gz (scripts/fetch_bible.py; licences in data/bible/
 README.md). The index takes a few seconds to build, in a background thread started with the
@@ -58,6 +60,7 @@ NEAR_WORDS = 3          # with an announced reference or right after a matched v
 NEAR_OWN = 2
 NEAR_QUALITY = 0.6
 NEAR_IDF = 4.0          # summed rarity of the current piece's matching content words
+SHOW_QUALITY = 0.85     # a verse is captioned only when the whole piece is the verse and matches this well
 KEEP_LOCK = 4           # pieces a matched passage stays "near" after its last match
 NEAR_VERSES = 4         # verses after the reference (or the last match) searched as "near"
 MIN_SIM = 0.7           # word similarity that counts as a match
@@ -282,6 +285,16 @@ class Match:
         return d
 
 
+def shown(m: "Match") -> bool:
+    """Only a piece that is all verse, matched closely, gets the published text. Spliced into the
+    speaker's own sentence or matched loosely it broke the English translation: "says, I I have
+    fought the good I am exhausted" (words around 2 Timothy 4:7), "you were with me my body" (1
+    Corinthians 9:27 at 0.7) — bench on the corrected sermons, 2026-10-26. Real readings with
+    recognition errors still match at 0.85-0.86 (Daniel 3:18). A held piece (no
+    caption yet) is translated too: the next one may not qualify, and its words would be lost."""
+    return bool(m.caption) and not m.before and not m.after and m.score >= SHOW_QUALITY
+
+
 def align(w: list[str], r: list[str]) -> list[tuple[int, int, float]]:
     """Local alignment of the window keys `w` with the verse keys `r`: [(i, j, similarity)]."""
     n, m = len(w), len(r)
@@ -469,9 +482,13 @@ class Matcher:
         if self.bible is None or src not in self.bible.streams:
             return None
         next_src = self.next_src
+        saved = (self.done, self.next_src, self.lock, self.lock_left)
         out = self._find(text, piece, hist, src, tgt, ref, prev_n, prev_verse)
         if out is None and next_src is not None and prev_verse:
             out = self._continues(piece, next_src)      # "Și iată.": held for the next caption
+        if out is not None and not shown(out):
+            self.done, self.next_src, self.lock, self.lock_left = saved
+            out = None                                  # translated as usual, as if never matched
         self.prev_verse = out is not None
         return out
 

@@ -420,8 +420,11 @@ class MLXLLMTranslator:
         n = max(self.context_clauses, 0)
         ctx = [c for c in self.context[-n:] if c[1].strip()] if n else []
         if ctx:
-            lines.append("Previous pieces (already translated, context only):\n" +
-                         "\n".join(f"{LANG[l]}: {s}\n{LANG['en' if l == 'ro' else 'ro']}: {t}" for s, t, l in ctx))
+            # the previous pieces as spoken, not Gemma's own translations of them: those pulled it off
+            # course («pierzi premiul ceresc» → "you receive the heavenly reward", «Policar» → "Paul"
+            # named just before; bench on the corrected sermons, 2026-10-26)
+            lines.append("Previous pieces (context only, already translated: do not translate them again):\n" +
+                         "\n".join(f"{LANG[l]}: {s}" for s, t, l in ctx))
         lines.append(f"Translate the next piece into {LANG[tgt]}:\n{text}")
         msgs = [{"role": "system", "content": SYSTEM[(src, tgt)]},
                 {"role": "user", "content": "\n\n".join(lines)}]

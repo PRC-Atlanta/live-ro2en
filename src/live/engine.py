@@ -79,9 +79,11 @@ def emit(obj) -> None:
 # Church phrases boosted with today's names in the Romanian beam search: on 2026-10-25 "slăvit
 # să fie Domnul" was heard as "să vii să fie Domnul", "frați și surori" as "fra și surori",
 # "vrednic de laudă" as "vremii de laudă". Whole phrases only: a single common word ("Doamne",
-# "Iov") would pull real words to it ("domnule Manuel", "eu").
+# "Iov") would pull real words to it ("domnule Manuel", "eu"). A rare name is fine: "Cornilescu"
+# (the Romanian Bible's translator) was heard as "Cornivescul" on 2026-10-25 evening.
 CHURCH_PHRASES = ["slăvit să fie Domnul", "slăviți să fie", "lăudat să fie Domnul", "frați și surori",
-                  "fraților și surorilor", "vrednic de laudă", "Peniel", "cetățuia mea", "baza de misiune"]
+                  "fraților și surorilor", "vrednic de laudă", "Peniel", "cetățuia mea", "baza de misiune",
+                  "Cornilescu"]
 
 class NemoSTT:
     """NeMo hybrid TDT/CTC model called directly: preprocessor + encoder on the Apple GPU

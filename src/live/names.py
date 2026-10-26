@@ -113,8 +113,16 @@ def mentioned(text: str, names: list[str]) -> list[str]:
     "Familia") occur in the text. "fratele" alone used to bring in every saved "Fratele …"
     name, and Gemma answered with "Fratele Emanuel și Dumnezeu" in Romanian (2026-10-25)."""
     seen = set(fold(w) for w in _WORD_RE.findall(text))
-    return [n for n in names if any(len(w) >= 3 and w[:1].isupper() and fold(w) not in RO_CUES
-                                    and fold(w) in seen for w in n.split())]
+    folded = fold(" ".join(_WORD_RE.findall(text)))
+    out = []
+    for n in names:
+        words = n.split()
+        if any(w[:1].islower() for w in words):        # a place with a small word: only as a whole,
+            if re.search(r"\b" + re.escape(fold(" ".join(_WORD_RE.findall(n)))) + r"\b", folded):
+                out.append(n)                          # «sus» is not «Vicovu de Sus» (2026-10-26)
+        elif any(len(w) >= 3 and w[:1].isupper() and fold(w) not in RO_CUES and fold(w) in seen for w in words):
+            out.append(n)
+    return out
 
 
 # --- the Romanian recogniser's near-misses (idea 2) ---------------------------------------
@@ -167,6 +175,16 @@ def _variant(heard: str, name: str) -> bool:
     return len(h) > len(n) - 1 and h.startswith(stem) and h[len(stem):] in _RO_ENDINGS
 
 
+# a word right after these is a verb, never a name: 'nu înșeală', 'o să ne înșeală' (2026-10-25)
+_RO_VERB_LEFT = {"nu", "ne", "te", "se", "ma", "va", "il", "ii", "isi", "le", "sa"}
+
+
+# a lower-case word with no cue is a name only when it sounds nearly the same ('parascheva' →
+# Paraschiva, 0.89): on 2026-10-25 the looser same-first-and-last-letter match turned «înșeală»
+# into Ionela (0.77), «bambu» into Barbu and «tros» into Dragoș (0.80)
+LOOSE_MIN = 0.85
+
+
 def _ro_match(heard: str, name: str, cued: bool) -> bool:
     a, b = ro_key(heard), ro_key(name)
     if len(a) < 2 or not b or _variant(heard, name):
@@ -216,7 +234,11 @@ def repair_ro(text: str, names: list[str], known: set[str] = frozenset()) -> tup
             cued = bool(gap_ok and (prev in RO_CUES or prev in exact)) or nxt in exact
             if f in known and not (cued and mid_cap):
                 continue
-            ok = [c for c in single if _ro_match(w, c, cued and (mid_cap or f not in known))]
+            loose = w.islower() and not cued
+            if loose and prev in _RO_VERB_LEFT:
+                continue                                # 'nu înșeală' is a verb, not 'nu Ionela'
+            ok = [c for c in single if _ro_match(w, c, cued and (mid_cap or f not in known))
+                  and not (loose and _ratio(ro_key(w), ro_key(c)) < LOOSE_MIN)]
             if ok:
                 hit = max(ok, key=lambda c: _ratio(ro_key(w), ro_key(c)))
         if hit:

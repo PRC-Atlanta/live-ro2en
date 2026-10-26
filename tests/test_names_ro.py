@@ -68,6 +68,29 @@ def test_common_words_and_other_names_are_left_alone(heard, known):
     assert N.repair_ro(heard, NAMES, known) == (heard, [])
 
 
+# 2026-10-25 evening: real words the looser match turned into today's names, on screen as
+# "the Gospel will never Ionela us"
+@pytest.mark.parametrize("heard", [
+    "care nu înșeală niciodată, Dumnezeu nu înșală, Duhul Sfânt, nu înșeală.",
+    "și Evanghelia nu o să ne înșeală niciodată.",
+    "dacă cineva ne înșeală.",
+    "bambu, aer condiționat gratis, nu transpiră la spate.",
+    "că unica cu trosnet și alții nu se face mult tros.",
+])
+def test_lower_case_words_that_only_look_like_a_name_are_left_alone(heard, known):
+    names = NAMES + ["Ionela Rus", "Barbu"]
+    assert N.repair_ro(heard, names, known) == (heard, [])
+
+
+def test_cued_and_capitalised_near_misses_still_repaired(known):
+    names = ["Ionela Rus", "Sami Trif", "Fratele Vadym"]
+    assert N.repair_ro("haideți să mijlocim pentru fratele Tif.", names, known)[0] == \
+        "haideți să mijlocim pentru fratele Trif."
+    assert N.repair_ro("și fratele Vadim, împreună cu soțiile lor", names, known)[0] == \
+        "și fratele Vadym, împreună cu soțiile lor"
+    assert N.repair_ro("o rugăciune pentru sora ionela.", names, known)[0] == "o rugăciune pentru sora Ionela."
+
+
 def test_other_peoples_names_close_to_a_listed_one(known):
     names = NAMES + ["Maria", "Cristian", "Ioan"]
     for heard in ("Iosif, Maria, sincere, Mariana, sincere condoleanțe.", "fratelui Cristi Baru.",
@@ -195,4 +218,11 @@ def test_cue_words_do_not_bring_in_saved_names():
     assert N.mentioned("luați legătură cu fratele Emmanuel și Dumnezeu.", saved) == []
     assert N.mentioned("fratele Emanuel ne-a vorbit", saved) == ["Fratele Emanuel Pop"]
     assert N.mentioned("familia Barbu și fratele Ilie Puha", saved) == ["Familia Barbu", "Puha"]
+
+
+def test_a_place_name_is_mentioned_only_as_a_whole():
+    """«sus» (up) brought in «Vicovu de Sus», and Gemma wrote "it leads into Vicovu de Sus"."""
+    places = ["Vicovu de Sus"]
+    assert N.mentioned("Doamne, ajută-ne să mergem mereu în sus.", places) == []
+    assert N.mentioned("frații din Vicovu de Sus vă salută", places) == ["Vicovu de Sus"]
     assert "Fratele" not in N.candidates(["Fratele Emanuel Pop"])
