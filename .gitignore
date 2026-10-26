@@ -5,6 +5,7 @@
 
 # Audio: sermon recordings (church-private) and the Bible audio (unknown licence: never redistribute)
 Audio/
+Audio translated Samples/
 BibleAudio/
 *.wav
 *.mp3

@@ -1,0 +1,11 @@
+model,source_family,wer,wer_nodiac,cer,sub,del,ins,n_words,term_acc,term_near,term_n,rtf
+jackrabbit-ctc-lm,False,3.06,2.94,1.52,61,18,23,3330,83.9,14.3,56,0.125
+jackrabbit-ctc-lm-b8,False,3.09,2.97,1.53,62,19,22,3330,83.9,14.3,56,0.065
+jackrabbit-ctc-lm-boost,False,3.12,2.97,1.53,63,18,23,3330,83.9,16.1,56,0.152
+jackrabbit-tdt,False,3.63,3.54,1.68,71,16,34,3330,83.9,14.3,56,0.031
+canary-asr,False,4.17,3.9,2.03,75,30,34,3330,82.1,17.9,56,0.215
+jackrabbit-stream-tdt,False,5.29,5.11,2.28,114,29,33,3330,80.4,16.1,56,0.034
+jackrabbit-ctc-biblelm,False,5.5,5.35,2.56,129,32,22,3330,82.1,17.9,56,0.105
+sped-tdt,False,6.34,5.65,2.65,136,34,41,3330,80.4,16.1,56,0.031
+parakeet-mlx,False,7.09,6.82,2.79,165,40,31,3330,82.1,16.1,56,0.015
+whisper-large-v3-mlx,True,3.45,3.36,2.32,32,60,23,3330,80.4,16.1,56,0.086

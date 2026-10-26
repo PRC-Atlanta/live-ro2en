@@ -10,6 +10,8 @@ Machine: Apple M3 Max, 36 GB. All timings were taken on an otherwise idle machin
 > - **Sermon numbers (added 2026-10-22)** come from 3 sermons (86 min; 24.7 min evaluation set).
 >   They are measured against Google Chirp 3, not a human transcript, so they stay
 >   **provisional until a Romanian speaker corrects `review_packet/`**.
+> - **Conversation numbers (Phase 1d, added 2026-10-26)** come from a 23-min podcast with a
+>   hand-corrected Whisper transcript: STT only, clear close-miked speech.
 > - Translations were scored against the KJV. Every system has partly **memorised Bible verses**:
 >   when STT misheard *jugul* as *sucul* in Matt 11:29, all four translators still wrote "yoke".
 >   So Bible chrF++ overstates sermon quality, especially for the LLMs.
@@ -127,6 +129,71 @@ the "corrected" text and counts as correct for both.
   translation. Content-word errors ("demodată" → "de odată") are the ones that matter, and they
   are what fine-tuning on corrected sermons should fix.
 - The phrase boost and the beam-32 search give no gain on sermons. That supports beam 8 for live use.
+
+## Phase 1d — Conversation, near-human transcript (podcast, 2026-10-26)
+
+One 23-min conversation in Romanian (Luigi Mițoi and Andrei Baciu, podcast "România din afara
+țării", 3,330 words), with a full transcript (`Audio translated Samples/Luigi 1_ro.srt`). The
+transcript was made with **Whisper large-v3 (MLX)** on the whole file and then corrected by
+hand. Every model ran on the same 78 pause-cut segments (≤20 s), and each model's whole text
+was scored against the whole transcript (`results/podcast_scores.csv`). The Phase 1c column is
+the human-checked sermon set, for comparison.
+
+| Model | WER % | WER-nodiac % | CER % | Deleted / inserted words | Phase 1c sermons WER % |
+|---|---:|---:|---:|---:|---:|
+| Jackrabbit CTC + LM (beam 32) | **3.06** | 2.94 | 1.52 | 18 / 23 | 7.24 |
+| **Jackrabbit CTC + LM, beam 8 (live)** | 3.09 | 2.97 | 1.53 | 19 / 22 | 7.07 |
+| Jackrabbit CTC + LM + phrase boost | 3.12 | 2.97 | 1.53 | 18 / 23 | 7.35 |
+| Jackrabbit TDT | 3.63 | 3.54 | 1.68 | 16 / 34 | 8.06 |
+| Canary-1B-v2 | 4.17 | 3.90 | 2.03 | 30 / 34 | 10.75 |
+| Jackrabbit streaming | 5.29 | 5.11 | 2.28 | 29 / 33 | 11.18 |
+| Jackrabbit CTC + Bible LM | 5.50 | 5.35 | 2.56 | 32 / 22 | 9.27 |
+| SpeD 110M TDT | 6.34 | 5.65 | 2.65 | 34 / 41 | 10.86 |
+| Parakeet-TDT-0.6B-v3 | 7.09 | 6.82 | 2.79 | 40 / 31 | 18.97 |
+| Whisper large-v3 (MLX) | 3.45† | 3.36 | 2.32 | 60 / 23 | 6.74 |
+
+† Optimistic for Whisper: the transcript started as Whisper's own text, so a word Whisper got
+wrong and the correction missed counts as right for Whisper and wrong for everyone else.
+
+- **The live model is the best choice here too.** It beats Whisper even on Whisper's own
+  transcript. Beam 32 and the phrase boost differ from beam 8 by one word in 3,330, which
+  confirms beam 8 for live use.
+- Error rates are less than half the sermon ones because the podcast is close-miked, clear
+  speech. Room acoustics and the PA are missing, so this set doesn't replace the sermons. It
+  does add the spontaneous, conversational vocabulary that the Bible set lacks.
+- The Bible LM hurts most on conversation (5.50 vs 3.09): the general LM fits everyday
+  vocabulary, which supports merging Bible text into it rather than replacing it.
+- Canary moves ahead of the Bible-LM Jackrabbit on clear speech. Parakeet is still last (it is
+  only used for English clauses and RO/EN detection).
+- Whisper run per segment drops words (60 deletions, three times the live model's), the same
+  early-stop-after-pause behaviour seen on the Bible.
+- Term accuracy doesn't separate the models here (80–84% of only 56 term occurrences). It is
+  in the CSV, not the table.
+- **The audio is the raw recording; the transcript is of the edited podcast.** The WAV starts
+  with ~85 s of pre-show talk and a prayer and ends with off-air talk. The .srt opens with a
+  21 s teaser that the raw audio only has later in the conversation. The editor also cut roughly
+  25–30 s of pauses (the .srt times drift from 54 to 81 s behind the WAV), so the .srt times can't be
+  used to cut this audio. The set therefore keeps WAV 84.6–1471.6 s, drops cues 1–6, and
+  scores the whole text with no cutting by time.
+- "podcast-ul" in the .srt is scored as one word ("podcastul"), as every model writes it.
+- **Likely transcript errors:** `results/podcast_ref_suspects.md` lists 66 spots (about 2% of the
+  words) where at least 3 of 5 models from other families (Jackrabbit, Jackrabbit streaming,
+  SpeD, Canary, Parakeet; not Whisper) agree and the .srt differs. Most look like words Whisper
+  dropped ("unul dintre teste este [lipsa] autocontrolului", "din nefericire", "și", "dar"),
+  plus a few wrong forms ("dragostea noastră" for "dumneavoastră"). After a listen, fix the .srt
+  and rescore. That will lower every row except Whisper's, and may change the order.
+
+Reproduce:
+
+```
+.venv/bin/python src/srt_set.py build --window luigi-1=84.6-1471.6 --drop-cues luigi-1=1-6
+scripts/run_stt_queue.sh .venv-nemo work/podcast/manifest.csv work/podcast/segments podcast \
+  jackrabbit-ctc-lm-b8 jackrabbit-ctc-lm jackrabbit-ctc-lm-boost jackrabbit-tdt \
+  jackrabbit-stream-tdt jackrabbit-ctc-biblelm sped-tdt canary-asr
+scripts/run_stt_queue.sh .venv-mlx work/podcast/manifest.csv work/podcast/segments podcast \
+  whisper-large-v3-mlx parakeet-mlx
+.venv/bin/python src/srt_set.py score
+```
 
 ## Phase 1b — Sermons (3 recordings, 24.7 min evaluation set)
 
