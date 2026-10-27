@@ -16,6 +16,11 @@ known errors, so each translation change is measured on the same material.
   scripts/bench.py score RUN|LOG [--errors FILE]  per-error status + overall numbers
   scripts/bench.py compare RUN_A RUN_B            the two scores side by side
   scripts/bench.py check [--errors FILE]          validate the error list against the live logs
+  scripts/bench.py ref RUN [RUN ...] [--window S]  a corrected-sermon run (audio corr_<name>.wav, see
+                                                  SERMONS): Romanian transcript WER against the corrected
+                                                  text and, with a reference translation, the English
+                                                  translation's chrF++/BLEU against it; writes
+                                                  ref_score.json and ref_side.md into the run folder
 
 The engine plays the file on an audio clock (LIVE_FILE_SPEED / LIVE_FILE_T0): frame times are
 the recording's own wall-clock times, so a replayed phrase lines up with the live log and the
@@ -45,6 +50,7 @@ RECORDINGS = REPO / "logs" / "recordings"
 LIVE_LOGS = REPO / "logs" / "services"
 DEFAULT_ERRORS = BENCH / "errors_2026-10-24.json"
 APP_PY = REPO / ".venv-mt" / "bin" / "python"
+sys.path.insert(0, str(REPO / "src"))                    # scoring, textnorm
 
 
 # --- audio ----------------------------------------------------------------------------------
@@ -338,6 +344,171 @@ def compare(a: str, b: str, errors_path: str | None) -> None:
             print(f"  {k}: {x} -> {y}")
 
 
+# --- corrected sermons --------------------------------------------------------------------------
+# Replayed from logs/bench/audio/corr_<name>.wav (start_wall 2026-10-22 10:00:00). "corrections":
+# human-corrected Romanian transcript per recogniser segment (unverified segments keep the
+# recogniser's text; "last": only segments up to this one are corrected). "timed": Romanian
+# transcript lines, each starting with its time (**[m:ss]**) and followed by its reference English
+# translation in *italics*.
+SERMONS = {
+    "br-random-1": {"corrections": "data/finetune/corrections_clean/br-random-1.json"},
+    "nelu-suciu": {"corrections": "data/finetune/corrections_clean/nelu-suciu.json", "last": 104},
+    "luigi-mitoi": {"timed": "Audio/Luigi Mitoi - Ce facem cand - With time stamps.txt"},
+}
+SEGMENTS = REPO / "transcripts" / "local" / "jackrabbit-ctc-lm-b8" / "archive"
+TAG = re.compile(r"\s*\[(?:clears throat|voce dreas[ăa])\]", re.I)  # not speech
+STAMP = re.compile(r"^\*\*\[(?:(\d+):)?(\d+):(\d\d)\]\*\*\s*")
+
+
+def reference(name: str) -> tuple[list[dict], float | None]:
+    """The sermon's reference lines [{"ro", "en", "t"}] ("en" and "t", the start in seconds
+    into the recording, None without a timed reference translation), and where the corrected
+    stretch ends (seconds into the recording; None = the whole of it)."""
+    spec = SERMONS[name]
+    if "timed" in spec:
+        body = (REPO / spec["timed"]).read_text(encoding="utf-8").split("\n---", 1)[1]
+        out = []
+        for ln in (x.strip().rstrip("\\").strip() for x in body.splitlines()):
+            m = STAMP.match(ln)
+            if m:
+                h, mi, se = m.groups()
+                out.append({"ro": _unbracket(TAG.sub("", ln[m.end():])), "en": None,
+                            "t": int(h or 0) * 3600 + int(mi) * 60 + int(se)})
+            elif ln.startswith("*") and ln.endswith("*") and len(ln) > 1:
+                if not out or out[-1]["en"] is not None:
+                    sys.exit(f"{spec['timed']}: English translation without its Romanian line: {ln[:60]}")
+                out[-1]["en"] = _unbracket(TAG.sub("", ln.strip("*")))
+            elif ln:
+                sys.exit(f"{spec['timed']}: line without a time: {ln[:60]}")
+        if not out or any(x["en"] is None for x in out):
+            sys.exit(f"{spec['timed']}: no lines, or a Romanian line without its English translation")
+        if any(a["t"] > b["t"] for a, b in zip(out, out[1:])):
+            sys.exit(f"{spec['timed']}: times go backwards")
+        return [x for x in out if x["ro"] or x["en"]], None
+    corr = json.loads((REPO / spec["corrections"]).read_text())
+    out, end = [], None
+    for x in _records(SEGMENTS / f"{name}.jsonl"):
+        if spec.get("last") is not None and int(x["segment"].split("/")[1]) > spec["last"]:
+            break
+        c = corr.get(x["segment"])
+        out.append({"ro": c["corrected"] if c and c.get("verified") else x["text"], "en": None, "t": None})
+        end = x["end"]
+    return out, (end if spec.get("last") is not None else None)
+
+
+def _unbracket(text: str) -> str:
+    """Words the translator added in [brackets] stay, without the brackets."""
+    return re.sub(r"\[([^\]]*)\]", r"\1", text).strip()
+
+
+def windows(lines: list[dict], phrases: list[tuple[float, float]], window_s: float) -> list[dict]:
+    """~window_s stretches of whole reference lines (by their start times); each app phrase
+    (start, end, in seconds into the recording) goes to the stretch its middle falls in."""
+    out = []
+    for i, x in enumerate(lines):
+        if not out or x["t"] - out[-1]["t0"] >= window_s:
+            out.append({"t0": x["t"], "lines": [], "phrases": []})
+        out[-1]["lines"].append(i)
+    for j, (a, b) in enumerate(phrases):
+        mid = (a + b) / 2
+        k = max([n for n, w in enumerate(out) if w["t0"] <= mid] or [0])
+        out[k]["phrases"].append(j)
+    for w, nxt in zip(out, out[1:] + [None]):
+        w["t1"] = nxt["t0"] if nxt else max([phrases[j][1] for j in w["phrases"]] or [w["t0"]])
+    return out
+
+
+def ref_score(arg: str, window_s: float = 20.0, quiet: bool = False) -> dict:
+    """Score a corrected-sermon run: Romanian transcript WER against the corrected text, and,
+    where the sermon has a reference translation, the English translation against it (chrF++
+    and BLEU over ~window_s stretches of the reference's timed lines)."""
+    from scoring import score as wer  # noqa: PLC0415
+    from textnorm import tokens  # noqa: PLC0415
+    log, info = _run_log(arg)
+    name = pathlib.Path(info.get("audio", "")).stem.removeprefix("corr_")
+    if name not in SERMONS:
+        sys.exit(f"{arg}: not a corrected-sermon run (audio {info.get('audio')}); known: {', '.join(SERMONS)}")
+    lines, end = reference(name)
+    t0 = info["segment_start_wall"]
+    ph = [r for r in _records(log) if r.get("outcome") and "t_start" in r
+          and (end is None or r["t_start"] - t0 < end + 1.0)]
+    ro = [tokens(r.get("source") or r.get("ro") or "") for r in ph]
+    ref_ro = [tokens(x["ro"]) for x in lines]
+    ref_words = [w for ws in ref_ro for w in ws]
+    w_all = wer(ref_words, [w for ws in ro for w in ws], free_ends=False)
+    w_shown = wer(ref_words, [w for r, ws in zip(ph, ro) if r["outcome"] == "ok" for w in ws], free_ends=False)
+    out = {"run": str(log), "sermon": name, "git": info.get("git"), "phrases": len(ph),
+           "ro_wer_all": w_all, "ro_wer_shown": w_shown}
+    side = [f"# {name}: run {info.get('git')} ({log.parent.parent.name})\n"]
+    if lines[0]["t"] is not None:
+        import sacrebleu  # noqa: PLC0415 - in .venv-mt
+        wins = windows(lines, [(r["t_start"] - t0, r["t_end"] - t0) for r in ph], window_s)
+        refs, hyps = [], []
+        for w in wins:
+            ps = [ph[j] for j in w["phrases"]]
+            w["ref"] = " ".join(lines[i]["en"] for i in w["lines"])
+            # captions as shown; a phrase taken for English got a Romanian caption: missing here
+            w["hyp"] = " ".join((p.get("translation") or "").strip() for p in ps
+                                if p["outcome"] == "ok" and p.get("lang", "ro") == "ro")
+            w["t"] = (w["t0"], w["t1"])
+            w["chrf"] = sacrebleu.sentence_chrf(w["hyp"], [w["ref"]], word_order=2).score
+            refs.append(w["ref"])
+            hyps.append(w["hyp"])
+            side.append(f"\n**{_mmss(w['t'][0])}–{_mmss(w['t'][1])}** chrF++ {w['chrf']:.0f}  \n"
+                        f"RO (reference): {' '.join(lines[i]['ro'] for i in w['lines'])}  \n"
+                        f"EN (reference): {w['ref']}  \nEN (app): {w['hyp'] or '—'}  ")
+            for p in ps:
+                if p["outcome"] != "ok":
+                    side.append(f"  _not shown ({p['outcome']}): {p.get('source') or ''}_  ")
+        out.update({"en_chrf": sacrebleu.corpus_chrf(hyps, [refs], word_order=2).score,
+                    "en_bleu": sacrebleu.corpus_bleu(hyps, [refs]).score, "windows": len(wins),
+                    "worst": [{"t": _mmss(w["t"][0]), "chrf": round(w["chrf"], 1), "ref": w["ref"], "app": w["hyp"]}
+                              for w in sorted(wins, key=lambda w: w["chrf"])[:8]]})
+    rdir = log.parent.parent
+    (rdir / "ref_score.json").write_text(json.dumps(out, indent=1, ensure_ascii=False))
+    if len(side) > 1:
+        (rdir / "ref_side.md").write_text("\n".join(side) + "\n")
+    if not quiet:
+        print(f"{name} ({info.get('git')}): {len(ph)} phrases\n  Romanian transcript WER: all phrases "
+              f"{_wer(w_all)}, shown only {_wer(w_shown)}")
+        if "en_chrf" in out:
+            print(f"  English translation vs reference: chrF++ {out['en_chrf']:.1f}, BLEU {out['en_bleu']:.1f} "
+                  f"({out['windows']} stretches of ~{window_s:g} s; side by side in {rdir / 'ref_side.md'})")
+            print("  lowest chrF++:")
+            for w in out["worst"]:
+                print(f"    {w['t']}  {w['chrf']:4.0f}  ref: {w['ref'][:90]}\n                app: {w['app'][:90]}")
+    return out
+
+
+def _mmss(s: float | None) -> str:
+    return "--:--" if s is None else f"{int(s) // 60:02d}:{int(s) % 60:02d}"
+
+
+def _wer(s: dict) -> str:
+    return f"{s['wer'] * 100:.2f}% (S{s['sub']} D{s['del']} I{s['ins']} / {s['n_ref']})"
+
+
+def ref_table(runs: list[str], window_s: float) -> None:
+    """One row per run, then the pooled Romanian transcript WER (as in translation idea 27)."""
+    rows = [ref_score(r, window_s, quiet=len(runs) > 1) for r in runs]
+    if len(rows) < 2:
+        return
+    print(f"{'sermon':12s} {'code':12s} {'RO WER all':>10s} {'RO WER shown':>12s} {'EN chrF++':>9s} {'EN BLEU':>7s}")
+    for r in rows:
+        en = (f"{r['en_chrf']:9.1f} {r['en_bleu']:7.1f}") if "en_chrf" in r else f"{'–':>9s} {'–':>7s}"
+        print(f"{r['sermon']:12s} {str(r['git']):12s} {r['ro_wer_all']['wer'] * 100:9.2f}% "
+              f"{r['ro_wer_shown']['wer'] * 100:11.2f}% {en}")
+    for git in dict.fromkeys(r["git"] for r in rows):
+        same = [r for r in rows if r["git"] == git]
+        pooled = []
+        for k in ("ro_wer_all", "ro_wer_shown"):
+            n = sum(r[k]["n_ref"] for r in same)
+            e = sum(r[k]["sub"] + r[k]["del"] + r[k]["ins"] for r in same)
+            pooled.append(f"{k.removeprefix('ro_wer_')} {e / max(n, 1) * 100:.2f}%")
+        print(f"  {git}: pooled Romanian transcript WER {', '.join(pooled)} "
+              f"({len(same)} sermons, {sum(r['ro_wer_all']['n_ref'] for r in same)} words)")
+
+
 def check(errors_path: str | None) -> None:
     """Every known error must be visible in the live logs (bad found, or good absent), else the
     pattern is wrong. The live service is the baseline: all should come out 'still'."""
@@ -377,6 +548,9 @@ def main() -> None:
     c.add_argument("--errors")
     k = sub.add_parser("check")
     k.add_argument("--errors")
+    f = sub.add_parser("ref")
+    f.add_argument("runs", nargs="+")
+    f.add_argument("--window", type=float, default=20.0)
     a = ap.parse_args()
     if a.cmd == "snapshot":
         snapshot()
@@ -386,6 +560,8 @@ def main() -> None:
         score(a.run, a.errors)
     elif a.cmd == "compare":
         compare(a.a, a.b, a.errors)
+    elif a.cmd == "ref":
+        ref_table(a.runs, a.window)
     else:
         check(a.errors)
 

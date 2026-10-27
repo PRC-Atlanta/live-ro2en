@@ -65,3 +65,26 @@ def test_judge_errors_line_by_line():
     assert bench.judge({"t": "12:49:30", "bad": r"x", "good": r"renun"}, ph, day)[0] == "fixed?"
     assert bench.judge({"t": "13:30:00", "bad": r"x"}, ph, day)[0] == "missing"
     assert bench.metrics(ph)["short_lt5"] == 1.0
+
+
+
+def test_timed_reference_reads_times_pairs_lines_and_drops_tags(tmp_path, monkeypatch):
+    f = tmp_path / "s.txt"
+    f.write_text("# Title\r\n\r\nintro\r\n\r\n---\r\n\r\n"
+                 "**[0:06]** Bună seara [voce dreasă] tuturor.\\\r\n*Good evening [clears throat] everyone.*\r\n\r\n"
+                 "**[0:59]** [voce dreasă]\\\r\n*[clears throat]*\r\n\r\n"
+                 "**[1:02:03]** Amin.\\\r\n*Amen [to that].*", encoding="utf-8")
+    monkeypatch.setitem(bench.SERMONS, "t", {"timed": str(f)})
+    lines, end = bench.reference("t")
+    assert end is None
+    assert lines == [{"ro": "Bună seara tuturor.", "en": "Good evening everyone.", "t": 6},
+                     {"ro": "Amin.", "en": "Amen to that.", "t": 3723}]
+
+
+def test_windows_keep_whole_lines_and_place_phrases_by_their_middle():
+    lines = [{"t": t} for t in (0, 8, 19, 21, 30, 45)]
+    phrases = [(0.0, 5.0), (17.0, 24.0), (39.0, 46.0), (46.0, 50.0)]
+    w = bench.windows(lines, phrases, 20.0)
+    assert [x["lines"] for x in w] == [[0, 1, 2], [3, 4], [5]]
+    assert [x["phrases"] for x in w] == [[0, 1], [2], [3]]       # middles 2.5, 20.5 | 42.5 | 48
+    assert [(x["t0"], x["t1"]) for x in w] == [(0, 21), (21, 45), (45, 50.0)]

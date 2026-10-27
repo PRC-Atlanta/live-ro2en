@@ -413,6 +413,40 @@ with the previous 6 s of audio, and only the words after the already-committed t
 kept. In Auto mode, Jackrabbit and Parakeet now run in parallel, so the extra work fits:
 **Romanian first word ≤ 6 s: 92% (p90 5.9 s), WER 7.3%.** (4 s of context: 7.9% WER, 90%.)
 
+## Phase 3e — Corrected-sermon bench, with a reference translation (2026-10-26)
+
+Three sermons replayed through the whole live app (`scripts/bench.py run
+logs/bench/audio/corr_<name>.wav --speed 3`, quality, gain 0, no `--terms`) and scored with
+`scripts/bench.py ref RUN [RUN ...]` (sermon list: `SERMONS` in `scripts/bench.py`):
+
+| Sermon | Length | Reference | Romanian transcript WER (37d9be8) | English translation vs reference |
+|---|---:|---|---:|---|
+| br-random-1 | 29 min | corrected Romanian transcript (`data/finetune/corrections_clean/`) | 6.38%¹ | – |
+| nelu-suciu | first 8 min | corrected Romanian transcript | 5.20%¹ | – |
+| **luigi-mitoi** (Luigi Mițoi, *Ce facem când biserica nu mai vede pericolul*) | 36 min | corrected Romanian transcript **+ English translation, timed per line** (`Audio/Luigi Mitoi - Ce facem cand - With time stamps.txt`) | **4.75%** (4,589 words) | **chrF++ 62.8, BLEU 35.5** |
+
+¹ 03e38eb+dirty (the "now" run of translation idea 27); `bench.py ref` gives the same numbers as idea 27's scoring.
+
+- **Romanian transcript WER:** every phrase's Romanian (after the app's repairs) against the corrected text,
+  whole sermon at once; "shown only" also counts phrases that were not captioned as missing words. On
+  luigi-mitoi, 433 of 451 phrases were shown (18 `empty_stt`) and nothing was taken for English.
+- **English translation:** the reference's timed lines are grouped into ~20 s stretches (whole lines,
+  by start time). Each app phrase joins the stretch its middle falls in, and the stretch's captions are scored against
+  the reference English translation (sacrebleu chrF++ and BLEU over all stretches; [clears throat] /
+  [voce dreasă] dropped, the translator's [added words] kept). A caption that
+  went out in Romanian (phrase taken for English) counts as missing. The file's times match the audio:
+  app phrases start a median 0.27 s after the line they begin, with no drift over the 36 min.
+- **Compare runs only at the same stretch length.** A phrase that straddles a boundary lands in one
+  stretch, so shorter stretches score lower: chrF++ 60.3 / 62.8 / 65.6 / 74.5 at 10 s / 20 s / 60 s /
+  the whole sermon. 20 s (the default, `--window`) matches idea 27's judge windows.
+- chrF++ against a single human translation rewards wording close to it, not just correct meaning,
+  so a change of ~1 point is within wording noise. Read the stretches that moved in `ref_side.md`
+  (written into the run folder, reference and app side by side, uncaptioned phrases listed), and
+  use the blind judge for the decisive cases.
+- Lowest stretches on 37d9be8: boundary spill (13:56, 11:06), and real errors, e.g. Hos 4:6 at 24:42
+  ("my people, P. ...pierce from a lack of holiness"; «plumbing» → "the ping") and «să nu fie
+  totdeauna răstit cu copilul» at 31:41 ("not to always grow up with the child").
+
 ## Google data use (terms checked 2026-10-22, not legal advice)
 
 Google Cloud Service Specific Terms §17 ("Use Restrictions for AI/ML Services"; Speech-to-Text
