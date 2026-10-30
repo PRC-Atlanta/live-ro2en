@@ -1,14 +1,13 @@
 """Pages, state, the /ws feed, start/stop, and the app lifecycle (preload, unload, shutdown,
 health, readiness, permissions). Owned by S1."""
-import asyncio
 import threading
 
-from fastapi import APIRouter, Request, WebSocketDisconnect
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.routing import WebSocketRoute
 
 import permissions
-from routes import body, run
+from routes import body, run, state_feed
 from security import request_allowed
 
 
@@ -76,25 +75,6 @@ def router(live, hosts: set[str], port: int) -> APIRouter:
             await sock.close(code=1008)          # policy violation: not our control page
             return
         await sock.accept()
-        q: asyncio.Queue = asyncio.Queue(maxsize=50)
-        loop = asyncio.get_running_loop()
-
-        class Bridge:
-            def put_nowait(self, s):
-                loop.call_soon_threadsafe(lambda: q.full() or q.put_nowait(s))
-        b = Bridge()
-        live.listeners.add(b)
-        try:
-            await sock.send_json(live.state())
-            while True:
-                try:
-                    s = await asyncio.wait_for(q.get(), 1.0)
-                except asyncio.TimeoutError:
-                    s = live.state()
-                await sock.send_json(s)
-        except (WebSocketDisconnect, RuntimeError):
-            pass
-        finally:
-            live.listeners.discard(b)
+        await state_feed(live, sock)
     r.routes.append(WebSocketRoute("/ws", ws))
     return r

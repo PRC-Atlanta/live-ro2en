@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var connectWindow: ConnectWindow?
     private var namesWindow: NamesWindow?
     private var shortcutsWindow: ShortcutsWindow?
+    private var fullWindow: FullWindow?               // the full view: the captions Mac's Live screen
     private var previousApp: NSRunningApplication?    // in front before one of our windows opened
     private var closeConnectOnSuccess = false          // the user pressed Connect: close it once it works
 
@@ -28,7 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ n: Notification) {
-        d.register(defaults: ["port": 8766, "vertical": false, "peek": true, "onTop": true])
+        d.register(defaults: ["port": 8766, "vertical": false, "peek": true, "onTop": true, "full": false])
         toolbar.vertical = d.bool(forKey: "vertical")
         toolbar.showPeek = d.bool(forKey: "peek")
         toolbar.panel.level = d.bool(forKey: "onTop") ? .floating : .normal
@@ -38,7 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         toolbar.onAction = { [weak self] in self?.act($0) }
         toolbar.menuProvider = { [weak self] in self?.menu() ?? NSMenu() }
-        toolbar.panel.orderFrontRegardless()
+        if d.bool(forKey: "full") { showFull(activate: false) } else { toolbar.panel.orderFrontRegardless() }
 
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         status.button?.attributedTitle = NSAttributedString(string: "LT", attributes: [.font: Theme.font(12, .heavy)])
@@ -53,7 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] n in
             guard let self, let w = n.object as? NSWindow, w !== self.toolbar.panel else { return }
             DispatchQueue.main.async {
-                let open = [self.connectWindow, self.namesWindow, self.shortcutsWindow].contains { $0?.isVisible == true }
+                let open = [self.connectWindow, self.namesWindow, self.shortcutsWindow, self.fullWindow].contains { $0?.isVisible == true }
                 if !open, NSApp.isActive, let prev = self.previousApp, !prev.isTerminated { prev.activate() }
                 if !open { self.previousApp = nil }
             }
@@ -73,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func linkChanged(_ link: Link) {
         toolbar.show(link, host: client.host)
         namesWindow?.refresh(client.feed)
+        if fullWindow?.isVisible == true { loadFull(link) }
         let tint: NSColor = Look.of(link, host: client.host).color
         status.button?.attributedTitle = NSAttributedString(string: "LT", attributes: [.font: Theme.font(12, .heavy), .foregroundColor: tint])
         switch link {
@@ -97,6 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func act(_ action: String) {
         if action == "names" { openNames(); return }
+        if action == "full" { showFull(); return }
         guard let f = client.feed else { NSSound.beep(); return }   // also wrong PIN / locked: nothing is sent
         let body: [String: Any]
         switch action {
@@ -150,6 +153,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         present(shortcutsWindow)
     }
 
+    // MARK: full view and the small toolbar: one or the other is on show
+    @objc private func showFull() { showFull(activate: true) }
+
+    private func showFull(activate: Bool) {
+        if fullWindow == nil {
+            let w = FullWindow()
+            w.menuProvider = { [weak self] in self?.menu() ?? NSMenu() }
+            w.onSmall = { [weak self] in self?.showSmall() }
+            fullWindow = w
+            // its close button also goes back to the toolbar
+            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
+                guard let self, self.d.bool(forKey: "full") else { return }
+                self.d.set(false, forKey: "full")
+                self.toolbar.panel.orderFrontRegardless()
+            }
+        }
+        d.set(true, forKey: "full")
+        toolbar.panel.orderOut(nil)
+        loadFull(client.link)
+        if activate { present(fullWindow) } else { fullWindow?.orderFrontRegardless() }
+    }
+
+    @objc private func showSmall() {
+        d.set(false, forKey: "full")
+        fullWindow?.close()
+        toolbar.panel.orderFrontRegardless()
+    }
+
+    private func loadFull(_ link: Link) {
+        guard let w = fullWindow else { return }
+        if case .connected = link, let host = client.host {
+            w.load(host: host, port: client.port, pin: client.pin)
+        } else if case .connecting = link {
+            return                                    // keep what is on show until it answers
+        } else {
+            w.say(Look.of(link, host: client.host).problem ?? "Not connected")
+        }
+    }
+
     // MARK: the menu (toolbar right-click, ⋯ and the menu bar)
     private func item(_ title: String, _ sel: Selector?, key: String = "", on: Bool = false, tag: Int = 0) -> NSMenuItem {
         let i = NSMenuItem(title: title, action: sel, keyEquivalent: key)
@@ -168,7 +210,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         peek.isEnabled = !toolbar.vertical
         m.addItem(peek)
         m.addItem(item("Keep above all windows", #selector(toggleOnTop), on: toolbar.panel.level == .floating))
-        m.addItem(item(toolbar.panel.isVisible ? "Hide the toolbar" : "Show the toolbar", #selector(toggleToolbar)))
+        if fullWindow?.isVisible == true {
+            m.addItem(item("Small toolbar", #selector(showSmall)))
+        } else {
+            m.addItem(item("Full app view", #selector(showFull as () -> Void)))
+            m.addItem(item(toolbar.panel.isVisible ? "Hide the toolbar" : "Show the toolbar", #selector(toggleToolbar)))
+        }
         m.addItem(.separator())
         let where_ = client.host.map { $0.hasSuffix(".") ? String($0.dropLast()) : $0 }
         let head = NSMenuItem(title: client.feed != nil ? "Connected to \(where_ ?? "")" : where_.map { "Not connected to \($0)" } ?? "Not connected",
@@ -205,7 +252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func quit() { NSApp.terminate(nil) }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        toolbar.panel.orderFrontRegardless()
+        if d.bool(forKey: "full") { showFull() } else { toolbar.panel.orderFrontRegardless() }
         return true
     }
 }

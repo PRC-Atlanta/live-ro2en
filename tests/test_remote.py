@@ -294,3 +294,83 @@ def test_the_bonjour_watcher_restarts_dns_sd_and_ends_with_its_parent(tmp_path):
     finally:
         parent.kill()
         w.kill()
+
+
+# --- full view (/remote/app/): the Live screen in Live Remote's window ----------------------
+@pytest.fixture
+def full(rig):
+    live, client, _ = rig
+    client.cookies.set(remote.PIN_COOKIE, live.remote_pin())
+    return live, client
+
+
+def test_full_view_serves_the_live_screen_with_the_pin_cookie_only(rig):
+    live, client, pin = rig
+    assert client.get("/remote/app/ui/").status_code == 401                  # no cookie
+    assert client.get("/remote/app/ui/", headers=pin).status_code == 401     # the header is not the cookie
+    client.cookies.set(remote.PIN_COOKIE, "000000" if live.remote_pin() != "000000" else "111111")
+    assert client.get("/remote/app/ui/").status_code == 401
+    client.cookies.set(remote.PIN_COOKIE, live.remote_pin())
+    r = client.get("/remote/app/ui/")
+    assert r.status_code == 200 and "<main id=\"screen\">" in r.text
+    assert client.get("/remote/app/ui/core/api.js").status_code == 200
+    assert client.get("/remote/app/", follow_redirects=False).headers["location"] == "/remote/app/ui/#live"
+
+
+def test_full_view_takes_its_own_origin_and_refuses_others(full):
+    live, client = full
+    own = {"Origin": BASE}
+    assert client.post("/remote/app/api/pause", json={"on": True}, headers=own).status_code == 200
+    assert live.paused
+    for bad in ("http://evil.example", "http://127.0.0.1:8765", "https://127.0.0.1:8766", "null"):
+        assert client.post("/remote/app/api/pause", json={"on": False}, headers={"Origin": bad}).status_code == 403, bad
+    assert live.paused
+    assert client.get("/remote/app/ui/", headers={"Host": "rebind.example:8766"}).status_code == 403
+
+
+def test_full_view_does_only_what_the_live_screen_does(full):
+    live, client = full
+    own = {"Origin": BASE}
+    for method, path in [("POST", "/api/shutdown"), ("POST", "/api/unload"), ("POST", "/api/rehearsal"),
+                         ("GET", "/api/settings"), ("POST", "/api/import_config"), ("POST", "/api/remote/pin"),
+                         ("PUT", "/api/keywords"), ("GET", "/api/setup"), ("POST", "/api/export")]:
+        r = client.request(method, "/remote/app" + path, json={}, headers=own)
+        assert r.status_code == 403, (method, path, r.status_code)
+    assert client.get("/remote/app/api/terms").status_code == 200
+    assert client.post("/remote/app/api/blank", json={}, headers=own).status_code == 200
+
+
+def test_full_view_settings_are_the_gain_and_propresenter_switch_only(full):
+    live, client = full
+    own = {"Origin": BASE}
+    r = client.put("/remote/app/api/settings", json={"values": {"live.input_gain_db": 6}}, headers=own)
+    assert r.status_code == 200 and live.cfg["live"]["input_gain_db"] == 6
+    for values in ({"live.profile": "quality"}, {"live.input_gain_db": 3, "display.remote": False}, {}, None):
+        r = client.put("/remote/app/api/settings", json={"values": values}, headers=own)
+        assert r.status_code == 403, values
+    assert live.cfg["live"]["input_gain_db"] == 6 and live.remote_enabled()
+
+
+def test_full_view_feed_sends_the_state_and_ends_with_a_new_pin(full):
+    live, client = full
+    with client.websocket_connect("ws://127.0.0.1:8766/remote/app/ws", headers={"Origin": BASE}) as ws:
+        s = ws.receive_json()
+        assert "phase" in s and s["remote"]["clients"] >= 1
+        live.renew_remote_pin()
+        with pytest.raises(WebSocketDisconnect) as e:
+            for _ in range(10):
+                ws.receive_json()
+        assert e.value.code == 4401
+    client.cookies.set(remote.PIN_COOKIE, "")
+    with client.websocket_connect("ws://127.0.0.1:8766/remote/app/ws") as ws:
+        with pytest.raises(WebSocketDisconnect) as e:
+            ws.receive_json()
+        assert e.value.code == 4401
+
+
+def test_full_view_is_gone_with_the_remote_off(tmp_path, monkeypatch):
+    live = _live(tmp_path, monkeypatch, remote=False, network=True)
+    client = _client(live)
+    client.cookies.set(remote.PIN_COOKIE, live.remote_pin())
+    assert client.get("/remote/app/ui/").status_code == 404
+    assert client.post("/remote/app/api/start", json={}).status_code == 404

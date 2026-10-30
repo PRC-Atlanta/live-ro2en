@@ -16,10 +16,11 @@ export function firstLaunchRoute(state, hash) {
   return state.phase === "needs_setup" && (hash === "" || hash === "#" || hash === "#live") ? "#setup" : null;
 }
 
-export function startRouter(el, store) {
+// only: one screen and no other (Live Remote's full view shows the Live screen alone)
+export function startRouter(el, store, { only = null } = {}) {
   let cleanup = null, seq = 0;
   const show = async () => {
-    const name = location.hash.slice(1) in ROUTES ? location.hash.slice(1) : "live";
+    const name = only || (location.hash.slice(1) in ROUTES ? location.hash.slice(1) : "live");
     const mine = ++seq;
     const mod = await ROUTES[name]();
     if (mine !== seq) return;               // another hash change came in while this one loaded
@@ -29,6 +30,7 @@ export function startRouter(el, store) {
   };
   addEventListener("hashchange", show);
   show();
+  if (only) return;                         // and no Setup wizard on first launch either
   let unsub = null, decided = false;
   unsub = store.subscribe(s => {
     if (decided) return;

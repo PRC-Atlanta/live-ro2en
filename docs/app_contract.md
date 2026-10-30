@@ -69,6 +69,10 @@ display}`); it has no controls.
 Live Remote (`remote/`, a Swift toolbar for the ProPresenter Mac; server side `remote.py`): with
 `display.remote: true` the same server runs, page or not, and also answers `/remote/*`: `GET
 state`, `POST pause|hold|song {on}`, `POST blank`, `POST retract`, `GET|POST terms`, `WS ws`.
+Its full view (`/remote/app/`, `remote.app_view`) serves the Live screen itself (`ui/`, shown
+without the toolbar strip) with its `/ws` feed and only the Live screen's calls (`APP_CALLS`;
+`PUT settings` only for the gain and `propresenter.enabled`); the PIN comes as the `live_pin`
+cookie and the page's own Origin is allowed.
 Every request needs the PIN in `X-Live-Pin` (`remote.pin` in the state, `POST /api/remote/pin`
 for a new one, kept in `<user dir>/remote_pin`). A request with an `Origin` header or a foreign
 `Host` gets 403; wrong PINs lock out that address for a minute (10) or everyone but the last

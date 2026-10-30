@@ -294,6 +294,13 @@ kbd { font: 600 12px var(--num); color: var(--cyan-hi); background: #050b0e; bor
       border-radius: 3px; padding: 3px 7px; box-shadow: 0 0 6px rgba(70,214,236,.2); }
 
 /* phone width */
+/* Live Remote's full view (body.remote, core/api.js REMOTE): the console alone at its full width,
+   with no toolbar strip and no margin. Live Remote fits its window to it and scales the page, so
+   the layout never reflows. */
+.remote main:has(> .unit) { padding: 0; max-width: none; margin: 0; }
+.remote .unit { width: 990px; max-width: none; margin: 0; border: 0; box-shadow: none; }
+.remote .tbar { display: none; }
+
 @media (max-width: 560px) { .hgrid { grid-template-columns: 1fr; } }
 @media (max-width: 560px) {
   main:has(> .unit) { padding: 0; }

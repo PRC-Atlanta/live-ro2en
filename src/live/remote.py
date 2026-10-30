@@ -1,7 +1,8 @@
 """Live Remote: the toolbar app on the ProPresenter Mac (remote/). With `display.remote: true`
 the network server of the captions display (display.py, `display.port`) also answers
 /remote/*: Hide/Show, Hold, Song, Clear, Remove last and today's names & words, plus a
-feed of what the toolbar shows. Start, stop and settings stay on this Mac.
+feed of what the toolbar shows. Its full view (app_view, /remote/app/) is the Live screen
+itself: start and stop, gain, mode and quality too. Setup, Settings and quitting stay on this Mac.
 
 Every /remote request carries the PIN (`X-Live-Pin`), shown in Settings → ProPresenter and
 kept in <user dir>/remote_pin. A new PIN drops every connected remote. Too many wrong PINs
@@ -23,11 +24,22 @@ import subprocess
 import sys
 import threading
 import time
+from urllib.parse import urlsplit
 
 import paths
 
 PIN_HEADER = "x-live-pin"
 SERVICE = "_liveroen._tcp"
+# Full view (Live Remote → Full view): the Live screen served under /remote/app/ to Live Remote's
+# web view, which sends the PIN as this cookie so the page's own fetch and WebSocket carry it.
+APP_PREFIX = "/remote/app"
+PIN_COOKIE = "live_pin"
+# What the Live screen may do from there: the console's controls. Setup, Settings, After and
+# quitting stay on this Mac, and so do settings beyond the gain and ProPresenter's switch.
+APP_CALLS = {("POST", "/api/" + a) for a in ("start", "stop", "pause", "hold", "song", "blank", "retract",
+                                             "correct", "terms", "mode", "profile", "reconnect")} \
+    | {("GET", "/api/state"), ("GET", "/api/terms"), ("PUT", "/api/settings")}
+APP_SETTINGS = {"live.input_gain_db", "live.input_gain_auto", "propresenter.enabled"}
 MAX_FAILS, FAIL_WINDOW_S = 10, 60.0     # wrong PINs from one address within the window: locked out
 GLOBAL_FAILS, GLOBAL_WINDOW_S = 50, 3600.0   # from all addresses in an hour: every address but the
                                              # last one that knew the PIN is locked out (many-IP guessing)
@@ -140,6 +152,18 @@ class RemoteMixin:
             self._remote_global.append(now)
         return 401
 
+    def remote_app_check(self, pin: str | None, client: str = "", host: str | None = None,
+                         origin: str | None = None) -> int:
+        """remote_check for the full view. Its page sends an Origin on POST and the WebSocket:
+        its own (http://<this Host>) is allowed, any other is refused (403)."""
+        if not self.remote_enabled():
+            return 404
+        if origin is not None:
+            o = urlsplit(origin)
+            if o.scheme != "http" or not host or o.netloc.lower() != host.strip().lower():
+                return 403
+        return self.remote_check(pin, client, host, None)
+
     def _host_ok(self, host: str | None) -> bool:
         if not host:
             return False
@@ -231,6 +255,8 @@ def add_routes(app, live):
             raise HTTPException(400, "on must be true or false")
         return on
 
+    app.mount(APP_PREFIX, app_view(live))
+
     @app.get("/remote/state")
     async def state(request: Request):
         guard(request)
@@ -300,3 +326,74 @@ def add_routes(app, live):
             with live._remote_lock:
                 live._remote_clients -= 1
             live._broadcast()
+
+
+def app_view(live):
+    """The full view, mounted at APP_PREFIX on the network server: the operator UI's files
+    (ui/), the Live screen's calls (APP_CALLS) and its /ws feed. Every request needs the PIN
+    cookie (remote_app_check); anything else answers 403."""
+    from fastapi import FastAPI, Request, WebSocket
+    from fastapi.responses import JSONResponse, RedirectResponse
+
+    from routes import NoCache, body, output, run, settings, state_feed, system
+
+    sub = FastAPI()
+    here = os.path.dirname(os.path.abspath(__file__))
+
+    def check(conn) -> int:
+        return live.remote_app_check(conn.cookies.get(PIN_COOKIE), conn.client.host if conn.client else "",
+                                     conn.headers.get("host"), conn.headers.get("origin"))
+
+    @sub.middleware("http")
+    async def guard(request: Request, call_next):
+        code = check(request)
+        if code != 200:
+            return JSONResponse({"error": {404: "not_found", 403: "forbidden", 401: "wrong_pin",
+                                           429: "locked_out"}[code]}, status_code=code)
+        path = request.url.path.removeprefix(APP_PREFIX)
+        if not (path == "/" or path.startswith("/ui/") and request.method in ("GET", "HEAD")
+                or (request.method, path) in APP_CALLS):
+            return JSONResponse({"error": "forbidden", "detail": "Do that on the captions Mac."}, status_code=403)
+        return await call_next(request)
+
+    @sub.get("/")
+    def index():
+        return RedirectResponse(APP_PREFIX + "/ui/#live", status_code=307)
+
+    @sub.put("/api/settings")                  # before the settings router's: only these keys
+    async def put_settings(request: Request):
+        values = (await body(request)).get("values")
+        if not isinstance(values, dict) or not values or set(values) - APP_SETTINGS:
+            return JSONResponse({"error": "forbidden", "detail": "Change that in Settings on the captions Mac."},
+                                status_code=403)
+        code, payload = await run(live.put_settings, {"values": values})
+        return JSONResponse(payload, status_code=code)
+
+    @sub.websocket("/ws")                      # before the system router's, which wants the local page
+    async def feed(ws: WebSocket):
+        pin = ws.cookies.get(PIN_COOKIE) or ""
+        code = check(ws)
+        await ws.accept()
+        if code != 200:
+            await ws.close(code=4000 + code)
+            return
+        with live._remote_lock:
+            live._remote_clients += 1
+        live._broadcast()
+        try:                                   # a new PIN, or the remote switched off, ends it
+            await state_feed(live, ws, lambda: live.remote_enabled() and
+                             hmac.compare_digest(pin.encode(), live.remote_pin().encode()))
+            await ws.close(code=4401 if live.remote_enabled() else 4404)
+        except (RuntimeError, OSError):
+            pass
+        finally:
+            with live._remote_lock:
+                live._remote_clients -= 1
+            live._broadcast()
+
+    # only the paths in APP_CALLS get past guard(); the routers are the main app's own
+    sub.include_router(system.router(live, set(), 0))
+    for mod in (output, settings):
+        sub.include_router(mod.router(live))
+    sub.mount("/ui", NoCache(directory=os.path.join(here, "ui"), html=True), name="ui")
+    return sub

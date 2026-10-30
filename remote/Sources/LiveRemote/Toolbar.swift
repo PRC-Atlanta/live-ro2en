@@ -210,7 +210,7 @@ final class ToolbarController {
         let defs: [(String, String, String, CGFloat)] = [
             ("pause", "eye", "Hide", 70), ("hold", "pause.fill", "Hold", 58), ("blank", "xmark.rectangle", "Clear", 58),
             ("retract", "arrow.uturn.backward", "Remove", 58), ("song", "music.note", "Song", 58),
-            ("names", "person.text.rectangle", "Names", 58)]
+            ("names", "person.text.rectangle", "Names", 58), ("full", "macwindow", "Full", 58)]
         for (a, sym, t, w) in defs {
             let k = KeyButton(action: a, symbol: sym, title: t, width: w)
             k.amberWhenOn = a == "pause"
@@ -250,7 +250,7 @@ final class ToolbarController {
         keys["hold"]?.on = feed?.held ?? false
         keys["song"]?.on = feed?.song ?? false
         keys["names"]?.badge = feed?.terms_n
-        for (a, k) in keys { k.enabled = connected || a == "names" }
+        for (a, k) in keys { k.enabled = connected || a == "names" || a == "full" }
         panel.setAccessibilityTitle("Live Remote: \(look.phase)")
     }
 
@@ -299,6 +299,7 @@ final class ToolbarController {
         ks.addArrangedSubview(sep)
         if v { sep.widthAnchor.constraint(equalToConstant: 58).isActive = true } else { sep.heightAnchor.constraint(equalToConstant: 46).isActive = true }
         if let n = keys["names"] { ks.addArrangedSubview(n) }
+        if let f = keys["full"] { ks.addArrangedSubview(f) }       // the whole Live screen in a window
         for k in keys.values { k.width = v ? 62 : (k.action == "pause" ? 70 : 58) }
         s.addArrangedSubview(ks)
 

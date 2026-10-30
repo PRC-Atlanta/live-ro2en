@@ -2,6 +2,7 @@
 // 501 {error:"not_implemented"} until its session lands: that is shown as a gentle note, never
 // an error. Every call is also kept in window.__liveCalls (newest last) for checking by hand.
 import { S } from "../i18n/strings.en.js";
+import { apiUrl } from "../core/api.js";
 
 // banner/action ids that open a screen instead of calling the backend
 const ROUTES = { help: "#help", settings: "#settings", setup: "#setup", after: "#after", names: "#settings" };
@@ -26,7 +27,7 @@ export async function send(action, body = {}) {
     return status === 200 ? { ok: true, data, mock: true } : { ok: false, notBuilt: status === 501, status, data, mock: true };
   }
   try {
-    const r = await fetch(`/api/${action}`, {
+    const r = await fetch(apiUrl(action), {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
     rec.status = r.status;
