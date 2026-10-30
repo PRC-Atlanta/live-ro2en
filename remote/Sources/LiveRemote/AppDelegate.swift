@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 
 /// Live Remote: a floating toolbar (and a menu-bar item) that drives the captions Mac.
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -210,6 +211,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         peek.isEnabled = !toolbar.vertical
         m.addItem(peek)
         m.addItem(item("Keep above all windows", #selector(toggleOnTop), on: toolbar.panel.level == .floating))
+        m.addItem(item("Open when the Mac starts", #selector(toggleLogin), on: loginOn))
         if fullWindow?.isVisible == true {
             m.addItem(item("Small toolbar", #selector(showSmall)))
         } else {
@@ -245,6 +247,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let on = toolbar.panel.level != .floating
         toolbar.panel.level = on ? .floating : .normal
         d.set(on, forKey: "onTop")
+    }
+    /// A login item kept by macOS (System Settings → General → Login Items shows the same entry).
+    private var loginOn: Bool { [.enabled, .requiresApproval].contains(SMAppService.mainApp.status) }
+    @objc private func toggleLogin() {
+        do { if loginOn { try SMAppService.mainApp.unregister() } else { try SMAppService.mainApp.register() } }
+        catch { NSSound.beep() }
+        if SMAppService.mainApp.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
     }
     @objc private func toggleToolbar() {
         if toolbar.panel.isVisible { toolbar.panel.orderOut(nil) } else { toolbar.panel.orderFrontRegardless() }

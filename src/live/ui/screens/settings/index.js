@@ -84,8 +84,26 @@ export function render(el, store) {
     return h("div.fx-field", ...labelled, f.hint ? h("span.fx-hint", f.hint) : null, msg);
   }
 
+  // "Open when the Mac starts": the Mac app's login item (macos LoginItem.swift), kept by macOS,
+  // not in settings.yaml. Only in the app's own window; a browser has no such switch.
+  function loginControl() {
+    const bridge = window.webkit?.messageHandlers?.loginItem;
+    if (!bridge) return null;
+    const msg = note();
+    const shown = r => {
+      sw.set(!!r && r.state !== "off");
+      if (!r || r.error) msg.say("Couldn't change it here. Use System Settings → General → Login Items.", "bad");
+      else if (r.state === "approval") msg.say("Allow Live RO2EN in System Settings → General → Login Items.", "warn");
+      else msg.say("");
+    };
+    const sw = led("Open this app when the Mac starts", false, async v => shown(await bridge.postMessage({ on: v }).catch(() => null)));
+    bridge.postMessage({}).then(shown, () => {});
+    return h("div.fx-field", sw, h("span.fx-hint", "Opens it when someone logs in to this Mac. For a Mac that restarts " +
+      "with nobody there, also turn on automatic login in System Settings → Users & Groups."), msg);
+  }
+
   const BUILD = {
-    basic() { pane.append(h("div.fx-sec", ...FIELDS.basic.map(control))); },
+    basic() { pane.append(h("div.fx-sec", ...FIELDS.basic.map(control), loginControl())); },
 
     propresenter() {
       // the switch first, big: off means captions never reach the big screen

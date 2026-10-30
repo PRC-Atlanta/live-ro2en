@@ -17,6 +17,7 @@ final class WebViewController: NSObject, WKNavigationDelegate, WKUIDelegate, WKD
         cfg.websiteDataStore = .default()          // keep per-origin storage between launches
         cfg.preferences.javaScriptCanOpenWindowsAutomatically = false
         cfg.mediaTypesRequiringUserActionForPlayback = []
+        cfg.userContentController.addScriptMessageHandler(LoginItemBridge(), contentWorld: .page, name: "loginItem")
         webView = WKWebView(frame: .zero, configuration: cfg)
         super.init()
         webView.navigationDelegate = self
