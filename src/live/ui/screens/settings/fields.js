@@ -51,7 +51,7 @@ export const FIELDS = {
   // Live Remote: the toolbar app on the ProPresenter Mac (remote.py)
   remote: [
     { key: "display.remote", label: "Allow Live Remote on this network", kind: "toggle",
-      hint: "Hide, hold, clear, remove last, song and today's names from another Mac. Start, stop and settings stay here." },
+      hint: "Hide, hold, clear, remove last, song and today's names from another Mac, and its full view: start, stop, gain and quality too. Setup and Settings stay here." },
   ],
   advanced: [
     { key: "live.input_gain_target_db", label: "Auto gain: speech level (dBFS)", kind: "number", min: -30, max: -10, step: 1,

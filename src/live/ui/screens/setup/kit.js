@@ -3,6 +3,7 @@
 // so the logic can be imported by the node tests.
 
 import { frame } from "../../components/frame.js";
+import { apiUrl } from "../../core/api.js";
 
 const MOCK = typeof location !== "undefined" && new URLSearchParams(location.search).has("mock");
 
@@ -15,7 +16,7 @@ export async function call(method, path, body) {
       const { mockApi } = await import("../../mock_state.js");
       return wrap(await mockApi(method, path, body));
     }
-    const r = await fetch(`/api/${path}`, {
+    const r = await fetch(apiUrl(path), {
       method, headers: body === undefined ? {} : { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });

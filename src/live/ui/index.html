@@ -14,7 +14,7 @@
 <script type="module">
   // ?mock=<scenario> drives the UI from mock_state.js instead of the live /ws feed
   import { createStore } from "./core/store.js";
-  import { connect } from "./core/api.js";
+  import { connect, REMOTE } from "./core/api.js";
   import { startRouter } from "./core/router.js";
 
   const mock = new URLSearchParams(location.search).get("mock");
@@ -36,7 +36,16 @@
     });
     setTimeout(() => { if (!seen) { conn.textContent = "Connecting to the app…"; conn.hidden = false; } }, 3000);
   }
-  startRouter(document.getElementById("screen"), store);
+  if (REMOTE) {             // Live Remote's full view: the Live screen alone, its window fitted to the console
+    document.body.classList.add("remote");
+    const tell = window.webkit?.messageHandlers?.size;
+    const main = document.getElementById("screen");
+    if (tell) new ResizeObserver(() => {
+      const u = main.querySelector(".unit");
+      if (u && u.offsetHeight) tell.postMessage({ w: u.offsetWidth, h: u.offsetHeight });
+    }).observe(main);
+  }
+  startRouter(document.getElementById("screen"), store, { only: REMOTE ? "live" : null });
 </script>
 </body>
 </html>

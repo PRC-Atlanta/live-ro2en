@@ -4,8 +4,42 @@ import asyncio
 
 import json
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, WebSocketDisconnect
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+
+
+class NoCache(StaticFiles):
+    """The operator UI's files: an app update must never run against yesterday's cached UI."""
+    async def get_response(self, path, scope):
+        r = await super().get_response(path, scope)
+        r.headers["Cache-Control"] = "no-cache"
+        return r
+
+
+async def state_feed(live, sock, still_ok=lambda: True):
+    """The /ws feed on an accepted socket: every state as it changes, and at least once a second.
+    Ends when the page goes, or when `still_ok()` turns false (checked at least once a second)."""
+    q: asyncio.Queue = asyncio.Queue(maxsize=50)
+    loop = asyncio.get_running_loop()
+
+    class Bridge:
+        def put_nowait(self, s):
+            loop.call_soon_threadsafe(lambda: q.full() or q.put_nowait(s))
+    b = Bridge()
+    live.listeners.add(b)
+    try:
+        await sock.send_json(live.state())
+        while still_ok():
+            try:
+                s = await asyncio.wait_for(q.get(), 1.0)
+            except asyncio.TimeoutError:
+                s = live.state()
+            await sock.send_json(s)
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    finally:
+        live.listeners.discard(b)
 
 
 async def body(request: Request) -> dict:

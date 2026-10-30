@@ -118,19 +118,13 @@ class Live(LifecycleMixin, PipelineMixin, OutputMixin, DisplayMixin, RemoteMixin
 
 def build_app(live: Live):
     from fastapi import FastAPI
-    from fastapi.staticfiles import StaticFiles
-    from routes import output, session, settings, setup, system
+    from routes import NoCache, output, session, settings, setup, system
     app = FastAPI()
     hosts, port = allowed_hosts(live.lc), int(live.cfg["live"]["web_port"])
     security.install(app, hosts, port)
     app.include_router(system.router(live, hosts, port))
     for mod in (output, settings, setup, session):
         app.include_router(mod.router(live))
-    class NoCache(StaticFiles):          # an app update must never run against yesterday's cached UI
-        async def get_response(self, path, scope):
-            r = await super().get_response(path, scope)
-            r.headers["Cache-Control"] = "no-cache"
-            return r
     app.mount("/ui", NoCache(directory=HERE / "ui", html=True), name="ui")   # the operator UI (S5)
     return app
 

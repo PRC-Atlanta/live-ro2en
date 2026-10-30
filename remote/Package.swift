@@ -9,7 +9,7 @@ let package = Package(
         .executableTarget(
             name: "LiveRemote",
             path: "Sources/LiveRemote",
-            linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("Carbon")]
+            linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("Carbon"), .linkedFramework("WebKit")]
         )
     ],
     swiftLanguageVersions: [.v5]
