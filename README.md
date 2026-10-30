@@ -33,8 +33,7 @@ Details: [BENCHMARK.md](BENCHMARK.md). Every judgment call: [DECISIONS.md](DECIS
    For a larger check, build a bigger packet (`src/review_packet.py --minutes 30`), then rescore
    with `.venv/bin/python src/review_packet.py rescore review_packet/corrections.json`.
 3. **Google terms:** checked. §17(b) forbids training models on Speech-to-Text output, so
-   training corrections use the Google-free mode (`src/correct_tool.py --google none`). A written
-   OK from Google Cloud Sales would change this.
+   training corrections use the Google-free mode (`src/correct_tool.py --google none`).
 4. **Licensing:** Jackrabbit and NLLB are CC-BY-NC-4.0, fine for church-internal use.
    Commercial alternatives: SpeD (Apache-2.0) and Gemma.
 5. **Real ProPresenter:** only tested against the mock (built from the official OpenAPI spec).
