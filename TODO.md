@@ -18,8 +18,9 @@ Plan and status: [docs/APP_PLAN.md](docs/APP_PLAN.md).
 - [x] **S10 release pipeline:** `make dist` builds the runtime, assembles and signs the app,
       makes the DMG and verifies it (passes ad hoc; 1.8 GB app, ~700 MB DMG). The macOS 14
       runtime build works: every pinned package has a macOS 14 wheel.
-- [ ] Signed + notarized build: needs a *Developer ID Application* certificate and the
-      `live-ro2en` notarytool keychain profile (`docs/release.md`), then `make dist notarize`.
+- [x] Signed + notarized build: `LiveRO2EN-0.1.0.dmg` from `main` b443797, Developer ID
+      (ANDREI GERMAN, 6RHHE8NEYA), notarized and stapled, VERIFY PASS (2026-10-29).
+- [ ] Live Remote signed + notarized: `remote/build.sh` with SIGN_IDENTITY, then notarize and staple.
 - [ ] Sparkle auto-update: EdDSA key and appcast (the user generates the key).
 - [x] The church Hugging Face repo for the NLLB build: `PRC-Media/nllb-200-distilled-1.3B-ct2-int8` (2026-10-23).
 - [ ] Clean-install test on a fresh user account (`docs/clean_install_test.md`), a usability test

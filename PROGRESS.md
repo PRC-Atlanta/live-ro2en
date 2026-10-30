@@ -33,12 +33,26 @@ Venvs (uv, Python 3.12): `.venv` (core/scoring/Google), `.venv-nemo` (Jackrabbit
 - Three independent review rounds; every finding fixed with a test (287+ tests pass, also with
   LIVE_HOME set). S11 cleanup: stats, settings keys, contract docs, `/` → `/ui/` (no-cache),
   control.html retired, practice-data actions, volunteer README, Sunday quick card.
-- S10 (signed/notarized DMG) in progress. Plan and open items: docs/APP_PLAN.md, TODO.md.
+- S10 (signed/notarized DMG): done 2026-10-29, below. Plan and open items: docs/APP_PLAN.md, TODO.md.
+
+## Done 2026-10-29: signed and notarized DMG (S10)
+- `make dist notarize` from `main` b443797 (PR #3 included): `build/dist/LiveRO2EN-0.1.0.dmg`,
+  653 MB. App and DMG signed with *Developer ID Application: ANDREI GERMAN (6RHHE8NEYA)*,
+  notarization Accepted (app 1516d583…, DMG 9e62b9f2…), both stapled; `spctl`:
+  `source=Notarized Developer ID`; VERIFY PASS with REQUIRE_NOTARIZED=1.
+- The team is Andrei German's *individual* membership (Ben is Admin in App Store Connect only):
+  developer.apple.com and API keys are closed to Ben, so Andrei made the certificate from Ben's
+  CSR (key "Live RO2EN Dev ID" in Ben's login keychain) and notarization uses an app-specific
+  password for Andrei's Apple ID in the `live-ro2en` profile. The certificate expires 2027-11-29.
+- One-time keychain fix, else every parallel codesign asks for the password:
+  `security set-key-partition-list -S apple-tool:,apple:,codesign: -s login.keychain`.
+- Not yet: the clean-install test, the `v0.1.0` tag, and signing/notarizing Live Remote
+  (`remote/build.sh` signs ad hoc unless SIGN_IDENTITY is set, and does not notarize).
 
 ## Waiting on the user
 - Send the Google terms question (draft in conversation); correct sermons in clean mode for training data.
 - Rehearsal on the church Mac with the soundboard and the real ProPresenter.
-- Developer ID Application certificate + `xcrun notarytool store-credentials live-ro2en` (for S10).
+- Clean-install test of `LiveRO2EN-0.1.0.dmg` on a Mac that never ran the app (`docs/clean_install_test.md`).
 - More sermons: drop into ./Audio and rerun `GOOGLE=chirp_3 scripts/run_sermon_pipeline.sh`.
 - Human corrections of review_packet → `src/review_packet.py rescore review_packet/corrections.json`.
 
