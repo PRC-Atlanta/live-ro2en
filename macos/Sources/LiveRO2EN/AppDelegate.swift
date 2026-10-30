@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation {
@@ -9,7 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private let live = LiveActivity()
     private let updater: Updater = StubUpdater()
     private let launch = LaunchModel()
-    private var overlay: NSHostingView<LaunchView>!
+    private var overlay: OverlayHostingView!
     private var loadedOrigin: URL?
     private var quitting = false
     private var shutdownDone = false
@@ -60,6 +61,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
         supervisor.start()
         NSApp.activate(ignoringOtherApps: true)
+        // ask for the microphone here, in front, rather than leave macOS's question to the
+        // engine child (it can open behind the window, or not at all)
+        if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+            AVCaptureDevice.requestAccess(for: .audio) { ok in
+                ShellLog.write("microphone access \(ok ? "allowed" : "refused")")
+            }
+        }
     }
 
     private func buildWindow() {
@@ -76,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let root = NSView()
         web.webView.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(web.webView)
-        overlay = NSHostingView(rootView: LaunchView(model: launch))
+        overlay = OverlayHostingView(rootView: LaunchView(model: launch))
         overlay.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(overlay)
         for v in [web.webView, overlay!] as [NSView] {
@@ -92,11 +100,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     private func setOverlay(visible: Bool) {
+        // clicks go to the page as soon as the overlay starts fading, not when the fade ends:
+        // an alpha-0 view still takes clicks, and the completion can lose a race with a later call
+        overlay.passesClicks = !visible
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.2
             overlay.animator().alphaValue = visible ? 1 : 0
         } completionHandler: { [weak self] in
-            self?.overlay.isHidden = !visible
+            guard let self else { return }
+            self.overlay.isHidden = self.overlay.passesClicks   // the latest call wins
         }
         if visible { overlay.isHidden = false }
     }
@@ -274,4 +286,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     @objc private func showLogs() {
         NSWorkspace.shared.activateFileViewerSelecting([supervisor.logURL])
     }
+}
+
+/// The launch overlay. While it fades out (and after) it lets every click through to the page.
+final class OverlayHostingView: NSHostingView<LaunchView> {
+    var passesClicks = false
+    override func hitTest(_ point: NSPoint) -> NSView? { passesClicks ? nil : super.hitTest(point) }
 }

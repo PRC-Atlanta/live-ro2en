@@ -5,13 +5,13 @@ final class LaunchModel: ObservableObject {
     @Published var message = "Starting…"
     @Published var failure: String?
     @Published var details = ""
+    @Published var showDetails = false   // here, not @State: that macro needs full Xcode to build
     var onRetry: () -> Void = {}
     var onShowLog: () -> Void = {}
 }
 
 struct LaunchView: View {
     @ObservedObject var model: LaunchModel
-    @State private var showDetails = false
 
     var body: some View {
         ZStack {
@@ -29,7 +29,7 @@ struct LaunchView: View {
                         Button("Show Log") { model.onShowLog() }
                     }
                     if !model.details.isEmpty {
-                        DisclosureGroup("Details", isExpanded: $showDetails) {
+                        DisclosureGroup("Details", isExpanded: $model.showDetails) {
                             ScrollView {
                                 Text(model.details)
                                     .font(.system(.caption, design: .monospaced))

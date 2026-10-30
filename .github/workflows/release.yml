@@ -84,9 +84,12 @@ jobs:
           NOTARY_KEYCHAIN: ${{ runner.temp }}/release.keychain-db   # where the profile was stored
         run: make notarize
 
+      - name: Name the artifact (a branch like fix/x has a / that artifact names refuse)
+        run: echo "ARTIFACT_REF=${GITHUB_REF_NAME//\//-}" >> "$GITHUB_ENV"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: LiveRO2EN-${{ github.ref_name }}${{ env.HAS_NOTARY != 'true' && '-adhoc' || '' }}
+          name: LiveRO2EN-${{ env.ARTIFACT_REF }}${{ env.HAS_NOTARY != 'true' && '-adhoc' || '' }}
           path: build/dist/*.dmg
           if-no-files-found: error
           compression-level: 0     # the DMG is already compressed
