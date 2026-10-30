@@ -49,10 +49,19 @@ Venvs (uv, Python 3.12): `.venv` (core/scoring/Google), `.venv-nemo` (Jackrabbit
 - Not yet: the clean-install test, the `v0.1.0` tag, and signing/notarizing Live Remote
   (`remote/build.sh` signs ad hoc unless SIGN_IDENTITY is set, and does not notarize).
 
+## Clean-install test of 0.1.2 (in progress, 2026-10-30)
+`LiveRO2EN-0.1.2.dmg` (Developer ID, notarized) on a fresh Standard account, `docs/clean_install_test.md`.
+Mac model and macOS version: not recorded yet.
+- PASS steps 2–3: installed by dragging from the DMG as a new Standard user, opened from Applications.
+- PASS step 5: the Microphone and Local Network prompts both named Live RO2EN.
+- Still to run: step 6 (first-run download with a resume), steps 7–8 (rehearsal with Wi-Fi off;
+  needs a locally built DMG, the CI one has no sample), step 11 (Microphone prompt after
+  `tccutil reset`), step 12 (update from 0.1.1 keeps settings).
+
 ## Waiting on the user
 - Send the Google terms question (draft in conversation); correct sermons in clean mode for training data.
 - Rehearsal on the church Mac with the soundboard and the real ProPresenter.
-- Clean-install test of `LiveRO2EN-0.1.0.dmg` on a Mac that never ran the app (`docs/clean_install_test.md`).
+- Clean-install test of `LiveRO2EN-0.1.2.dmg`: steps 6, 7–8, 11 and 12 left (section above).
 - More sermons: drop into ./Audio and rerun `GOOGLE=chirp_3 scripts/run_sermon_pipeline.sh`.
 - Human corrections of review_packet → `src/review_packet.py rescore review_packet/corrections.json`.
 
