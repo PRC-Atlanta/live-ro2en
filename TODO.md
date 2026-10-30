@@ -39,5 +39,4 @@ Plan and status: [docs/APP_PLAN.md](docs/APP_PLAN.md).
 - [ ] Learn from corrections immediately: suggested spelling rules, term-list and glossary
       entries from verified corrections, approved with one click in the correction tool.
 - [ ] Trial fine-tune at about 1 h of Google-free corrected audio (now 33 min), with a held-out sermon.
-- [ ] Ask Google Cloud Sales (in writing) whether Google-started corrections may be used for training.
 - [ ] Rehearsal on the church Mac with the soundboard feed and the real ProPresenter.

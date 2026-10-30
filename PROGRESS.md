@@ -59,7 +59,7 @@ Mac model and macOS version: not recorded yet.
   `tccutil reset`), step 12 (update from 0.1.1 keeps settings).
 
 ## Waiting on the user
-- Send the Google terms question (draft in conversation); correct sermons in clean mode for training data.
+- Correct sermons in clean mode for training data.
 - Rehearsal on the church Mac with the soundboard and the real ProPresenter.
 - Clean-install test of `LiveRO2EN-0.1.2.dmg`: steps 6, 7–8, 11 and 12 left (section above).
 - More sermons: drop into ./Audio and rerun `GOOGLE=chirp_3 scripts/run_sermon_pipeline.sh`.
