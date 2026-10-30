@@ -248,7 +248,7 @@ def test_quick_hash_changes_render_one_screen_and_clean_up_each():
                  (_, n) => `() => new Promise(r => setTimeout(() => r({ render: () => { globalThis.__log.push("render ${n}"); return () => globalThis.__log.push("clean ${n}"); } }), ${"${n}" === "live" ? 30 : 5}))`);
       globalThis.__log = log;
       const { startRouter } = await import("data:text/javascript," + encodeURIComponent(src));
-      startRouter({ replaceChildren() {} }, {});
+      startRouter({ replaceChildren() {} }, { subscribe: () => () => {} });
       location.hash = "#help"; listeners.hashchange();      // before live has loaded
       await new Promise(r => setTimeout(r, 80));
       location.hash = "#live"; listeners.hashchange();

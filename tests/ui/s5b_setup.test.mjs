@@ -272,3 +272,15 @@ test("every new scenario is listed", () => {
   B.use("setup_mic_denied", memStorage());
   assert.equal(stateOf("setup_mic_denied").problem.code, "mic_denied");
 });
+
+test("first launch with the models missing opens Setup, once and only from the main screen", async () => {
+  const { firstLaunchRoute } = await import(new URL("core/router.js", UI));
+  B.use("fresh_install", memStorage());
+  const fresh = stateOf("fresh_install");
+  assert.equal(firstLaunchRoute(fresh, ""), "#setup");
+  assert.equal(firstLaunchRoute(fresh, "#live"), "#setup");
+  assert.equal(firstLaunchRoute(fresh, "#help"), null);           // asked for another screen
+  assert.equal(firstLaunchRoute({ offline: true }, ""), undefined); // not heard from the app yet
+  assert.equal(firstLaunchRoute({}, ""), undefined);
+  assert.equal(firstLaunchRoute({ ...fresh, phase: "ready" }, ""), null);
+});

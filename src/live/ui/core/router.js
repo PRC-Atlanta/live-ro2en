@@ -8,6 +8,14 @@ const ROUTES = {
   help: () => import("../screens/help.js"),
 };
 
+// First launch: the first state the backend sends says the models are missing, and nobody asked
+// for a particular screen, so open the Setup wizard. Once per page load only: leaving the wizard
+// stays left (the dial still says "Finish setup first").
+export function firstLaunchRoute(state, hash) {
+  if (!state || state.offline || state.phase === undefined) return undefined;  // not heard from yet
+  return state.phase === "needs_setup" && (hash === "" || hash === "#" || hash === "#live") ? "#setup" : null;
+}
+
 export function startRouter(el, store) {
   let cleanup = null, seq = 0;
   const show = async () => {
@@ -21,4 +29,14 @@ export function startRouter(el, store) {
   };
   addEventListener("hashchange", show);
   show();
+  let unsub = null, decided = false;
+  unsub = store.subscribe(s => {
+    if (decided) return;
+    const to = firstLaunchRoute(s, location.hash);
+    if (to === undefined) return;
+    decided = true;
+    if (unsub) unsub();
+    if (to) location.hash = to;
+  });
+  if (decided) unsub();
 }
