@@ -141,7 +141,7 @@ const MOCK_DEFAULTS = {
   "propresenter.host": "127.0.0.1", "propresenter.port": 50001, "propresenter.message_id": "Live Translation",
   "propresenter.token_name": "Text", "propresenter.max_lines": 2, "propresenter.max_chars_per_line": 42,
   "propresenter.stage_message": false, "live.vad_threshold": 0.5,
-  "live.hold_min_words": 4, "live.hold_s": 1.2, "live.phrase_min_words": 6, "live.hold_dangling": true, "live.hold_slow_s": 6.5, "live.overlap_trim": true, "live.song_detect": false, "live.song_symbol": "♪", "live.sentence_pause_s": 1.0, "live.caption_min_line_s": 2.5, "live.caption_reveal": true, "live.caption_reveal_wps": 3, "live.partial_every_s": 0, "live.lag_warn_s": 6.0, "live.gate_min_real": 0.6,
+  "live.hold_min_words": 4, "live.hold_s": 1.2, "live.phrase_min_words": 6, "live.hold_dangling": true, "live.hold_slow_s": 6.5, "live.overlap_trim": true, "live.song_detect": false, "live.song_symbol": "♪", "live.sentence_pause_s": 1.0, "live.caption_min_line_s": 2.5, "live.caption_reveal": true, "live.caption_reveal_wps": 1.5, "live.partial_every_s": 0, "live.lag_warn_s": 6.0, "live.gate_min_real": 0.6,
   "propresenter.health_every_s": 5, "live.keep_both_translators": "auto", "live.engine_restarts": 2,
   "propresenter.enabled": true, "display.size": "large", "display.lines": 2, "display.colors": "white_on_black",
   "display.network": false, "display.show_hidden": false, "display.remote": false,

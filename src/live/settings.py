@@ -434,7 +434,7 @@ class SettingsMixin:
         if "live.caption_reveal" in changed and hasattr(self.caps, "reveal"):
             self.caps.reveal = bool(get(self.cfg, "live.caption_reveal"))   # from the next phrase
         if "live.caption_reveal_wps" in changed and hasattr(self.caps, "reveal_wps"):
-            self.caps.reveal_wps = float(get(self.cfg, "live.caption_reveal_wps") or 3)
+            self.caps.reveal_wps = float(get(self.cfg, "live.caption_reveal_wps") or 1.5)
         if any(k.startswith("display.") for k in changed) and hasattr(self, "_display_changed"):
             self._display_changed(changed)
         if "propresenter.enabled" in changed and hasattr(self, "_set_pp_enabled"):

@@ -298,8 +298,9 @@ def test_an_earlier_reveal_step_replaces_a_later_pace_timer(tmp_path, mock):
         live._show("aaaa bbbb cccc")                               # a line waits 8 s
         late = live._pace_timer
         live.caps.clear()
-        live._show(LONG, audio_s=4.0)                               # its next words are due in <1 s
-        assert live._pace_timer is not late and live._pace_due < live.caps.clock() + 1
+        live.caps.max_chars = 60                                    # room for the reveal: no line waits
+        live._show(LONG, audio_s=4.0)                               # its next words are due in <2 s
+        assert live._pace_timer is not late and live._pace_due < live.caps.clock() + 2
         assert not late.is_alive() or late.finished.is_set()
     finally:
         for t in (late, live._pace_timer):
