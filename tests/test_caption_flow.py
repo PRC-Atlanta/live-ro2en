@@ -10,7 +10,8 @@ import threading
 import numpy as np
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src" / "live"))
-from captions import RollingCaptions, tidy_clause      # noqa: E402
+from captions import (CARRY_MAX, ORPHAN_WAIT_S, REVEAL_HEAD, REVEAL_SLACK_S,  # noqa: E402
+                      RollingCaptions, tidy_clause)
 from translate import modernize, postedit                # noqa: E402
 import engine                                            # noqa: E402
 
@@ -155,7 +156,7 @@ def test_reveal_shows_the_first_words_at_once_and_the_rest_in_small_steps():
     assert c.add(TEN, audio_s=4.0) == "one two three"           # no delay to the first words
     steps = _run(c, now, 10)
     assert steps[-1][1] == TEN and not c.pending
-    assert steps[-1][0] <= 0.8 * 4.0                            # done within the speaking time
+    assert 0.8 * 4.0 < steps[-1][0] <= 4.0 + REVEAL_SLACK_S     # over the speaking time, not well before
     texts = ["one two three"] + [t for _, t in steps]
     assert all(2 <= len(b.split()) - len(a.split()) <= 3 for a, b in zip(texts, texts[1:]))
     assert min(_gaps(steps)) >= 0.5 - 1e-9                      # at most 2 updates a second
@@ -166,26 +167,88 @@ def test_a_long_phrase_said_fast_is_revealed_faster_but_still_at_most_twice_a_se
     words = " ".join(f"w{i}" for i in range(24))
     c.add(words, audio_s=3.0)
     steps = _run(c, now, 10)
-    assert steps[-1][1] == words and steps[-1][0] <= 0.8 * 3.0 + 1e-9
+    assert steps[-1][1] == words and steps[-1][0] <= 3.0 + REVEAL_SLACK_S + 1e-9
     assert min(_gaps(steps)) >= 0.5 - 1e-9
 
 
-def test_the_next_phrase_flushes_the_words_still_pending():
-    c, now = _reveal_caps(max_chars=60)
+def test_a_few_pending_words_roll_on_into_the_next_phrase_without_a_jump():
+    c, now = _reveal_caps(max_chars=120)
     c.add(TEN, audio_s=4.0)
-    now[0] = 0.7
-    c.advance()
-    assert c.pending
+    steps = _run(c, now, 3.0)
+    left = list(c.pending)
+    assert 0 < len(left) <= 6
+    before = c.text
+    c.add("eleven twelve thirteen fourteen fifteen", audio_s=2.0, close=".")
+    assert c.text == before                                     # nothing dumped on screen
+    assert c.pending == left[:-1] + [left[-1] + ".", "eleven", "twelve", "thirteen", "fourteen", "fifteen"]
+    steps += _run(c, now, 10)
+    assert c.text == TEN + ". eleven twelve thirteen fourteen fifteen" and steps[-1][0] <= 3.0 + 2.0 + REVEAL_SLACK_S
+    texts = [t for _, t in steps]
+    assert all(len(b.split()) - len(a.split()) <= 3 for a, b in zip(texts, texts[1:]))
+
+
+def test_many_pending_words_are_shown_before_the_next_phrase():
+    c, now = _reveal_caps(max_chars=200, max_lines=3)
+    words = " ".join(f"w{i}" for i in range(CARRY_MAX + REVEAL_HEAD + 2))
+    c.add(words, audio_s=8.0)
+    assert len(c.pending) > CARRY_MAX
     c.add("eleven twelve thirteen fourteen fifteen", audio_s=2.0)
-    assert c.text.replace("\n", " ").startswith(TEN + " eleven twelve thirteen")   # nothing lags behind
+    assert c.text.startswith(words + " eleven twelve thirteen")   # never far behind
     assert c.pending == ["fourteen", "fifteen"]
+
+
+def test_a_full_line_waiting_to_scroll_holds_the_reveal_back():
+    c, now = _reveal_caps(max_chars=20, max_lines=2, min_line_s=4.0)
+    words = "aaaa bbbb cccc dddd eeee ffff gggg hhhh iiii jjjj kkkk llll mmmm nnnn"
+    c.add(words, audio_s=3.0)
+    for t, text in _run(c, now, 30):
+        if c.queue:                                             # nothing piles up out of sight
+            assert len(c.queue) == 1 and len(c.queue[0].split()) <= 3
+    assert c.text.replace("\n", " ").endswith("nnnn")
+
+
+def test_last_words_that_would_start_a_line_alone_wait_for_the_next_phrase():
+    c, now = _reveal_caps(max_chars=20, max_lines=2)
+    c.add("aaaa bbbb cccc dddd eeee", audio_s=2.0)              # "eeee" would go down alone
+    _run(c, now, 2.0)
+    assert c.text == "aaaa bbbb cccc dddd" and c.pending == ["eeee"]
+    c.add("ffff gggg hhhh", audio_s=2.0)                        # the next phrase joins it
+    steps = _run(c, now, 10)
+    assert all(len(t.split("\n")[-1].split()) >= 2 for _, t in steps)
+    assert c.text.replace("\n", " ").endswith("eeee ffff gggg hhhh")
+
+
+def test_last_words_alone_still_go_up_when_no_phrase_follows():
+    c, now = _reveal_caps(max_chars=20, max_lines=2)
+    c.add("aaaa bbbb cccc dddd eeee", audio_s=2.0)
+    steps = _run(c, now, 10)
+    assert c.text.endswith("eeee") and steps[-1][0] <= 2.0 * 2 + ORPHAN_WAIT_S      # late, not lost
+
+
+def test_a_reveal_step_never_starts_a_line_with_one_word():
+    c, now = _reveal_caps(max_chars=20, max_lines=2)
+    words = "aaaa bbbb cccc dddd eeee ffff gggg hhhh iiii jjjj kkkk llll mmmm"
+    c.add(words, audio_s=6.0)
+    seen = [c.text] + [t for _, t in _run(c, now, 20)]
+    assert seen[-1].replace("\n", " ").endswith("llll mmmm")
+    for a, b in zip(seen, seen[1:]):
+        if len(b.split("\n")) > len(a.split("\n")) or b.split("\n")[0] != a.split("\n")[0]:
+            assert len(b.split("\n")[-1].split()) >= 3 or b.replace("\n", " ").endswith("mmmm"), (a, b)
+
+
+def test_retract_shows_the_caption_before_it_whole():
+    c, now = _reveal_caps(max_chars=120)
+    c.add(TEN, audio_s=4.0)
+    _run(c, now, 3.0)
+    c.add("eleven twelve", audio_s=1.0)
+    assert c.retract() == TEN and not c.pending
 
 
 def test_reveal_waits_for_the_line_above_to_have_been_read():
     c, now = _reveal_caps(max_chars=11, max_lines=1, min_line_s=2.0)
     c.add("aaa bbb ccc ddd eee fff", audio_s=4.0)
     assert c.text == "aaa bbb ccc"
-    now[0] = 0.7
+    now[0] = c.next_due()
     c.advance()                                                 # "ddd" wraps: it waits in the queue
     assert c.text == "aaa bbb ccc" and c.queue
     steps = _run(c, now, 10)

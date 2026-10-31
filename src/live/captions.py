@@ -10,9 +10,16 @@ bounded: more than `max_queue` waiting lines go up at once.
 
 With `reveal` a clause given its speaking time (`audio_s`) does not land in one jump: its
 first words go up at once and the rest wait in `pending`, coming up a few at a time from the
-same `advance()`/`next_due()` timer at about `reveal_wps` words a second (faster when the
-phrase is long for its speaking time), so the screen changes in small steps at speaking pace.
-The next clause flushes what is still pending first, so the text never falls behind.
+same `advance()`/`next_due()` timer, spread over the speaking time plus REVEAL_SLACK_S (the
+next clause lands about one speaking time later, give or take the translator), never slower
+than `reveal_wps`. So the screen moves at speaking pace instead of tick-tick-tick-pause. Words
+still pending when the next clause comes roll on into it, the pace quickening to take them in,
+instead of jumping up at once; only more than CARRY_MAX are shown first, so the text never
+falls far behind. A step never starts a new line with fewer than NEW_LINE_WORDS words: it fills the
+current line instead, or brings enough words down, so the box never scrolls up for one word;
+a clause's last word or two that would go down alone wait up to ORPHAN_WAIT_S for the next
+clause to join them. While a full line waits for the one above to have been read, the reveal
+waits too: words never pile up out of sight and then appear together.
 
 The operator can take the last caption back (`retract`), replace it (`replace_last`) and
 change the size of the box at runtime (`resize`).
@@ -28,8 +35,11 @@ import textwrap
 import time
 
 REVEAL_HEAD = 3            # words that go up with the clause at once (no delay to the first word)
-REVEAL_SHARE = 0.8         # reveal within this share of the clause's speaking time...
-REVEAL_MAX_S = 8.0         # ...counting at most this much of it
+REVEAL_SLACK_S = 0.4       # reveal over the clause's speaking time plus this...
+REVEAL_MAX_S = 8.0         # ...counting at most this much speaking time
+CARRY_MAX = 20             # pending words that roll on, faster, into the next clause (more: shown first)
+NEW_LINE_WORDS = 3         # a reveal step starts a new line with at least this many words
+ORPHAN_WAIT_S = 2.5        # a clause's last words that would start a line alone wait this long for the next
 MIN_STEP_S = 0.5           # timer-driven screen changes at most twice a second (ProPresenter)
 
 # Words that start a chunk lowercase when it continues the previous one (never names, God, I)
@@ -82,7 +92,7 @@ def tidy_clause(text: str, continues: bool, tgt: str = "en", src: str = "") -> t
 class RollingCaptions:
     def __init__(self, max_chars: int = 42, max_lines: int = 2, undo_depth: int = 20,
                  min_line_s: float = 0.0, max_queue: int = 3, clock=time.monotonic,
-                 reveal: bool = False, reveal_wps: float = 3.0):
+                 reveal: bool = False, reveal_wps: float = 1.5):
         self.max_chars = max_chars
         self.max_lines = max_lines
         self.min_line_s = float(min_line_s)
@@ -121,6 +131,39 @@ class RollingCaptions:
             rest = self._wrap(text)
         self.queue.extend(rest)
 
+    def _take(self, words: list[str], n: int) -> int:
+        """How many of `words` the next step puts up, about `n`: never a new line started
+        with fewer than NEW_LINE_WORDS words (fill the current line instead, or bring that
+        many down), and never one word left behind."""
+        n = min(n, len(words))
+        if len(words) - n == 1:
+            n = len(words)
+        if self._short_new_line(words, n) and (n < len(words) or n > 1):
+            fits = next((m for m in range(n, 0, -1) if not self._lines_after(words, m)[1:]), 0)
+            n = fits or min(len(words), max(n, NEW_LINE_WORDS))
+        return n
+
+    def _last_line(self) -> str:
+        stream = self.queue if self.queue else self.lines
+        return stream[-1] if stream and len(stream[-1]) <= self.max_chars else ""
+
+    def _lines_after(self, words: list[str], m: int) -> list[str]:
+        """The running text's last line with words[:m] appended, wrapped (more than one
+        line: they start a new one)."""
+        return self._wrap(f"{self._last_line()} {' '.join(words[:m])}".strip())
+
+    def _short_new_line(self, words: list[str], m: int) -> bool:
+        """Appending words[:m] starts a new line with fewer than NEW_LINE_WORDS words."""
+        wrapped = self._lines_after(words, m)
+        return bool(self._last_line()) and len(wrapped) > 1 and len(wrapped[-1].split()) < NEW_LINE_WORDS
+
+    def _orphan_wait(self) -> bool:
+        """The next step is the clause's last word or two, alone on a new line: they wait
+        for the next clause (until ORPHAN_WAIT_S past their time)."""
+        k = self._step[0]
+        return (self._take(self.pending, k) == len(self.pending)
+                and self._short_new_line(self.pending, len(self.pending)))
+
     def add(self, clause: str, close: str = "", audio_s: float | None = None) -> str:
         """Append a clause. `close` (e.g. ".") first ends the previous caption, which was
         left open (see tidy_clause). With `reveal` and the clause's speaking time `audio_s`,
@@ -129,15 +172,28 @@ class RollingCaptions:
         if not clause:
             return self.text
         before = self.text
-        self._reveal_all()                         # the last clause's words first: none lag behind
+        words = clause.split()
+        revealing = self.reveal and audio_s
+        if not revealing or len(self.pending) > CARRY_MAX:
+            self._reveal_all()                     # the last clause's words first: none lag behind
         self._undo = (self._undo + [self._snap()])[-self._undo_depth:]
+        if self.pending:                           # a few words of the last clause roll on into this one
+            if close and not self.pending[-1].endswith(tuple(".!?…:;,")):
+                self.pending[-1] += close
+            self.pending += words
+            due = self._reveal_due
+            self._plan(len(self.pending), float(audio_s))
+            self._reveal_due = min(due, self._reveal_due)   # keep the step already under way
+            self.advance(force=False)
+            return self.text
         stream = self.queue if self.queue else self.lines
         if close and stream and not stream[-1].endswith(tuple(".!?…:;,")):
             stream[-1] += close
-        words = clause.split()
-        if self.reveal and audio_s and len(words) > REVEAL_HEAD + 1:
-            self._plan(len(words) - REVEAL_HEAD, float(audio_s))
-            words, self.pending = words[:REVEAL_HEAD], words[REVEAL_HEAD:]
+        if revealing and len(words) > REVEAL_HEAD + 1:
+            head = self._take(words, REVEAL_HEAD)
+            if head < len(words):
+                self._plan(len(words) - head, float(audio_s))
+                words, self.pending = words[:head], words[head:]
         self._append(" ".join(words))
         self.advance(force=False)
         if self.text != before:
@@ -146,9 +202,9 @@ class RollingCaptions:
 
     def _plan(self, n: int, audio_s: float):
         """Steps of 2-3 words (more only when needed), at least MIN_STEP_S apart, so `n`
-        words finish within REVEAL_SHARE of the speaking time and never slower than
+        words finish within the speaking time plus REVEAL_SLACK_S and never slower than
         reveal_wps."""
-        budget = min(audio_s, REVEAL_MAX_S) * REVEAL_SHARE
+        budget = min(audio_s, REVEAL_MAX_S) + REVEAL_SLACK_S
         rate = max(self.reveal_wps, n / budget if budget > 0 else n / MIN_STEP_S, 0.1)
         k = max(2, math.ceil(rate * MIN_STEP_S))
         self._step = (k, max(MIN_STEP_S, k / rate))
@@ -171,33 +227,38 @@ class RollingCaptions:
         dwell allows. True when the screen changed."""
         now, before = self.clock(), self.text
         k, dt = self._step
-        while self.pending and now >= self._reveal_due - 1e-6:
-            n = len(self.pending) if len(self.pending) <= k + 1 else k   # no lone last word
+        self._rise(now, force)
+        if self.pending and not self.queue and now >= self._reveal_due - 1e-6 and not (
+                self._orphan_wait() and now < self._reveal_due + ORPHAN_WAIT_S - 1e-6):
+            n = self._take(self.pending, k)
             self._append(" ".join(self.pending[:n]))
             del self.pending[:n]
-            self._reveal_due += dt
+            self._reveal_due = max(self._reveal_due, now) + dt   # after a wait: on from now
+            self._rise(now, force)
         changed = self.text != before
+        if changed:
+            self._shown_at = now
+        return changed
+
+    def _rise(self, now: float, force: bool):
+        """Waiting lines up as far as the dwell allows."""
         while self.queue:
             if len(self.lines) >= self.max_lines:
-                ripe = now - self._since[0] >= self.min_line_s
+                ripe = now - self._since[0] >= self.min_line_s - 1e-6
                 if not (ripe or force or len(self.queue) > self.max_queue):
                     break
                 self.lines.pop(0)
                 self._since.pop(0)
             self.lines.append(self.queue.pop(0))
             self._since.append(now)
-            changed = True
-        if changed:
-            self._shown_at = now
-        return changed
 
     def next_due(self) -> float | None:
         """When advance() can next change the screen (clock time): the next reveal step or
         the next waiting line, or None. With reveal, never sooner than MIN_STEP_S after the
         last change, so a reveal step and a scroll that fall close together go up as one."""
         due = []
-        if self.pending:
-            due.append(self._reveal_due)
+        if self.pending and not self.queue:        # a waiting line holds the reveal back
+            due.append(self._reveal_due + (ORPHAN_WAIT_S if self._orphan_wait() else 0.0))
         if self.queue and self._since:
             due.append(self._since[0] + self.min_line_s)
         if not due:
@@ -210,6 +271,8 @@ class RollingCaptions:
         if not self._undo:
             return None
         self._restore(self._undo.pop())
+        self._reveal_all()                         # the caption before it, whole
+        self.advance(force=True)
         return self.text
 
     def replace_last(self, clause: str) -> str | None:
