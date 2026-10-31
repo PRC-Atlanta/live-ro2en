@@ -3,3 +3,5 @@ nllb-200-distilled-1.3B,30,19.1,1.143,1.549
 nllb-200-3.3B,30,19.1,1.943,3.169
 gemma-4-12B-it-qat-4bit,30,19.1,1.651,2.326
 EuroLLM-22B-Instruct-2512-mlx-4bit,30,19.1,2.221,2.881
+nllb-200-distilled-1.3B,30,19.1,0.752,1.217
+gemma-4-12B-it-qat-4bit,30,19.1,0.885,1.2

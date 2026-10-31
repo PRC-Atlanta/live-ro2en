@@ -11,3 +11,5 @@ jackrabbit-ctc-lm-b8,nemo-mps-encoder,0.0353,0.104,0.195,0.208,0.558
 jackrabbit-ctc-lm,nemo-mps-encoder,0.0876,0.252,0.509,0.563,0.913
 jackrabbit-ctc-lm-boost,nemo-mps-encoder,0.1288,0.407,0.781,0.862,1.212
 parakeet-redux,file-api,0.0193,0.043,0.068,0.07,0.42
+jackrabbit-ctc-lm-b8,nemo-mps-encoder,0.0171,0.059,0.1,0.104,0.454
+parakeet-mlx,mlx,0.0069,0.041,0.059,0.066,0.416
