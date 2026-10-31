@@ -153,4 +153,5 @@ display:
 
 # Words or phrases that never reach the screen (any case, diacritics optional)
 safety:
+  filter_words: true          # the bundled blocklist.txt; the user's own words always apply
   blocklist: []

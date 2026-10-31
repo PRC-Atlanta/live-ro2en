@@ -30,6 +30,14 @@ def router(live) -> APIRouter:
     async def put_keywords(request: Request):
         return _reply(await run(live.put_keywords, await body(request)))
 
+    @r.get("/api/blocklist")
+    async def get_blocklist():
+        return await run(live.blocklist_view)
+
+    @r.put("/api/blocklist")
+    async def put_blocklist(request: Request):
+        return _reply(await run(live.put_blocklist, await body(request)))
+
     @r.get("/api/spellings")
     async def get_spellings():
         return live.spellings_view()

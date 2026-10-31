@@ -44,6 +44,7 @@ FIELDS: dict[str, dict] = {
     "live.language_mode":      {"group": "basic", "type": "enum", "choices": ["auto", "ro-en", "en-ro"], "apply": "launch"},
     "live.profile":            {"group": "basic", "type": "enum", "choices": "@profiles", "apply": "launch"},
     "live.autostart":          {"group": "basic", "type": "bool", "apply": "launch", "default": False},
+    "safety.filter_words":     {"group": "basic", "type": "bool", "apply": "now", "default": True},
     # ProPresenter
     "propresenter.enabled":    {"group": "propresenter", "type": "bool", "apply": "now"},
     "propresenter.host":       {"group": "propresenter", "type": "str", "pattern": _HOST, "apply": "now"},
@@ -489,6 +490,14 @@ class SettingsMixin:
     def user_keywords(self) -> list[str]:
         return read_lines(paths.user_keywords(self.root))
 
+    def user_blocklist(self) -> list[str]:
+        return read_lines(paths.user_blocklist(self.root))
+
+    def blocklist_view(self) -> dict:
+        """The user's words, and only the size of the bundled list: Settings never shows it."""
+        return {"bundled_n": len(read_lines(paths.resource("blocklist.txt", self.root))),
+                "user": self.user_blocklist()}
+
     def user_spellings(self) -> dict:
         return dict(self._user.get("spellings") or {})
 
@@ -515,6 +524,22 @@ class SettingsMixin:
                         "Names & words you added. Edited in Settings → Names & Spellings.")
             self._apply_lists()
         return 200, self.keywords_view()
+
+    def put_blocklist(self, body: dict) -> tuple[int, dict]:
+        """{"user": [...]} replaces the user's words to hide (the bundled list stays). The
+        pipeline reads the file for each caption, so a change applies to the next one."""
+        if "user" not in body:
+            return 200, self.blocklist_view()
+        words = body["user"]
+        if not isinstance(words, list) or len(words) > MAX_ITEMS:
+            return 400, {"error": "invalid", "detail": {"user": f"must be a list of at most {MAX_ITEMS} words"}}
+        bad = [w for w in words if clean_word(w) is None]
+        if bad:
+            return 400, {"error": "invalid", "detail": {"user": f"not a word or phrase (max {MAX_LEN} characters): {bad[:5]}"}}
+        with self._settings_lock:
+            write_lines(paths.user_blocklist(self.root), list(dict.fromkeys(clean_word(w) for w in words)),
+                        "Words to hide that you added. Edited in Settings → Names & Spellings.")
+        return 200, self.blocklist_view()
 
     def put_spellings(self, body: dict) -> tuple[int, dict]:
         """{"user": {variant: preferred}} replaces the user's preferred spellings."""

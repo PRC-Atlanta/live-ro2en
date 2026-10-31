@@ -246,6 +246,20 @@ def test_parse_terms():
 
 
 # --- the lists ----------------------------------------------------------------------------
+def test_blocklist_endpoint_and_switch(home):
+    live = make_live(home, running=True)
+    c = client(live)
+    view = c.get("/api/blocklist").json()
+    check(view, shape("/api/blocklist"))
+    assert view["bundled_n"] > 40 and view["user"] == [] and "shit" not in str(view)
+    r = c.put("/api/blocklist", json={"user": ["some word", " some word ", "another"]}, headers=ME)
+    assert r.status_code == 200 and r.json()["user"] == ["some word", "another"]
+    assert c.put("/api/blocklist", json={"user": ["ok", 3]}, headers=ME).status_code == 400
+    assert c.get("/api/blocklist").json()["user"] == ["some word", "another"]
+    r = c.put("/api/settings", json={"values": {"safety.filter_words": False}}, headers=ME)
+    assert r.status_code == 200 and live.cfg["safety"]["filter_words"] is False   # the next caption sees it
+
+
 def test_keywords_and_spellings_endpoints(home):
     live = make_live(home, running=True)
     live.engine = FakeEngine()

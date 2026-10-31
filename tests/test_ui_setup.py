@@ -47,7 +47,7 @@ def test_settings_keys_exist_in_config():
     assert len(keys) >= 15
     for k in keys:
         sec, name = k.split(".")
-        assert sec in ("live", "propresenter", "display"), k
+        assert sec in ("live", "propresenter", "display", "safety"), k
         if k != "live.autostart":                  # new in S3's defaults.yaml
             assert name in cfg[sec], k
 

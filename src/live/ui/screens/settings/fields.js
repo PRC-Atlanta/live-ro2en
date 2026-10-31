@@ -23,6 +23,8 @@ export const FIELDS = {
     { key: "live.language_mode", label: "Usual language", kind: "choice", options: MODES },
     { key: "live.profile", label: "Quality when starting", kind: "choice", options: PROFILES },
     { key: "live.autostart", label: "Start captions automatically when the app opens", kind: "toggle" },
+    { key: "safety.filter_words", label: "Hide swear words", kind: "toggle",
+      hint: "Shows *** in the captions instead. Add your own in Names & Spellings; those are always hidden." },
   ],
   propresenter: [
     { key: "propresenter.host", label: "Computer address", kind: "text", hint: "127.0.0.1 means this Mac." },

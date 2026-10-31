@@ -804,12 +804,17 @@ class PipelineMixin:
         self._write_log(rec)
 
     def _blocklist(self) -> re.Pattern | None:
-        """`safety.blocklist` (words or phrases) plus the lines of `paths.blocklist`, if set."""
+        """`safety.blocklist` (words or phrases), the lines of `paths.blocklist` if set, the
+        user's words, and the bundled blocklist.txt unless `safety.filter_words` is off."""
         safety = self.cfg.get("safety") or {}
         words = list(safety.get("blocklist") or [])
+        files = [paths.user_blocklist(self.root)]
+        if safety.get("filter_words", True):
+            files.append(paths.resource("blocklist.txt", self.root))
         f = (self.cfg.get("paths") or {}).get("blocklist")
         if f:
-            p = paths.resource(f, self.root)
+            files.append(paths.resource(f, self.root))
+        for p in files:
             if pathlib.Path(p).is_file():
                 words += [w.strip() for w in pathlib.Path(p).read_text(encoding="utf-8").splitlines()
                           if w.strip() and not w.lstrip().startswith("#")]

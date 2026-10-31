@@ -117,6 +117,11 @@ def remote_pin_file(root: pathlib.Path = REPO) -> pathlib.Path:
     return user_dir(root) / "remote_pin"
 
 
+def user_blocklist(root: pathlib.Path = REPO) -> pathlib.Path:
+    """Words the user added to the bundled blocklist.txt (they never reach the captions)."""
+    return user_dir(root) / "blocklist.txt"
+
+
 def user_keywords(root: pathlib.Path = REPO) -> pathlib.Path:
     """Names & words the user added to the bundled keywords_en.txt."""
     return user_dir(root) / "keywords_en.txt"

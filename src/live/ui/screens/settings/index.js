@@ -174,7 +174,7 @@ export function render(el, store) {
     },
 
     names() {
-      const kwMsg = note(), spMsg = note();
+      const kwMsg = note(), spMsg = note(), blMsg = note();
       const words = listEditor({ label: "Names & words", placeholders: ["e.g. Ionuț Pop"], addLabel: "Add a name or word",
         onChange: async v => { kwMsg.say("Saving…"); const n = saveNote(await call("PUT", "keywords", { user: v })); kwMsg.say(n.text, n.tone); } });
       const spell = listEditor({ label: "Preferred spellings", pair: true, placeholders: ["Heard as", "Write as"], addLabel: "Add a spelling",
@@ -183,6 +183,8 @@ export function render(el, store) {
           const n = saveNote(await call("PUT", "spellings", { user: Object.fromEntries(v) }));
           spMsg.say(n.text, n.tone);
         } });
+      const hide = listEditor({ label: "Words to hide", placeholders: ["e.g. a word or phrase"], addLabel: "Add a word to hide",
+        onChange: async v => { blMsg.say("Saving…"); const n = saveNote(await call("PUT", "blocklist", { user: v })); blMsg.say(n.text, n.tone); } });
       // GET/PUT keywords and spellings: {bundled, user, session}; only the user's list is edited here
       const kwBuilt = h("span.fx-hint"), spBuilt = h("span.fx-hint");
       const builtIn = (n, what) => (n ? `Also uses ${n} ${what} that come with the app.` : "");
@@ -193,7 +195,14 @@ export function render(el, store) {
           words.el, kwBuilt, kwMsg),
         h("div.fx-sec", h("span.fx-label", "Preferred spellings"),
           h("p.fx-text", "When a word is heard one way, write it another way, e.g. Iisus → Isus."),
-          spell.el, spBuilt, spMsg));
+          spell.el, spBuilt, spMsg),
+        h("div.fx-sec", h("span.fx-label", "Words to hide"),
+          h("p.fx-text", "Words that must never appear in the captions; they show as ***. Whole words, in either language."),
+          hide.el, blMsg));
+      call("GET", "blocklist").then(r => {
+        if (r.ok) hide.set(r.data?.user || []);
+        else blMsg.say(r.notBuilt ? `Words to hide: ${NOT_BUILT.toLowerCase()}` : "Couldn't load the list.", "warn");
+      });
       call("GET", "keywords").then(r => {
         if (r.ok) { words.set(r.data?.user || []); kwBuilt.textContent = builtIn(r.data?.bundled?.length, "names and words"); }
         else kwMsg.say(r.notBuilt ? `Names & words: ${NOT_BUILT.toLowerCase()}` : "Couldn't load the list.", "warn");

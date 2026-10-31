@@ -333,7 +333,7 @@ def test_full_view_does_only_what_the_live_screen_does(full):
     own = {"Origin": BASE}
     for method, path in [("POST", "/api/shutdown"), ("POST", "/api/unload"), ("POST", "/api/rehearsal"),
                          ("GET", "/api/settings"), ("POST", "/api/import_config"), ("POST", "/api/remote/pin"),
-                         ("PUT", "/api/keywords"), ("GET", "/api/setup"), ("POST", "/api/export")]:
+                         ("PUT", "/api/keywords"), ("PUT", "/api/blocklist"), ("GET", "/api/setup"), ("POST", "/api/export")]:
         r = client.request(method, "/remote/app" + path, json={}, headers=own)
         assert r.status_code == 403, (method, path, r.status_code)
     assert client.get("/remote/app/api/terms").status_code == 200

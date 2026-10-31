@@ -1,0 +1,67 @@
+# Words the captions never show: each match becomes ***. Whole words, any case, diacritics optional.
+# Turned on and off by Settings → Basic → Hide swear words. Users add their own in Settings →
+# Names & Spellings (Words to hide).
+#
+# Left out on purpose, because sermons and Bible readings use them: hell, damn, damnation, ass,
+# bastard, whore, harlot, piss, cock (the rooster), drac, dracul, curvă, curvie, curvar, rahat.
+# Keep it that way: a *** in the middle of a verse is worse than a word nobody expected.
+
+# English
+asshole
+assholes
+bitch
+bitches
+bullshit
+cunt
+cunts
+dickhead
+fag
+faggot
+faggots
+fuck
+fucked
+fucker
+fuckers
+fuckin
+fucking
+fucks
+goddamn
+goddamned
+goddamnit
+motherfucker
+motherfuckers
+motherfucking
+nigga
+nigger
+niggers
+pussy
+shit
+shithead
+shits
+shitty
+slut
+sluts
+twat
+wanker
+
+# Romanian
+bulangiu
+cacat
+coaie
+coaiele
+fut
+fute
+futu
+futut
+fututi
+labagiu
+muie
+muist
+muisti
+pizda
+pizdei
+pizdele
+poponar
+poponari
+pula
+pulii

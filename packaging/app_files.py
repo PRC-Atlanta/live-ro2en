@@ -21,12 +21,13 @@ import sys
 #   glossary.csv            translate.Glossary / preflight (defaults.yaml paths.glossary)
 #   keywords_en.txt         bundled names & words (Settings → Names & Spellings, src/live/gate.py)
 #   terms.txt               STT hot words (stt_run.terms, defaults.yaml paths.terms)
+#   blocklist.txt           words the captions never show (src/live/pipeline.py)
 #   requirements/models.lock.txt   model pins (src/model_lock.py), read by the first-run download
 #   data/lexicon/*.txt      word lists of the confidence gate (src/live/gate.py)
 #   data/bible_books.csv    Bible book names (src/live/scripture.py)
 #   data/idioms.csv         church and everyday idioms injected into the prompt (src/live/translate.py)
 #   data/bible/*.tsv.gz     verse texts and word lexicon (src/live/verses.py, scripts/fetch_bible.py)
-DATA = ["defaults.yaml", "glossary.csv", "keywords_en.txt", "terms.txt",
+DATA = ["defaults.yaml", "glossary.csv", "keywords_en.txt", "terms.txt", "blocklist.txt",
         "requirements/models.lock.txt", "data/lexicon/ro.txt", "data/lexicon/en.txt",
         "data/bible_books.csv", "data/idioms.csv", "data/bible/verses.tsv.gz", "data/bible/lexicon.tsv.gz"]
 SKIP_PARTS = {"__pycache__", ".pytest_cache", "tests"}

@@ -106,6 +106,35 @@ def test_blocklist_file_and_phrases(tmp_path):
     assert live.history[-1]["translation"] == "A *** here, a badword there"   # the log has what was shown
 
 
+def test_bundled_list_hides_swearing_in_both_languages(tmp_path):
+    live = _live(tmp_path, translate=lambda t, *a, **k: "What the FUCK, zise el, pulă și căcat")
+    live._handle(_clause(1, "Frați și surori, astăzi citim."))
+    live.caps.flush()
+    assert live.caps.text.replace("\n", " ") == "What the ***, zise el, *** și ***"
+
+
+def test_bundled_list_leaves_bible_words_alone(tmp_path):
+    text = ("hell damn damnation ass bastard whore harlot cock drac dracul curvă curvie iad "
+            "Dick shitake assembly grasshopper")
+    live = _live(tmp_path)
+    assert P2.mask(text, live._blocklist()) == (text, 0)
+
+
+def test_filter_switch_keeps_the_users_own_words(tmp_path, monkeypatch):
+    live = _live(tmp_path, translate=lambda t, *a, **k: "shit and rubbish")
+    (tmp_path / "blocklist.txt").write_text("shit\n", encoding="utf-8")
+    monkeypatch.setattr(sys.modules[Live.__module__], "ROOT", tmp_path)
+    mine = P2.paths.user_blocklist(tmp_path)
+    mine.parent.mkdir(parents=True, exist_ok=True)
+    mine.write_text("# mine\nrubbish\n", encoding="utf-8")
+    live.cfg["safety"] = {"filter_words": False}
+    live._handle(_clause(1, "Frați și surori, astăzi citim."))
+    live.caps.flush()
+    assert live.caps.text.replace("\n", " ") == "Shit and ***"
+    live.cfg["safety"] = {"filter_words": True}
+    assert P2.mask("shit and rubbish", live._blocklist())[1] == 2
+
+
 # --- pace and backlog ---------------------------------------------------------------------
 def test_pace_and_backlog_state(tmp_path):
     live = _live(tmp_path)

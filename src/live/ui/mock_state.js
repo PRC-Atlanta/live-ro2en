@@ -98,6 +98,7 @@ const MOCK_FIELDS = {
   "live.language_mode": { group: "basic", type: "enum", choices: ["auto", "ro-en", "en-ro"], apply: "launch" },
   "live.profile": { group: "basic", type: "enum", choices: ["fast", "quality"], apply: "launch" },
   "live.autostart": { group: "basic", type: "bool", apply: "launch", default: false },
+  "safety.filter_words": { group: "basic", type: "bool", apply: "now", default: true },
   "propresenter.enabled": { group: "propresenter", type: "bool", apply: "now" },
   "propresenter.host": { group: "propresenter", type: "str", apply: "now" },
   "propresenter.port": { group: "propresenter", type: "int", min: 1, max: 65535, apply: "now" },
@@ -136,7 +137,7 @@ const MOCK_FIELDS = {
   "ui.show_counts": { group: "advanced", type: "bool", apply: "now", default: false },
 };
 const MOCK_DEFAULTS = {
-  "live.input_device": null, "live.input_gain_db": 0, "live.input_gain_auto": true, "live.input_gain_target_db": -20, "live.language_mode": "auto", "live.profile": "quality", "live.autostart": false,
+  "live.input_device": null, "live.input_gain_db": 0, "live.input_gain_auto": true, "live.input_gain_target_db": -20, "live.language_mode": "auto", "live.profile": "quality", "live.autostart": false, "safety.filter_words": true,
   "propresenter.host": "127.0.0.1", "propresenter.port": 50001, "propresenter.message_id": "Live Translation",
   "propresenter.token_name": "Text", "propresenter.max_lines": 2, "propresenter.max_chars_per_line": 42,
   "propresenter.stage_message": false, "live.vad_threshold": 0.5,
@@ -386,6 +387,15 @@ export async function mockApi(method, path, body = {}) {
       if (words.some(w => clean(w) === null)) return status(400, { error: "invalid", detail: { user: "not a word or phrase (max 120 characters)" } });
       D.keywords = [...new Set(words.map(clean))]; B.save();
       return mockApi("GET", "keywords");
+    }
+    case "GET blocklist": return status(200, { bundled_n: 56, user: [...(D.blocklist || [])] });
+    case "PUT blocklist": {
+      if (!("user" in body)) return mockApi("GET", "blocklist");
+      const words = body.user;
+      if (!Array.isArray(words) || words.length > 500) return status(400, { error: "invalid", detail: { user: "must be a list of at most 500 words" } });
+      if (words.some(w => clean(w) === null)) return status(400, { error: "invalid", detail: { user: "not a word or phrase (max 120 characters)" } });
+      D.blocklist = [...new Set(words.map(clean))]; B.save();
+      return mockApi("GET", "blocklist");
     }
     case "GET spellings": return status(200, { bundled: { ...BUNDLED_SPELLINGS }, user: { ...D.spellings }, session: {} });
     case "PUT spellings": {
