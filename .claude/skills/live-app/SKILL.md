@@ -17,14 +17,26 @@ check instead of writing ad-hoc curl/Python. Everything below is already worked 
    `http://127.0.0.1:8765/ui/?mock=live` (go to `/ui/?mock=…` directly: `/` redirects and drops
    the query). Without `?mock` the page drives the real service.
 
-## Launch (repo run, the normal way for now)
+## Launch: the newest copy
 
-Start it in a Terminal panel tab so it outlives this conversation and the user can see it:
-`mcp__terminal__run_in_terminal` with
+Two copies can be on the Mac: this clone and the installed `/Applications/Live RO2EN.app`.
+Run `python3 scripts/newest_copy.py` first: it matches the app's bundled code against the
+clone's git history (the app carries no commit id) and ends with `use: clone` or `use: app`
+(same code → the app; it also says when the clone is behind origin: offer a pull, don't do
+it unasked).
+
+**Clone:** start it in a Terminal panel tab so it outlives this conversation and the user can
+see it: `mcp__terminal__run_in_terminal` with (`<repo>` = this clone's root, written out)
 
 ```
-cd "/Users/bentarcau/Code/Live RO2EN" && exec .venv-mt/bin/python src/live/app.py
+cd "<repo>" && LIVE_HOME="$HOME/Library/Application Support/Live RO2EN" LIVE_LOG_DIR="$PWD/logs" exec .venv-mt/bin/python src/live/app.py
 ```
+
+`LIVE_HOME` shares the installed app's models and settings (a clone that never ran Setup
+otherwise stops at `needs_setup`, "models missing"); `LIVE_LOG_DIR` keeps logs in the repo's
+`logs/`. Drop both only if that Application Support folder doesn't exist.
+
+**App:** `open -a "Live RO2EN"` (own port, logs in `~/Library/Logs/Live RO2EN`).
 
 - Add `--autostart` only if the user wants captions to start by themselves; without it the app
   loads the models and waits for Start (the big button, or `livectl.py post start`).
@@ -78,8 +90,9 @@ State fields worth knowing (`get state`): `phase`, `running`, `profile`, `mode`,
 on the caption screen), `lines` (recent phrases with latency), `pace.state`
 (`ok|slow|behind`), `backlog.n`, `warnings`, `pp` (ProPresenter).
 
-Settings live in `user/settings.yaml` for repo runs (changed keys only; gain, input device,
-ProPresenter off at the moment). Defaults: `config.yaml` (repo) = `defaults.yaml` (app); tests
+Settings live in `~/Library/Application Support/Live RO2EN/settings.yaml`, shared by the app
+and clone runs launched with `LIVE_HOME` (changed keys only); `user/settings.yaml` only for a
+clone run without it. Defaults: `config.yaml` (repo) = `defaults.yaml` (app); tests
 keep their shared sections identical, so change both.
 
 ## After a service

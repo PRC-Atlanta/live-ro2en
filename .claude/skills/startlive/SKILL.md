@@ -10,17 +10,31 @@ screens); still treat a running service as theirs: never stop, restart or change
 without being asked. The `live-app` skill (`.claude/skills/live-app/SKILL.md`) has the
 details of the server, the logs and known behaviour; read it if you need more than this.
 
+`<repo>` below is this clone's root, the session's working directory; write it out as an
+absolute path in commands.
+
 ## 1. Launch
 
 1. `python3 scripts/livectl.py url`. If it prints a URL, the app is already running: do not
-   start a second one; give the user the addresses (step 4) and go on to step 1b.
-2. Otherwise start it in a Terminal panel tab (`mcp__terminal__run_in_terminal`,
-   title `Live RO2EN app`):
-   `cd "/Users/bentarcau/Code/Live RO2EN" && exec .venv-mt/bin/python src/live/app.py`
-   (add `--autostart` only if the user asked for captions to start by themselves).
-3. Wait until ready, one Bash call:
+   start a second one; give the user the addresses (step 5) and go on to step 1b.
+2. Otherwise pick the newest copy: `python3 scripts/newest_copy.py`. It matches the installed
+   app's code (`/Applications/Live RO2EN.app`) against the clone's git history and ends with
+   `use: clone` or `use: app`. Tell the user the verdict in one line; if it says the clone is
+   behind origin, mention that `git pull` would update it (don't pull unasked).
+3. Start that copy:
+   - **clone:** in a Terminal panel tab (`mcp__terminal__run_in_terminal`, title
+     `Live RO2EN app`):
+     `cd "<repo>" && LIVE_HOME="$HOME/Library/Application Support/Live RO2EN" LIVE_LOG_DIR="$PWD/logs" exec .venv-mt/bin/python src/live/app.py`
+     `LIVE_HOME` makes it use the installed app's models and settings (input device, gain,
+     names); without it a clone that never ran Setup stops at `needs_setup` ("models
+     missing"). `LIVE_LOG_DIR` keeps the service logs in the repo's `logs/`. Drop both only if
+     that Application Support folder doesn't exist. Add `--autostart` only if the user asked
+     for captions to start by themselves.
+   - **app:** `open -a "Live RO2EN"`. It picks its own port and logs to
+     `~/Library/Logs/Live RO2EN`; `livectl.py` finds both.
+4. Wait until ready, one Bash call:
    `for i in $(seq 1 90); do python3 scripts/livectl.py get state 2>/dev/null | grep -Eq '"phase": "(ready|listening|captioning)"' && break; sleep 2; done; python3 scripts/livectl.py status; python3 scripts/livectl.py url`
-4. **As soon as the server answers, tell the user its addresses, before anything else**, one
+5. **As soon as the server answers, tell the user its addresses, before anything else**, one
    short message (the user asked for this every time). Use the URL the last command printed
    (the port can differ; never assume 8765):
    - Control page: `<url>/ui/`
@@ -33,8 +47,10 @@ details of the server, the logs and known behaviour; read it if you need more th
 ## 1b. Start the reference recording
 
 In a second Terminal panel tab (title `Service recording`), on the app's input (the `input:`
-line of `livectl.py status`):
-`cd "/Users/bentarcau/Code/Live RO2EN" && .venv-nemo/bin/python scripts/record_input.py --rate 16000 --device "<input device>"`
+line of `livectl.py status`; `None` means the system default, whose name
+`.venv-mt/bin/python -c "import sounddevice as s; print(s.query_devices(kind='input')['name'])"`
+prints). This runs from the clone whichever copy is captioning:
+`cd "<repo>" && .venv-nemo/bin/python scripts/record_input.py --rate 16000 --device "<input device>"`
 It records the raw input (before the app's gain) to `logs/recordings/<date>_<time>.wav`,
 ~2 MB a minute, alongside the app (macOS lets both read the device). It is only for reference:
 after the service it is cut down to short clips (step 4) and the full file deleted.
@@ -49,7 +65,7 @@ below -3 dB. Peaks at 0 dB = clipping → tell the user and suggest a lower
 
 Arm `Monitor` with
 
-- command: `cd "/Users/bentarcau/Code/Live RO2EN" && python3 scripts/livectl.py monitor 60`
+- command: `cd "<repo>" && python3 scripts/livectl.py monitor 60`
 - description: `Live RO2EN session`
 - timeout_ms: `1800000` (the maximum)
 

@@ -97,6 +97,23 @@ def test_postedit_ro():
     assert postedit("Iisus i-a zis: Eu sunt calea. Şi viaţa.", "ro") == "Isus i-a zis: Eu sunt calea. Și viața."
 
 
+def test_nllb_amen_stays_amin():
+    import types
+    from live.translate import NLLBTranslator
+
+    def fake(decoded):                      # NLLB without the model: decode returns `decoded`
+        tr = NLLBTranslator.__new__(NLLBTranslator)
+        hyp = types.SimpleNamespace(hypotheses=[["ron_Latn", "x"]])
+        tr.tr = types.SimpleNamespace(translate_batch=lambda *a, **k: [hyp])
+        tr.tok = types.SimpleNamespace(encode=lambda t: [], convert_ids_to_tokens=lambda ids: [],
+                                       convert_tokens_to_ids=lambda t: [], decode=lambda *a, **k: decoded)
+        tr.beam = 2
+        return tr
+    out = fake("Să ne rugăm pentru ei. Amintește-mi.").translate("Let's pray for them. Amen.", "en", "ro")
+    assert out == "Să ne rugăm pentru ei. Amin."
+    assert fake("Amintește-mi mâine.").translate("Remind me tomorrow.", "en", "ro") == "Amintește-mi mâine."
+
+
 def test_profiles_override_live_settings():
     import types, yaml
     from live.app import Live

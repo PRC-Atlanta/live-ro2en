@@ -33,7 +33,8 @@ import bench  # noqa: E402  (WAV helpers; no third-party imports at module level
 
 REPO = HERE.parent
 RECORDINGS = REPO / "logs" / "recordings"
-LOG_DIRS = [REPO / "logs" / "services", pathlib.Path.home() / "Library" / "Logs" / "Live RO2EN" / "services"]
+LOG_DIRS = [REPO / "logs" / "services", pathlib.Path.home() / "Library" / "Logs" / "Live RO2EN" / "services",
+            pathlib.Path.home() / "Library" / "Application Support" / "Live RO2EN" / "logs" / "services"]   # repo run with LIVE_HOME
 WORTH = {"low_confidence", "mt_overlong", "mt_echo", "mt_loop", "error", "empty_mt"}   # not 'empty_stt': silence
 
 

@@ -33,7 +33,8 @@ import urllib.error
 import urllib.request
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
-LOG_DIRS = [REPO / "logs" / "services", pathlib.Path.home() / "Library" / "Logs" / "Live RO2EN" / "services"]
+LOG_DIRS = [REPO / "logs" / "services", pathlib.Path.home() / "Library" / "Logs" / "Live RO2EN" / "services",
+            pathlib.Path.home() / "Library" / "Application Support" / "Live RO2EN" / "logs" / "services"]   # repo run with LIVE_HOME
 
 
 # --- the running app ------------------------------------------------------------------------

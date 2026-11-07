@@ -27,6 +27,10 @@ NLLB_CODES = {"ro": "ron_Latn", "en": "eng_Latn"}
 # Post-edits for the target language (whole words). NLLB writes the Orthodox "Iisus";
 # Romanian evangelical usage (and Cornilescu) is "Isus".
 POSTEDIT = {"ro": {"Iisus": "Isus", "Iisuse": "Isuse", "lui Iisus": "lui Isus"}, "en": {}}
+# NLLB ignores the glossary: a closing "Amen." comes out as «Amintește-mi.» (remind me;
+# 2026-11-01, 4× in one sermon). Replaced only when the English said Amen.
+_AMEN_EN = re.compile(r"\bamen\b", re.IGNORECASE)
+_AMEN_RO_WRONG = re.compile(r"\bAminte[șş]te-mi\b|\bAminti[țţ]i-v[ăa]\b", re.IGNORECASE)
 # Archaic English the translator falls back on for biblical register: modern forms only
 # (case kept). Verb endings like "knoweth" are left to the prompt.
 MODERN_EN = {"thee": "you", "thou": "you", "ye": "you", "thy": "your", "thine": "your",
@@ -329,6 +333,8 @@ class NLLBTranslator:
         self.last_truncated = len(res[0].hypotheses[0]) >= 256
         out = res[0].hypotheses[0][1:]
         out = self.tok.decode(self.tok.convert_tokens_to_ids(out), skip_special_tokens=True).strip()
+        if tgt == "ro" and _AMEN_EN.search(text):
+            out = _AMEN_RO_WRONG.sub("Amin", out)
         return postedit(out, tgt)
 
 
