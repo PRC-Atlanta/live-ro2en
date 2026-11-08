@@ -226,3 +226,24 @@ def test_a_place_name_is_mentioned_only_as_a_whole():
     assert N.mentioned("Doamne, ajută-ne să mergem mereu în sus.", places) == []
     assert N.mentioned("frații din Vicovu de Sus vă salută", places) == ["Vicovu de Sus"]
     assert "Fratele" not in N.candidates(["Fratele Emanuel Pop"])
+
+
+# 2026-11-08: 6 of 14 repairs were wrong, with today's names entered
+def test_words_and_other_people_are_not_repaired_into_saved_names(known):
+    given = gate.lexicon()["names"]
+    names = NAMES + ["Fănel Iliescu", "Cristina Pop", "Ioana Rus", "Andrei Coman", "Mihai"]
+    for heard in ("În numele Tatălui, Tată, Fiule și Duhul Sfânt, amin.",   # the Trinity
+                  "avem literatură creștină la intrare.",                     # a word's case form
+                  "fratele Ioan ne-a citit.",                                 # Ioan is not Ioana
+                  "fratele Andreea a spus",                                   # no man's name for sora's
+                  "și sora Andrei, împreună cu familia"):
+        assert N.repair_ro(heard, names, known, given) == (heard, []), heard
+
+
+def test_a_name_after_a_cue_keeps_its_sex_but_surnames_in_a_are_repaired(known):
+    given = gate.lexicon()["names"]
+    names = ["Cristina Pop", "Cristian Rus", "Dragoș Puha"]
+    assert N.repair_ro("fratele Cristin a vorbit", names, known, given)[0] == "fratele Cristian a vorbit"
+    assert "Cristian " not in N.repair_ro("sora Cristan a vorbit", names, known, given)[0]
+    assert N.repair_ro("pentru fratele Puma, te rugăm", names, known, given)[0] == \
+        "pentru fratele Puha, te rugăm"

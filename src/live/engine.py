@@ -83,7 +83,13 @@ def emit(obj) -> None:
 # (the Romanian Bible's translator) was heard as "Cornivescul" on 2026-10-25 evening.
 CHURCH_PHRASES = ["slăvit să fie Domnul", "slăviți să fie", "lăudat să fie Domnul", "frați și surori",
                   "fraților și surorilor", "vrednic de laudă", "Peniel", "cetățuia mea", "baza de misiune",
-                  "Cornilescu"]
+                  "Cornilescu",
+                  # 2026-11-08: «Preaibiților» → "For the prophets", «cerul slavei» → "of slaves", «prisosul
+                  # inimii» → "prison", «Șehova», «cam lădiță» (mlădiță), «vită» (viță), «corpul» (corul),
+                  # «ocupăm lucrurile» (locurile), English names in announcements
+                  "Preaiubiților", "iubiții mei", "cerul slavei", "prisosul inimii", "Iehova", "mlădiță",
+                  "viță roditoare", "corul bisericii", "să vă ocupați locurile", "să ne ocupăm locurile",
+                  "Samaritan's Purse", "Operation Christmas Child", "shoebox", "hallway", "fundraiser"]
 
 class NemoSTT:
     """NeMo hybrid TDT/CTC model called directly: preprocessor + encoder on the Apple GPU

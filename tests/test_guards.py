@@ -442,3 +442,14 @@ def test_te_rog_frumos_is_please():
 def test_ne_glued_after_a_hyphen_is_split(text, expect):
     import gate
     assert G.split_ne(text, gate.lexicon()["ro"]) == expect
+
+
+# 2026-11-08: «13-27 noiembrie» on screen as "November 1327", «noiembrie 21… 21» as "November 2021"
+def test_days_glued_next_to_a_month():
+    assert G.month_days("pe data de noiembrie 1327. și", "pe data de noiembrie 13.27. și")[0] == \
+        "pe data de noiembrie 13-27. și"
+    assert G.month_days("pe data de noiembrie 1327.")[0] == "pe data de noiembrie 13-27."
+    assert G.month_days("în noiembrie 2021.", "Apoi, noiembrie 21.")[0] == "în noiembrie 21."
+    assert G.month_days("în noiembrie 2021.", "în noiembrie 2021.")[0] == "în noiembrie 2021."
+    assert G.month_days("în decembrie 2026.")[0] == "în decembrie 2026."
+    assert G.month_days("cu 1520 mai mult")[0] == "cu 1520 mai mult"

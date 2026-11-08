@@ -216,3 +216,14 @@ def test_counts_are_not_a_verse(m):
     out = read(m, ["planul pe care eu o am cu viața ta.",
                    "și am zis, Doamne, da, nu-i mai bine ca să. vină o dată pe an sau de două ori sau de trei ori pe an."])
     assert out[-1] is None
+
+
+# 2026-11-08: the speaker's paraphrase and the published verse both on screen
+def test_words_around_a_verse_that_say_it_again_are_dropped():
+    import translate as T
+    cap = "In nothing be anxious, but in everything, by prayer and petition"
+    assert T.around_verse("Do not be anxious about anything", cap) == ""
+    assert T.around_verse("we were hoping", "But we were hoping that it was he who would redeem Israel.") == ""
+    assert T.around_verse("păcatele ei", "De aceea îți spun: Păcatele ei, care sunt multe, sunt iertate") == ""
+    assert T.around_verse("He", "Whoever tends the fig tree shall eat its fruit.") == ""
+    assert T.around_verse("And now let me tell you a story", cap) == "And now let me tell you a story"

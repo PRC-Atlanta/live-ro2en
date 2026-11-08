@@ -85,6 +85,15 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   2027. Aur Gold. Goldh, Age, în Dallas» (unreadable); and «la părtășie» heard «părtăși» →
   "at the **defense**". A **standing** names list (local places, a park
   Hill Park; members; ministries), not only today's names, would fix most of these.
+- **More evidence (2026-11-08 morning, log `2026-11-08_090143`, P2): the same announcement words
+  as on 11-01, misheard the same way.** 11:08:35-11:08:49 «Samaritan's Purse, Operation Christmas
+  Child, shoebox-urile» → "**Ser Spars. Stens Spst, Aon Christmas Child, The Shubaks Ghes**";
+  «în **hallway** B3» → "in **Hollywood** B3" (11-01: "Hollywood" too); «balanța la **loan**» →
+  "the balance at **Lon**" (11-01: «Lan»); 10:57:58 «first baby» → "the **Forst Baby** family";
+  11:06:13 «Fund raser»; 11:06:53 the group «Talantul în negoț» → "the talent for business".
+  A standing list (fundraiser, bake sale, hallway, loan, shoebox, Samaritan's Purse, Operation
+  Christmas Child, B3, the church's group names) for the decoder boost and the glossary would end
+  the repeats; they come every few weeks.
 
 ## 3. Bible references: show the published verse — `done` — stream D: announced references tell Gemma the verse (step 1); stream H: verses recognised by their words are captioned with WEB / Cornilescu (step 2) · 2026-10-25: paraphrase not spliced, short verse words held, a verse matched one piece late redoes the previous caption, trailing mis-heard verse words dropped
 
@@ -196,6 +205,16 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   → "chapter 15, **verse 11**" (an invented reference); «Moise și la **Ron**» (Aaron) → "Ron".
   Book names said in the plural/inflected form (Numeri/număr) and well-known verse words
   (mlădiță, vier, viță) could feed the verse matcher's book table and the decoder boost.
+- **Seen again after done (2026-11-08 morning, log `2026-11-08_090143`, P2): verses doubled or
+  spliced 10 times** (the full list is in "Rest of Sunday 2026-11-08" below). EN→RO: 10:34:30 Luke 7:47
+  «…păcatele ei, **De aceea îți spun: Păcatele ei**…»; 10:43:08 Eph 4:30 «pecetluiți pentru ziua
+  răscumpărării» twice; 10:45:24 John 8:11 NLLB's line then the Cornilescu with a stray «”)». RO→EN:
+  11:43:06 Prov 27:18 "who takes care of a fig tree. Whoever tends the fig tree shall eat its fruit.
+  **He** And there is"; 11:53:00 Luke 24:17 "What kind of words are these that to them, "What are you
+  talking about"; 11:54:02 Luke 24:21 "we were hoping, But we were hoping"; 11:58:43 Phil 4:6 "Do not be
+  anxious about anything, In nothing be anxious". Friday 2026-11-06 too (19:56:57 Mark 6:41, 20:38:36
+  Ps 23:4). Missed matches that left Scripture wrong: 09:26:42-48 Luke 17:20-21 → "will not strike
+  it… they are in joy"; 10:58:41-43 Gen 22:17 «sămânța ta va umple pământul» → "**a little land**".
 
 ## 4. Give Gemma its own previous translations as context — `done` — stream D: Gemma sees its own previous (source, translation) pairs and continues cut sentences
 
@@ -379,6 +398,13 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   doesn't have enough angels) → "Not that God. | **are** sufficient angels in heaven": the
   negation lost across the cut. **Change:** compare negations per clause (split on the
   recogniser's periods and commas), not per piece; hold a piece that ends on «Nu că + subject».
+- **More evidence (2026-11-08 morning, log `2026-11-08_090143`, P2): dates and amounts glued.**
+  11:06:40 «pe data de 13-27 noiembrie» → "on November **1327**"; 11:07:57 / 11:08:02 «în noiembrie
+  21… 21» → "in November **2021**"; 10:28:17 EN→RO "between a hundred and hundred and fifty verses" →
+  «între **100 și 100 și 50**»; 11:51:45 «o sută și o mie de prieteni» → "**100,000** friends"; 10:28:54
+  "now that I'm fifty years on the path" → «acum că **am 50 de ani**» (his age, not his years in faith).
+  A day-month range («13-27 noiembrie» → "November 13-27") and a day repeated after the month need a
+  rule before the digits are joined; "a hundred and fifty" should become 150 before NLLB.
 
 ## 6. Words that are also names — `done` — stream D: today's names and glossary names are kept as written · 2026-10-25: «Fratele» alone no longer brings in saved names; «fratele Ilie Puha» kept; Iacov = Jacob in Old Testament context
 
@@ -520,6 +546,20 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   fruit of the vine; cercetare / a se cerceta = examination / to examine oneself; cursă = snare;
   îndurare = mercy; mijlocire = intercession; rugăciune de cauze / cauzele = prayer requests;
   prompt line: «frați» alone = brothers, "brothers and sisters" only for «frați și surori».
+- **More evidence (2026-11-08 morning, log `2026-11-08_090143`, P1): heard right, translated wrong,
+  in Scripture and in the sermon's point.** 11:53:45 «îngrijorarea… **a stins** cea mai frumoasă
+  speranță» (put out) → "**became** the most beautiful hope" (reversed); 11:54:12 Luke 24:25 «O,
+  **nepricepuților**!» (O foolish ones) → "Oh, you **unrighteous**!" (Jesus' words); 11:59:36 Col 2:22
+  «trec odată cu **întrebuințarea** lor» (perish with use) → "pass away with their **madness**";
+  11:44:15 the sermon's third point «nu vă îngrijorați **trăind**» → "do not worry by **betraying**";
+  09:28:05 / 09:28:17 «**rodire**» → "be born" / "a birth"; 09:08:04 «familiile **rânduite**» →
+  "**persecuted**"; 09:23:26 «**închinarea**» → "humility"; 11:09:57 «**am convenit**» (we agreed) → "it is
+  **convenient**"; 11:57:07 «**lasă de dorit**» → "let us leave them alone"; 11:48:16-18 «alegeri»
+  (the elections) → "choices" ×2; 10:08:34 / 11:15:13 «fanfara» → "fanfare" ×2; 11:29:57 «fratele **Ilie**»
+  → "brother **Elijah**" again (idea 6). **Rows:** a stins = put out / quenched; nepricepuților = foolish
+  ones; întrebuințare = use; trăind = living; rodire = bearing fruit; rânduit = scheduled; închinare =
+  worship; am convenit = we agreed; lasă de dorit = leaves much to be desired; alegeri (with politics) =
+  elections; fanfara = the brass band.
 
 ## 10. Empty-phrase fallback misses short Romanian words — `done` — stream B
 
@@ -568,6 +608,13 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   frumos" = "we humbly pray", "fiorul Duhului" = "the touch of the Spirit", "slăvit să fie" =
   "praise be"…; one rule for addressing God (always You/Your, or always you/your).
 - **Effort:** small; collect idioms as they appear.
+- **More evidence (2026-11-08 morning, log `2026-11-08_090143`, P3): the wrong person.** Capital
+  He for something that is not God: 11:37:12 worry «așa se joacă cu noi» → "that is how **He** plays
+  with us"; 09:11:12 the preacher → "**He** says **He** is speaking". NLLB (EN→RO) makes the male
+  preacher feminine again: 10:38:35 «fii **atentă**», 10:42:30 «nu te lăsa **copleșită**», 10:55:35
+  "God was proud of him" → «**eram mândră** de el» (Friday 2026-11-06: «sinceră», «ascultătoare»,
+  «frustrată», «uimită»). Prompt line: capital He/You only when the referent is God; NLLB: prefer
+  the masculine (or a speaker setting) for first-person adjectives.
 
 ## 12. Language detection: check the Romanian recogniser before switching — `done` — stream B: the Romanian transcript as a second vote, English heard only by Parakeet translated, length floor back home
 
@@ -852,6 +899,15 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   blueving, Hed, wy). The other way, 17:24:22 «Ce este credința?» was taken as English and
   shown untranslated. **Change:** the gate drops a piece with ≥2 non-lexicon tokens when it
   has under ~8 words, whatever the share.
+- **More evidence (2026-11-08 morning, log `2026-11-08_090143`, P2): 7 garbage captions shown.**
+  English sermon, the Romanian aside heard as English-ish names: 10:29:26 «Hens, Fages, Brad, Aurelio
+  Ghems, Twi Streets…» → «Găinile, Fages, Brad…»; 10:42:36 «Gaz, Grace Mercy, Many Times, World.»;
+  10:52:07 «Nexthe, din World, Ine Bichon de So Gain.». Romanian blessing: 10:58:02 «m-a G, Manor» →
+  "I am Manor"; 10:58:15 «Oh Singham. Mega Gy, Menor, Okingham, și Dumnezeu să binecuvinteze…» (the
+  clean second half let the first through: gate per clause). Song tails: 10:19:18 «învintez acest
+  copil» → "I am **winning** this child"; 10:27:07 «Media de post, pictură» → "Post media, painting.".
+  Change: a clause with ≥ 2 capitalised tokens that are in neither lexicon nor today's names is
+  dropped, even when the rest of the piece is clean.
 
 ## 18. Songs: don't caption garbled lyrics — `done` — stream C: Song key; automatic detection available but off (no measurable gain on the bench) · 2026-10-25: an «odd capitalised words» gate was tried and dropped (it passed the garbled song, "Baba" is a known name, and blocked a real list of names)
 
@@ -1190,6 +1246,18 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   one surname respelling (3×) was a real fix. Add to the change above: never repair a
   word in the Romanian lexicon or a place-name prefix (Târgu, Satu, Baia, Câmpulung…), and
   bench repairs on today's log: today 1 right kind vs 8 wrong.
+- **Seen again after done (2026-11-08 morning, log `2026-11-08_090143`, P1): 14 repairs, 6 wrong,
+  with today's names entered** (from `names_fixed`; the live notes blamed the recogniser for two of
+  them, but the recogniser was right). 11:04:13 «Tată, **Fiule** și Duhul Sfânt» → «Tată, **<name>** și
+  Duhul Sfânt» → "Father, **<name>** and the Holy Spirit" (the Trinity); 09:27:05 «literatură
+  **creștină**» → «Cristina» → "**Cristina's** literature" (a lexicon word); 11:07:41 an engagement
+  announcement, «fratele **<man's name>** … cu sora **<woman's name>**» → each repaired into a saved name of the
+  other sex → "**brother <woman's name>** … **Sister <man's name>**"; 09:28:29 «fratele **Ioan**» → a woman's
+  saved name; 10:27:31 «May» → «Mihai» (inside garbage). Right ones: a surname respelled ×3, a first
+  name's capital ×2, a first name to the family's spelling ×3. **Change (all three are in the 11-01 entry,
+  still not done):** never repair a word that is in the Romanian lexicon (fiule, creștină); never
+  repair a common first name (Ioan, Michael, Nadia) into a different one; never cross sex (fratele →
+  female name, sora → male name, or a man's name → a woman's).
 
 ## 27. Bench on the corrected sermons: the translation work since Sat 10-24 14:00 made Quality worse — fixes 1-3 `done` (2026-10-26), gap to Sat 14:00 remains
 
@@ -1346,6 +1414,17 @@ this morning": 4× today, systematic for this speaker. `CHURCH_PHRASES` row:
   (b) widen the near-miss repair to a short list of church words for non-word tokens only
   (sujesc → slujesc), never for real words (idea 26's lesson).
 - **Effort:** (a) tiny, bench on the marked clip and the corrected sermons for WER; (b) small.
+- **More evidence (2026-11-08 morning, log `2026-11-08_090143`, P2): 9 church words misheard,
+  each a wrong English line** (plus two heard right and still wrong: 11:51:28 Matt 12:34 «din **prisosul**
+  inimii» → "the **prison** of the heart", and 11:48:38 «iubiților» → "**lovers**" inside the Jer 6:19
+  splice; rows for idea 9). 11:50:10 «cerul **slavei**» → "the heaven of **slaves**";
+  11:57:56 «**Preaiubiților**» → «Preaibiților» → "**For the prophets**"; 11:55:18 «naufragiaseră» → «n-au fragiaseră» →
+  "were **not afraid**"; 11:35:46 «**Domnul** spunea» → «omul» → "**the man** said"; 11:15:03 «corul» →
+  «corpul» → "the **body** of the church"; 09:24:03 «Iehova» → «Șehova» → "**the Word of** God";
+  09:28:05 «**mlădiță**» → «cam lădiță» → "but **a limited one**"; 09:11:05 «viță» → «vită» → "a **cow**"
+  (and 09:11:07 "a fruitful cow" carried on); 11:42:48 «procrastinarea» → «prora» → "the **rudder**".
+  For `CHURCH_PHRASES`: preaiubiților, iubiților, cerul slavei, prisosul inimii, corul bisericii,
+  Iehova, mlădiță, viță roditoare, să vă ocupați locurile (09:07:28 «să ocupăm lucrurile» again).
 
 ## 29. The empty-phrase fallback let Portuguese through: «churrasco» in the communion prayer — `next`
 
@@ -1375,3 +1454,205 @@ this morning": 4× today, systematic for this speaker. `CHURCH_PHRASES` row:
 - **Change:** add multi-word phrases to the swear list (get laid, get some, screw…) and match
   them on the English caption; on a hit in Quickest, drop the line rather than mask a word.
 - **Effort:** tiny (list + a test).
+
+## 32. NLLB drops whole sentences from multi-sentence English pieces — `next`
+
+- **Evidence:** idea 13, 2026-11-06, at least six times in one sermon, and they are often the
+  words the point turns on: "**Pride.**" (20:41:30), "…**is obedience.**" (20:51:43), "**I speed up.**"
+  (20:32:06), "**I'm using you. I'm showing my glory.**" (20:53:10), "**Sometimes it's our own
+  foolishness.**" (20:30:28). `mt_truncated` was 0 for the whole service, and a check over the log
+  for translations under half the source's length found none of them: most of the words survive,
+  so neither flag sees it.
+- **Change:** split a piece at sentence ends before NLLB and translate each sentence, joining the
+  results. A length check alone will not catch this. Also strip um/uh first (idea 13).
+- **Effort:** small. Time it on the machine bench (each sentence is its own NLLB call); replay
+  the marked clips from `2026-11-06_195121`.
+- **More evidence (2026-11-08 morning, log `2026-11-08_090143`, P1): 12 times in one English
+  sermon, twice where it matters most.** 10:38:30 / 10:38:35 "I'm not talking about | **continuous
+  abuse**. You need to seek help" → «nu vorbim despre asta.» | «Trebuie să cauți ajutor» (the abuse caveat
+  gone: the sermon then reads as "forgive abuse"); 10:50:12 "**instead of** being open to the message" →
+  «inima lor **era deschisă**» (reversed); 10:38:16 "that we may **continue to forgive**" → «să **ne ierte**»
+  (that He forgive us); 09:48:02 "and distract them" → «**să-i distragem**» (we distract them, in a
+  prayer); 10:49:06 "retribution on my | brothers" → «răzbunare **pe mine**»; 10:41:02 "I make | peace" →
+  peace gone; 10:39:59 "I forgive him before | you ask" → «L-am iertat înainte»; 09:47:40 "Let us enter
+  into this prayer and pray" → half dropped; single sentences dropped: 10:33:53 "wiped off.", 10:37:08
+  "That's enough.", 10:53:52 "you got something coming", 10:37:21 "unforgiving servant?". Two causes: a
+  sentence NLLB skips inside a piece, and a clause cut at a piece end that NLLB translates as complete.
+  **Change:** split at sentence ends before NLLB, and carry the words after a piece's last sentence end
+  into the next piece instead of translating a fragment.
+
+## 33. `livectl monitor` shows only the Romanian while Hide is on — `idea`
+
+- **Evidence (2026-11-01):** with `display.show_hidden` on, the translation is made and shown on the
+  captions page, but the digest prints `paused: <source>` with no English, so monitoring missed
+  the translations until the log was read by hand. Those before 09:27 were read only in review.
+- **Change:** print the same RO / EN pair for `paused` phrases that have a translation, marked
+  as hidden from ProPresenter. Effort: tiny.
+
+## Review of the 2026-11-01 and 2026-11-06 services
+
+- **Sunday 2026-11-01** (`2026-11-01_090734`, 965 phrases, Best, Hide on throughout): recogniser 0.25 s,
+  translation median 0.73 s RO→EN and 0.66 s EN→RO, first word on screen about 6 s (p90 under 10 s).
+  Speech mostly RO (793 phrases) with 169 EN. Name repair fired 11 times, most of them wrong (idea
+  26), with no names entered that day. Worst captions: "We can finish at the barbecue" in a
+  communion prayer (idea 29); «sister» for a brother (idea 26); "hopelessness" for hope (idea 28).
+- **Friday 2026-11-06** (`2026-11-06_195231` to `_205911`, 524 phrases, almost all EN→RO, installed
+  app 0.1.2, the Amen fix not in it): translation median 0.60 s, first word 5.8 s (p90 9.6 s), no
+  backlog. Input good (speech about -20 dB). Fluent overall. The problems are NLLB's (idea 32,
+  «în jurul valorii de», word choice), and they support trying Gemma on EN→RO again on the bench.
+- **More from reading the rest of Sunday (not seen live):**
+  - 09:09:31 the marked «sângeri» line in full: "And it is as if **His blood** is not enough, that only
+    **a third of the blood** has fallen from heaven" (idea 28: about the angels who fell).
+  - 09:23:13 the town «Târgu Jiu» was repaired into **a surname from the saved names**, the place
+    gone (idea 26: a place after «la» / «în» is not a person).
+  - 09:10:42 Proverbs 29:25 «frica de oameni este **o cursă**» (a snare) → "is **a race**"; 11:31:31
+    «**îndurarea** ta» (Your mercy) → "Your **endurance**"; 09:07:59 «**uităm** fața» (we forget) → "we
+    **look at** the face" (the next piece had "forget the name" right). Rows: cursă, îndurare.
+  - 11:33:49 «să nu lipsească din niciun **cort**» → "any tent": faithful, «cort» meant literally here.
+- **More from Friday (not seen live):** 20:20:42 "We are ninety-two thousand away" (from a fundraising
+  goal) → «Suntem la 92.000 de **kilometri**»; 20:20:25 "caroling practices" heard "**Carolyn**"; 20:50:52 a
+  man's "I" again «frustrată». Amounts need a currency or goal in context: flag for the guard.
+- **Do first, by what it costs on screen:** idea 29 (a third language), idea 26 (real names
+  changed), idea 32 (the point of the sentence dropped), then the verse repeats in idea 3.
+- **Redaction note:** this repository is public. Service evidence here uses placeholders for people,
+  prayer requests, money and local places; the real text stays in the local logs and clips.
+
+## Live notes, Sunday 2026-11-08 (installed app 0.1.3, Best, log `2026-11-08_090143`)
+
+Monitoring joined at 09:51; 09:06-09:51 was read from the log afterwards (no recording before 09:51:38).
+
+- **«vită» for «viță» spreads through the context (idea 28 + idea 4), shown:** 09:11:05 Psalm 128
+  retold, «nevasta lui este ca o **vită**» (cow; meant «viță», vine) → "whose wife is like **a cow**";
+  09:11:07 the next piece heard «viță roditoare» right, yet came out "**a fruitful cow**": Gemma
+  carried its own previous wrong word forward. Same Psalm read three minutes earlier was right
+  (verse match). Change: «viță roditoare» / «ca o viță» as a glossary + decoder-boost row, and
+  when the previous pair's translation is a recogniser slip the current piece corrects, let the
+  current source win (prompt line: "the source wins over your earlier translation").
+- **Word meanings (idea 9 rows):** 09:08:04 «familiile care sunt **rânduite**, care sunt la rând»
+  (scheduled, next on the list) → "who are being **persecuted**"; 09:28:05 «suntem chemați la
+  **rodire**» (bearing fruit) → "to **be born**", 09:28:17 «aceasta este o rodire» → "this is **a birth**";
+  09:23:26 «**închinarea** înseamnă să cauți ajutor» → "**humility** means" (worship; the speaker may
+  have said «a cere», but «închinarea» is not humility). Rows: rânduit, rodire = bearing fruit.
+- **Recogniser (idea 28):** 09:07:28 «să **ocupăm lucrurile**» (locurile, take our seats) → "take care of
+  things" (the stock phrase again); 09:24:03 «**Șehova** Dumnezeu» (Iehova) → "**the Word of** God";
+  09:27:05 «literatură **Cristina**» (creștină, Christian literature) → "**Cristina's** literature"
+  (a person invented); 09:27:31 «de la **polar, Roma**» (plural) → "Rome"; 09:26:42-48 Luke 17:20-21
+  («împărăția lui Dumnezeu nu vine în așa fel ca să izbească privirile») garbled → "will not strike
+  it ... they are in joy": a verse by its words that the matcher missed.
+- **EN → RO (idea 13 / 32):** 09:48:02 "[the enemy wants to attack] and distract them" → «și **să-i
+  distragem** atenția» (we distract them: the subject flipped to us, in a prayer); 09:47:40 "Let us
+  enter into this prayer and pray for our youth" → only «Să ne rugăm pentru tineretul nostru» (half
+  dropped, idea 32); 09:42:29 "walk in the ways" → «să mergem **pe jos**» (on foot); 09:43:17 "And I
+  and I booked" → «Și eu și cu mine» (a stutter translated); 09:42:46 "The blue the blueprint" →
+  «**Albastrul**, planul»; 09:43:52 "nodding my head" → «Ținând din cap», "But I didn't" → «Dar n-am
+  făcut-o» (literal); 09:43:43 "having Google translate" → «de a avea Google traduce».
+  **No diacritics:** 09:43:13 «si am spus», 09:44:00 «si am inteles doar o fractiune»: NLLB sometimes
+  writes plain ASCII; postedit should restore «și» and common words (idea 13's fix-up list).
+  Stutters ("I I", "the blue the blueprint", "for for me") should be removed before NLLB.
+
+### Rest of Sunday 2026-11-08 (seen live from 09:51, marked in `2026-11-08_095138.wav`)
+
+Placeholders: `<child>`, `<parent>`, `<name>` for people; `<park>`, `<country>` for places; amounts left out.
+
+- **Bible verse shown twice (idea 3), the most frequent visible fault today, 7+ times:** 10:30:46 Eph 4:32
+  («…cum v-a iertat așa cum Dumnezeu ne-a iertat»), 10:34:25 Luke 7:47, 10:43:03 Eph 4:30 («pecetluiți…»
+  twice), 10:45:19 John 8:11 (with a stray `”)` on screen), 11:42:56 Prov 27:18 ("…shall eat its fruit. **He** And
+  there is…"), 11:48:29-43 Jer 6:19 + Prov 14:22 spliced ("And the Lord knows this" twice), 11:52:48 Luke 24:17,
+  11:53:52 Luke 24:21, 11:58:37 Phil 4:6 ("Do not be anxious about anything, In nothing be anxious"). In EN→RO
+  the Cornilescu verse is appended to NLLB's own translation of the same words; in RO→EN the WEB verse is
+  spliced into the speaker's paraphrase mid-sentence. **Change:** when a verse is captioned, drop the
+  piece's own translation of the matched span (EN→RO: the whole piece when the verse covers ≥ 70 % of it), and
+  never splice into the middle of a sentence. **Priority: first.**
+- **Name repair turned a real word into a name (idea 26), shown:** 11:04:07 «Tată, **Fiule** și Duhul Sfânt»
+  (recogniser right) → repaired to «Tată, **<name>** și Duhul Sfânt» → "Father, **<name>** and the Holy Spirit". The
+  name had been spoken in the welcome an hour earlier (the repair learns names from the service itself).
+  «Fiul/Fiule» must never be repaired; better, idea 26's rule: a word that is in the Romanian lexicon is never
+  replaced by a name.
+- **EN → RO loses the words a sentence turns on at piece boundaries (idea 32, plus no context for NLLB):**
+  10:38:25 "I'm not talking about | continuous abuse. You need to seek help" → «…nu vorbim despre asta. Trebuie
+  să cauți ajutor» (**the abuse caveat gone**); 10:39:54 "I forgive him before | you ask" → «L-am iertat înainte»;
+  10:40:53 "I make | peace" → peace gone; 10:49:01 "retribution on my | brothers" → «răzbunare pe mine»;
+  10:55:29 "God was | proud of him" → «eram mândră de el»; 10:36:41 "this great | uh death [debt]" → «A fost
+  grozav. Moartea…». Single dropped sentences: 10:33:47 "wiped off.", 10:36:58 "That's enough.", 10:53:42 "you got
+  something coming", 10:37:25 "keep track?". **Change:** give NLLB the previous piece's unfinished tail (carry
+  the words after the last sentence end into the next piece instead of translating a fragment), and split
+  pieces at sentence ends (idea 32). Both directions: 11:54:19 «[nu] ca să-i dezamăgească, ci ca să-i
+  trezească» → "so that they might be disappointed" (the «nu» stayed in the previous piece).
+- **Meaning reversed or wrong on screen (RO→EN, Gemma):** 11:53:36 «îngrijorarea… **a stins** cea mai frumoasă
+  speranță» → "**became** the most beautiful hope" (the sermon's point); 10:50:05 "instead of being open" → «inima
+  lor era deschisă»; 11:47:59 «va birui… gândul lui Hristos» → "will conquer the mind of Christ"; 11:37:06 worry
+  "plays with us" → "that is how **He** plays with us" (idea 11: capitalise only when the referent is God);
+  11:40:30 «**Avea** nu slujire, ci multă slujire» → "Avea did not have a ministry" (a verb read as a name:
+  idea 6, a capitalised word that is a common Romanian verb is not a name); 10:59:23 a rhetorical question
+  shown as a statement ("the most important thing is for your child to become the president of America").
+- **Recogniser (idea 28):** 11:35:40 «[D]omnul spunea» → «omul» → "When **the man** said"; 11:50:00 «cerul
+  **slavei**» → "the heaven of **slaves**"; 11:51:16 «din **prisosul** inimii» (Matt 12:34) → "the **prison** of the
+  heart"; 11:57:52 «**Preaiubiților**» → «Preaibiților» → "**For the prophets**" (and 11:48:34 «iubiților» merged
+  into Jer 6:19 as "lovers"); 11:55:13 «naufragiaseră» → «n-au fragiaseră» → "were **not afraid**"; 11:42:38
+  «procra[stinarea]» → «prora» → "the rudder"; 11:14:58 «corul» → «corpul» → "the body of the church"; 10:03:06
+  «jertfa buzelor» → «abuzurilor». Stock words for the decoder boost (`engine.CHURCH_PHRASES`): preaiubiților,
+  iubiților, slavei, prisosul inimii, corul, să vă ocupați locurile.
+- **Numbers and dates (idea 5):** 11:06:26 «13-27 noiembrie» → "November **1327**"; 11:07:51 «noiembrie 21… 21» →
+  "November **2021**"; 10:28:11 "between a hundred and hundred and fifty" → «între 100 și 100 și 50»; 11:51:31 «o
+  sută și o mie de prieteni» → "100,000 friends"; 10:28:50 "fifty years on the path" → «am 50 de ani». A day-month
+  range and a repeated day need their own rule before digits are glued.
+- **Garbage shown (idea 17):** 10:19:07 song tail «[binec]uvintez acest copil» → "I am **winning** this child";
+  10:26:56 "Post media, painting." (music); 10:29:18, 10:42:31, 10:52:04 a Romanian aside or false start in the
+  English sermon («Găinile, Fages, Brad, Aurelio Ghems…», «Gaz, Grace Mercy…», «Următorul, Din World…»);
+  10:58:00 "Oh, Singham. Mega Gy, Menor, Okingham," (the child's names, passed because the rest of the piece is
+  clean Romanian: gate per clause, not per piece). One was caught (10:49:19 `mt_echo`).
+- **Language switch (idea 12):** 10:27:07 the English sermon was heard by the Romanian recogniser for ~45 s
+  (hidden at the time); 10:01:41 a Romanian reading was taken as English for a minute (hidden).
+- **English words inside Romanian announcements:** "Samaritan's Purse … Operation Christmas Child shoeboxes"
+  → "Ser Spars. Stens Spst, Aon Christmas Child, The Shubaks Ghes"; "hallway" → "Hollywood"; "loan" → "Lon";
+  "first baby" → "Forst Baby"; "fundraiser" heard three ways. Add them to the saved names / glossary.
+- **Glossary rows (idea 9):** fanfara = the brass band (twice "fanfare"); rodire = bearing fruit; rânduit =
+  scheduled; viță roditoare = fruitful vine; alegeri = elections (here; came out "choices" twice); drept răspuns =
+  in reply; lasă de dorit = leaves much to be desired; a stins = put out. EN→RO: ministry = slujire (not
+  «minister»); vessel = vas (not «navă»); testimonies = mărturii; hanging on the cross = atârnat pe cruce; trial
+  (hardship) = încercare (not «proces»); fortune = avere (not «noroc»); Job = Iov, Peter = Petru, Joseph = Iosif
+  (NLLB left them in English several times).
+- **NLLB small faults:** missing diacritics («si», «ierti», «vorbesti», «lipsiti»); «iertă» for «iartă»; um/uh kept;
+  stutters translated; idioms literal ("see eye to eye", "on the hook", "take a toll" → «ne omoară pe toți»).
+- **Child blessing names:** the family's names came out garbled several ways (entering them under Names &
+  words before the service would have fixed most). Also «sora <name>» ran together into one word.
+- **Tooling:** `livectl summary` now prints a `pp_health` event every 5 s (0.1.3): filter it out like idea 33.
+
+### Review of Sunday 2026-11-08
+
+- **Log `2026-11-08_090143`** (installed app 0.1.3, Best throughout, 09:01-12:02): 1480 phrases, 1094 captioned (630 RO,
+  464 EN), 340 held by Hide. Translation median 0.9 s (p90 1.5), recogniser 0.3 s, first word on screen 6.2 s
+  (p90 9.5; RO 6.5, EN 5.8). Input median −21 dB, auto gain −4..+15. A few "behind" alerts (9-11 s) were single
+  slow phrases with no queue. Nothing crashed. The operator used Hide heavily (songs, readings, the blessing).
+- **What to fix first, by how much it costs on screen:** (1) idea 3, verses doubled or spliced, 7+ times;
+  (2) idea 26, never repair a lexicon word into a name ("Father, <name> and the Holy Spirit"); (3) EN→RO
+  piece boundaries (carry the unfinished tail; idea 32), the abuse caveat lost; (4) dates and ranges (idea 5);
+  (5) per-clause garbage gate (idea 17).
+- **Done the same afternoon (not yet benched or seen in a service):** idea 26: a dictionary word or its case
+  form («Fiule», «creștină») and the cue words are never repaired into a name, a heard first name only
+  respelled (no Ioan → Ioana), a first name after «fratele» / «sora» keeps its sex (surnames in -a still
+  repaired); idea 3: the speaker's words next to a captioned verse are dropped when 40 % of them are in the
+  verse (no "anxious about anything, In nothing be anxious"); idea 5: days glued next to a month
+  («noiembrie 1327» → «noiembrie 13-27», «noiembrie 2021» → «noiembrie 21» when the other recogniser heard 21);
+  idea 32: NLLB translates an English piece sentence by sentence (one batch), without um/uh and stutters;
+  idea 34: NLLB's subtitle dashes and invented replies stripped, a man's adjectives kept masculine, «si» → «și»;
+  idea 9 / 28: the glossary rows and decoder-boost phrases above, the English announcement words as names.
+  **Still open:** carrying a piece's unfinished tail into the next (idea 32), the per-clause garbage gate
+  (idea 17), "a hundred and fifty" before NLLB, the source-wins prompt line (vită/viță).
+
+## 34. NLLB invents subtitle dialogue on short English pieces: "why?" → «- De ce nu?» — `idea` — P1
+
+- **Evidence (logs `2026-11-06_201604`, `2026-11-06_205911`, `2026-11-08_090143`, EN→RO, Best = NLLB, shown):**
+  NLLB answers a short piece the way a film subtitle would, with a leading dash and words nobody said.
+  2026-11-06 20:43:29 "why?" → «**- De ce nu?**» (why **not**?: reversed, in the sermon); 20:59:48 "…I saw
+  some new faces here. <name>." → «…<name>. **Ce faci?**» (how are you?); 20:59:51 "Nice to meet you and raise
+  your hand. All right." → «…**Bine, să mergem.**» (let's go); 20:59:40 "I don't know. Um" → «**- Nu știu. - Nu
+  știu.**»; 21:00:06 «**- Poftim.**»; 20:55:05 «**- Tu ești?**». 2026-11-08 10:37:16 "that?" → «**- Asta? - Da.**»
+  (an invented "Yes"); 10:34:41 «**- Puțin?**»; 10:35:20 «**- E imposibil.**». The dash and the extra
+  sentence are the tell: the source has one short clause, the output has two speakers.
+- **Change:** in `NLLBTranslator` post-edit: strip a leading "- " and a "- … - …" two-speaker shape;
+  when the output has more sentences than the source, or a sentence with no counterpart (Da, Ce faci,
+  să mergem), retranslate the piece with the previous piece's tail (idea 32) or drop the extra sentence;
+  don't send a 1-2 word English piece ("why?", "that?") to NLLB alone: hold it for the next piece (the
+  EN→RO `hold_min_words`). Test: the pairs above as cases.
+- **Effort:** small (post-edit + hold + tests); bench EN→RO on the Friday clips.

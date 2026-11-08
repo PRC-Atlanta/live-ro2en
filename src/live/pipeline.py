@@ -559,7 +559,8 @@ class PipelineMixin:
         'familia Pha' → 'familia Puha', 'Drago' → 'Dragoș'; logged as `names_fixed`."""
         if lang != "ro" or getattr(self, "gloss", None) is None:
             return text
-        text, fixed = namelist.repair_ro(text, namelist.ro_names(self.gloss), gate.lexicon()["ro"])
+        text, fixed = namelist.repair_ro(text, namelist.ro_names(self.gloss), gate.lexicon()["ro"],
+                                           gate.lexicon()["names"])
         if fixed:
             info["names_fixed"] = [list(f) for f in fixed]
         return text
@@ -593,6 +594,9 @@ class PipelineMixin:
         if split != fixed:
             info["ne_split"], fixed = fixed, split
         alt = ev.get("multi") or ""
+        fixed, days = guards.month_days(fixed, alt)
+        if days:
+            info["month_days"] = [list(x) for x in days]
         if alt and lang_score(alt) > 0:                 # the other transcript is Romanian too
             fixed, longer = guards.longer_numbers(fixed, alt)
             if longer:

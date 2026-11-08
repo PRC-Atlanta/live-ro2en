@@ -484,6 +484,48 @@ def unglue(text: str) -> str:
     return _GLUED.sub(fix, text)
 
 
+_RO_MONTHS = r"(?:ianuarie|februarie|martie|aprilie|mai|iunie|iulie|august|septembrie|octombrie|noiembrie|decembrie)"
+_MONTH_NUM = re.compile(rf"\b({_RO_MONTHS})\s+(\d{{3,4}})\b|\b(\d{{3,4}})\s+({_RO_MONTHS})\b", re.I)
+
+
+def month_days(text: str, alt: str = "") -> tuple[str, list]:
+    """Days next to a month glued into one number by the Romanian recogniser (2026-11-08): «pe data
+    de 13-27 noiembrie» came out «noiembrie 1327» ("November 1327"), «noiembrie 21… 21» came out
+    «noiembrie 2021» ("in November 2021"). Two days, the first before the second, become a range
+    («noiembrie 13-27»); a number that reads as a year is changed only when the other recogniser
+    heard a day there instead ("noiembrie 21", "13.27"). Returns (text, [(heard, fixed)])."""
+    fixes = []
+
+    def fix(m):
+        month, num = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
+        if month.lower() == "mai" and not m.group(1):
+            return m.group(0)                           # «1520 mai mult»: «mai» is "more" here
+        days = [(int(num[:k]), int(num[k:])) for k in (1, 2) if k < len(num) and num[k] != "0"]
+        days = [(a, b) for a, b in days if 1 <= a < b <= 31]
+        year = 1900 <= int(num) <= 2100
+        mon = re.escape(month)
+        heard_day = re.search(rf"\b{mon}\s+(\d{{1,2}})(?:[.\-–]\s?(\d{{1,2}}))?\b|\b(\d{{1,2}})(?:[.\-–]\s?(\d{{1,2}}))?\s+{mon}\b",
+                              alt or "", re.I)
+        if year and not (heard_day and num not in (alt or "")):
+            return m.group(0)
+        if year:
+            g = [x for x in heard_day.groups() if x]
+            if len(g) == 2 and (int(g[0]), int(g[1])) in days:
+                rep = f"{month} {g[0]}-{g[1]}"
+            elif num.endswith(g[-1]):
+                rep = f"{month} {g[-1]}"               # «noiembrie 21… 21»: the day said twice
+            else:
+                return m.group(0)
+        elif days:
+            a, b = days[-1] if len(days) > 1 and len(num) == 4 else days[0]
+            rep = f"{month} {a}-{b}"
+        else:
+            return m.group(0)
+        fixes.append((m.group(0), rep))
+        return rep
+    return _MONTH_NUM.sub(fix, text), fixes
+
+
 # small number words that are the start of a bigger one: doi ⊂ doisprezece / douăzeci
 _GROWS = {2: (12, 20), 3: (13, 30), 4: (14, 40), 5: (15, 50), 6: (16, 60), 7: (17, 70), 8: (18, 80),
           9: (19, 90)}
