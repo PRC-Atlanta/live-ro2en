@@ -230,3 +230,15 @@ def test_a_repeat_of_the_previous_caption_is_translated_again_without_context(mo
     assert out == "of Your people, perhaps even in our church"
     assert "semn viu" in seen[0] and "semn viu" not in seen[1]     # the retry has no context
     assert tr.context[-1][1] == out
+
+
+# idea 9 (2026-11-08 evening): rows for words and idioms read literally
+@pytest.mark.parametrize("text, want", [
+    ("acum este între gratii", "behind bars"), ("noi ca și părinți", "as parents"),
+    ("mi-am pironit ochii", "fix one's eyes"), ("Biserica are viitor", "has a future"),
+    ("până la liman", "safe harbour"), ("Dumnezeu ne-a rânduit astăzi", "ordained"),
+    ("robii logicii umane", "slaves"), ("trimitere, însoțită de făgăduință", "commission"),
+    ("să aducem cauzele", "prayer requests"),
+])
+def test_evening_rows_reach_the_prompt(tr, gloss, text, want):
+    assert want in tr._prompt(text, "ro", "en", gloss)
