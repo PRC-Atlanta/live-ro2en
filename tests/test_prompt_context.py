@@ -72,7 +72,9 @@ def test_idioms_only_when_said(tr, gloss):
     assert "domnule = sir" in p
     assert "Doamne" not in tr._prompt("Doamne, ajută-ne", "ro", "en", gloss).split("Translate")[0]
     assert gloss.idioms("cu cale", "en") == []
-    assert "only for God" in T.SYSTEM[("ro", "en")] and "your father" in T.SYSTEM[("ro", "en")]
+    assert "speaks of or to God" in T.SYSTEM[("ro", "en")] and "your father" in T.SYSTEM[("ro", "en")]
+    # idea 11 (2026-11-08 evening): the pastor's own "I" came out "He" / "you"
+    assert "Keep the speaker's person" in T.SYSTEM[("ro", "en")]
 
 
 # --- ideas 6 and 14: names stay names ----------------------------------------------------

@@ -455,7 +455,9 @@ SYSTEM = {
                    + _PIECES +
                    "For Bible quotations use NKJV-style wording. Never use archaic English: no thee, "
                    "thou, thy, ye, hath, doth, unto, or -eth/-est endings. Capitalise You/Your/He/His/Him "
-                   "only for God; for people use lower case (his footsteps, your father). Bible figures "
+                   "only when this sentence speaks of or to God; for people use lower case (his footsteps, "
+                   "your father, you have changed nothing). Keep the speaker's person: I stays I, we stays we, "
+                   "you stays you; never turn the speaker's I into you or He. Bible figures "
                    "keep their English Bible names; other people's names stay exactly as written, also when "
                    "they are a Bible name with a surname (fratele Ilie Puha = brother Ilie Puha). "
                    "Output only the English translation, nothing else."),
