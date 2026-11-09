@@ -215,6 +215,16 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   anxious about anything, In nothing be anxious". Friday 2026-11-06 too (19:56:57 Mark 6:41, 20:38:36
   Ps 23:4). Missed matches that left Scripture wrong: 09:26:42-48 Luke 17:20-21 → "will not strike
   it… they are in joy"; 10:58:41-43 Gen 22:17 «sămânța ta va umple pământul» → "**a little land**".
+- **Seen again after done (2026-11-08 evening, log `2026-11-08_173244`, Best, P2; clone run started 17:32, so probably with the afternoon's 40 % rule):**
+  verse words still shown twice or as tails, ~10 times: 18:54:21 «cum mi se poruncise» → "**and in the evening my wife
+  died.** So I did in the morning…" (Ezek 24:18 repeated from the line before); 19:40:55 "**to be moved. He who keeps
+  you** will not slumber" (Ps 121:3 repeated 36 s later); 19:49:52 "**as the psalmist says.** “Be still…" (repeated);
+  20:02:28 "**the elders obtained approval.** By faith…" and 20:02:50 "even though he is dead. **being dead, still
+  speaks**" (Heb 11); 18:54:06 «picioare nuț» → "**feet yet.**" (a stutter got a verse fragment). Isaiah 8:18 caught one
+  piece late ("**me** are for signs…", 18:52:49). References split at a piece end stay unconverted: 18:48:53 «[Matei 24] /
+  cu 3» → "**with 3**", 20:04:18 «Proverbe 12. / 24 cu 10» → "**24 with 10**" (Prov 24:10). **Change:** remember the
+  last captioned verse span and never caption it again within ~2 min unless re-announced; a verse fragment under 4 words
+  needs an announced reference; map «X cu Y» to X:Y also when X ends the previous piece. Effort: small.
 
 ## 4. Give Gemma its own previous translations as context — `done` — stream D: Gemma sees its own previous (source, translation) pairs and continues cut sentences
 
@@ -265,6 +275,11 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
 - **Change:** include the last 2-4 (source, translation) pairs so names, register and sentence
   flow carry over; ask it to continue the sentence when the previous chunk ended mid-sentence.
 - **Effort:** small; check the prompt stays short enough for ~2 s.
+- **Seen again after done (2026-11-08 evening, log `2026-11-08_173244`, Best, P2):** 18:56:17 «poporului tău, poate chiar în biserica noastră, poate chiar în
+  comunitatea noastră» → "a living sign before You and before" (the previous caption repeated word for word, the new
+  sentence dropped). Gemma copied its own previous translation instead of translating the piece. **Change:** when the
+  output equals (or is ≥ 80 % contained in) the previous pair's translation and the source differs, retranslate without
+  the context pairs. Effort: tiny.
 
 ## 5. Numbers, negations and facts: a guard — `done` — stream A: `src/live/guards.py` (numbers to digits before EN→RO, number/negation check with one re-translation) · 2026-10-25 follow-up `done`: retry with a note, NLLB fallback, a still-flagged negation never shown; «mai» / «nu-i așa că» notes; no false alarm on «a doua oară» / «ne-» words; glued and longer numbers, odd figures hidden
 
@@ -560,6 +575,16 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   ones; întrebuințare = use; trăind = living; rodire = bearing fruit; rânduit = scheduled; închinare =
   worship; am convenit = we agreed; lasă de dorit = leaves much to be desired; alegeri (with politics) =
   elections; fanfara = the brass band.
+- **More evidence (2026-11-08 evening, log `2026-11-08_173244`, Best, P3): words and idioms read literally.** 18:47:04 «între **gratii**» (behind bars) →
+  "among **the graces**"; 18:44:19 / 18:44:29 / 18:45:21 «**ca și** părinți / tați» (as parents) → "**just as** parents"
+  ×3; 18:42:12 «mi-am **pironit** ochii» → "I **squinted**"; 19:29:18, 20:01:52 «ne-a **rânduit**» (ordained, appointed)
+  → "**scheduled**" ×3 (morning: "persecuted"); 19:55:16 «**robii** logicii» → "**victims** of logic"; 19:44:17
+  «trimitere» (the Great Commission) → "**authority**"; 19:58:33 «are **clopotul** lui» → "**is** His bell"; 19:28:50
+  «tot felul de» → "**the same kind of**"; 20:06:36 «până la **liman**» → "until **the shore**" (safe harbour); 20:01:45
+  «citim **5 versete**» → "we read **verse 5**"; 19:30:13 «Biserica **are viitor**» → "the church **is the future**" ×2;
+  18:49:35 «un vas de lucru» → "a vessel of work"; 18:56:54 «cauze» (prayer requests) → "causes". Rows: între gratii,
+  ca și (rol) = as, a-și pironi ochii, rânduit = ordained/appointed, robi = slaves, trimitere = commission, a avea viitor,
+  până la liman, cauze = prayer requests. Effort: tiny.
 
 ## 10. Empty-phrase fallback misses short Romanian words — `done` — stream B
 
@@ -615,6 +640,15 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   "God was proud of him" → «**eram mândră** de el» (Friday 2026-11-06: «sinceră», «ascultătoare»,
   «frustrată», «uimită»). Prompt line: capital He/You only when the referent is God; NLLB: prefer
   the masculine (or a speaker setting) for first-person adjectives.
+- **Seen again after done (2026-11-08 evening, log `2026-11-08_173244`, Best, P2): a person's "you" and "he" written as God, and the speaker's "I" lost.**
+  19:14:34 «N-ai schimbat nimic» (you, a person) → "for **You** have changed nothing"; 19:41:18 «uită-te pe mâna ta» →
+  "look at **Your** right hand"; 19:49:38 «dacă mai există printre noi [gesturile acestea]» → "if **He still exists**
+  among us" (God's existence put in doubt on screen); 19:35:47 the pastor's self-mocking "I must be prudent" monologue →
+  "so that **He** won't take anything by surprise", 19:36:04-08 «că mi-a dat Dumnezeu… consum» → "God has given **you**…
+  **you** can spend"; 19:41:52 «copiii cărora le spui» → "children whom **He**"; 18:42:29 «lăsam microfonul, plecam la
+  mama» → "**we** would leave… **the mother's** bench". **Change:** prompt rule: keep the speaker's person; capitalise
+  He/You only when the referent is God in this sentence; a «mai există» after a demonstrative refers to the thing, not
+  God. Bench on these pairs. Effort: small.
 
 ## 12. Language detection: check the Romanian recogniser before switching — `done` — stream B: the Romanian transcript as a second vote, English heard only by Parakeet translated, length floor back home
 
@@ -641,6 +675,12 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   "He loved the Lord. Is it true? Dragoș a iubit pe Domnul" (said in Romanian) came out as
   "Dragosh a you be pedomun" from the English recogniser.
 - **Effort:** small; replay both service logs to tune.
+- **More evidence (2026-11-08 evening, log `2026-11-08_173244`, Best, P2): Romanian inside English mode captioned as garbage.** 19:07:10 "in **FSN capitolopatru,
+  versetus shaptashpe**" (Efeseni 4:17) → copied into the Romanian caption; 19:11:49-58 "and **Sudhid** comes… in
+  **Sadiqam Tot Simpichware**"; 19:05:21 "That chair pent through **Voi Parinsi**" (Romanian «voi, părinții»); 19:14:18
+  "**Prashisa** Lord" (Praise the Lord). Back to Romanian took ~1 min at 19:17 (hidden). **Change:** when Parakeet's
+  piece has a low English score, run the Romanian recogniser on it too and take the better-scoring text (or drop it).
+  Effort: medium.
 
 ## 13. English → Romanian: grammar, wrong-language words, idioms — `done` — stream E: translator per direction; Best uses NLLB for EN→RO (bench: 21/22 vs 20/22, 1.45 s vs 2.25 s)
 
@@ -804,6 +844,16 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   phrase that finishes the last one (idea 25, English). 20:38:43 "He's **had** plenty of these
   days" → «**A băut** destule zilele astea» (he drank plenty these days). Verse: 20:38:27 gave Psalm
   23:4 literally, and 20:38:31 then the Cornilescu in full, so the first line twice (idea 3).
+- **More evidence (2026-11-08 evening, log `2026-11-08_173244`, Best, P2; clone run, probably with the afternoon's sentence split): EN→RO (NLLB) still loses
+  meaning.** 19:08:00 the recogniser heard "**do not** be renewed" (Eph 4:23, *to be renewed*) → «**să nu fiți
+  reînnoiți** în trupul vostru» (reversed Scripture, and «în trupul vostru» invented); 19:13:40 "do not be foolish" →
+  «**Nu fiți proști!**» (crude, in a verse; «nechibzuiți»); 19:13:26 "arise from the dead" → «**învierea** din morți»;
+  19:11:21 "[allow God to] take control of our lives" → «**să ne controlam** viețile» (we control); 19:09:02 "if we are
+  called" → «**pentru că** noi suntem chemați»; 19:09:04 "we are to be changed" → «**Vom fi** schimbați»; 19:10:51
+  "Didn't say" → «**N-am spus**»; 19:09:14 "fully not Jesus" → «nu este cu totul Isus»; 19:09:33 "by the book" → «de
+  carte»; 19:05:55 "fall" (autumn) → «și să cadă»; 19:10:10 "the way I used to live" → «modul în care am folosit pentru
+  a trăi»; 19:08:45 no diacritics («se intampla… traiesc in ea»). Supports benching Gemma for EN→RO again on Scripture
+  and sermon English. Effort: medium (bench).
 
 ## 14. Romanian names from the English recogniser: map back to Romanian spelling — `done` — stream D: English recogniser spellings mapped back to today's names
 
@@ -908,6 +958,11 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   copil» → "I am **winning** this child"; 10:27:07 «Media de post, pictură» → "Post media, painting.".
   Change: a clause with ≥ 2 capitalised tokens that are in neither lexicon nor today's names is
   dropped, even when the rest of the piece is clean.
+- **More evidence (2026-11-08 evening, log `2026-11-08_173244`, Best, P3): fragments shown.** 19:53:07 «Appius în creiere» → "**Appius in the mind**"; 19:58:52
+  «rom.» → "rom."; 20:06:04 «să-l.» → "**call out.**" (invented from two letters); 19:52:21-25 «n-amar 4 / nambăr»
+  (English *number 4*) → "not 4. / number"; 19:58:55 «rostim cuvinte de tine, nu se alege, ci din nimic…» → a garbled
+  sentence. **Change:** drop a piece of ≤ 2 tokens that is not a sentence on its own (no verb, ends in «-l.» or is a
+  letter scrap), and gate per clause (morning note). Effort: small.
 
 ## 18. Songs: don't caption garbled lyrics — `done` — stream C: Song key; automatic detection available but off (no measurable gain on the bench) · 2026-10-25: an «odd capitalised words» gate was tried and dropped (it passed the garbled song, "Baba" is a known name, and blocked a real list of names)
 
@@ -1425,6 +1480,21 @@ this morning": 4× today, systematic for this speaker. `CHURCH_PHRASES` row:
   (and 09:11:07 "a fruitful cow" carried on); 11:42:48 «procrastinarea» → «prora» → "the **rudder**".
   For `CHURCH_PHRASES`: preaiubiților, iubiților, cerul slavei, prisosul inimii, corul bisericii,
   Iehova, mlădiță, viță roditoare, să vă ocupați locurile (09:07:28 «să ocupăm lucrurile» again).
+- **More evidence (2026-11-08 evening, log `2026-11-08_173244`, Best, P2): church and sermon words misheard, each a wrong English line.** 18:56:25
+  «**împărăția** lui Dumnezeu» → «împărțirea» → "signs for **the division of God**"; 19:54:52 «**imanența** lui» →
+  «Eminența» → "**His Eminence**" (19:53:25 heard it right: "His immanence"); 19:57:20 «**falimentul**» → «filamentul» →
+  "**the thread**"; 19:57:12 «robiți și **învinși**» → «înviți» → "shaped and taught"; 18:12:23 «câteva **ore**» → «ori» →
+  "a few **times**"; 18:56:57 «să aducem cauzele» → «**Sam și** cauze» → "**Sam and causes**"; 19:33:29-19:55:47 the
+  sermon's word «**sintagmă**» heard «simptomă / simă / sma / st / substanta» ~15 times → "symptom", "veil", "shadow",
+  "hypocrisy", "substance", "reality" (see new idea 36). For `CHURCH_PHRASES`: împărăția lui Dumnezeu, imanența,
+  falimentul, robiți și învinși, sintagmă.
+- **More evidence (2026-11-08 evening, log `2026-11-08_173244`, Best, P1): English words inside Romanian, one reversed on screen.** 18:47:59-18:48:05 «avortul este
+  considerat **Hellker** / **Helker**, este considerat Choice» (English *healthcare*) → "abortion is considered
+  **legal**", then "**illegal**, it is considered a choice": the caption contradicts itself on abortion. Also 18:17:02
+  «când îi aduceți la **Sandis**» (Sunday school) → "to Sandis"; 19:42:02 «să fii cu minte pe **bas**» (bus) → "in **the
+  game**". **Change:** add healthcare, Sunday school, bus, outside to the English-loanword list (decoder boost +
+  glossary keeps them in English, morning's done item); an unknown capitalised word next to «considerat» should go to
+  the translator as unknown, not guessed. Effort: tiny.
 
 ## 29. The empty-phrase fallback let Portuguese through: «churrasco» in the communion prayer — `next`
 
@@ -1656,3 +1726,147 @@ Placeholders: `<child>`, `<parent>`, `<name>` for people; `<park>`, `<country>` 
   don't send a 1-2 word English piece ("why?", "that?") to NLLB alone: hold it for the next piece (the
   EN→RO `hold_min_words`). Test: the pairs above as cases.
 - **Effort:** small (post-edit + hold + tests); bench EN→RO on the Friday clips.
+
+## Live notes, Sunday evening 2026-11-08 (`logs/services/2026-11-08_173244.jsonl`, clone run, no recording)
+
+Captions mostly on Hide during readings and songs; notes from the captioned stretches.
+
+- **Reversed meanings (top problem tonight):**
+  - 18:44:05 «ne place, nu-i așa?» → "it's hard, isn't it?" (previous line's "too difficult" leaked in).
+  - 18:47:54-59 «avortul este considerat Hellker / Helker» (English *healthcare*) → "legal", then "illegal":
+    the caption contradicts itself. English word inside Romanian (see «Sandis» = Sunday School, «outside»).
+  - 18:54:57-55:01 «prețul. / n-are valoare» split at the boundary → "the price. / have value" (negation lost).
+  - 18:55:01 «n-a putut nici măcar să-l jelească» → "couldn't even help her" (mourn).
+- **Idioms / glossary rows:** «între gratii» → "among the graces" (behind bars); «ca și părinți / ca și tați»
+  → "just as parents" ×3 (= *as* parents: role, not comparison); «mi-am pironit ochii» → "squinted" (fixed my
+  eyes); «și gata» → "to prepare" (and that's it); «Nu-i așa» → "It is so" (isn't it?); «am rămas așa» → "I was
+  left like that" (it stuck with me); «să nu le mai luăm și pe celelalte» (not to mention the rest); «un vas de
+  lucru» → "a vessel of work"; «cauze» → "causes" (prayer requests); «fanfara va intona un imn» heard as «ffara…
+  im» → "ffara will sing" (brass band will play); «Iată ce spune Isaia» → "Behold, what Isaiah says" (keep
+  "Behold" for the verse only); «omule, nu te duce» → "man does not take you".
+- **Person / subject:** «lăsam microfonul, plecam la mama» → "we would leave… the mother's bench" (I, my mom);
+  «ca să-l / cunoști pe Hristos» split → "that I may know Christ"; «Vorbisem poporului» → "We spoke"; «Îl iubesc»
+  (the enemy) → "I love Him" (capital He again).
+- **Context echo:** 18:56:11 output repeated the previous caption "a living sign before You and before" and
+  dropped «poporului tău, poate chiar în biserica noastră, în comunitatea noastră».
+- **Verse matcher (idea 3):** Ezekiel 24:18 "and in the evening my wife died" shown twice; stutter «picioare nuț»
+  got the verse fragment "feet yet."; Isaiah 8:18 missed on the first line (stutter «copiii. mei» → "the children
+  we") and caught one line late as "me are for signs…"; «capitolul 24. / cu 3» left "with 3" alone.
+- **Recogniser:** «împărăția» heard «împărțirea» → "division of God"; «câteva ore» → «câteva ori» ("a few
+  times"); book names «Solonici» (Tesaloniceni), «Sam Ashoti» (Psalmul …); «să aducem cauzele» → «Sam și cauze».
+- **Boundaries:** «Dumnezeu! / să ne binecuvinteze» → "God!" + "may He bless us"; «pe ei, bunul Dumnezeu /
+  să-i binecuvinteze» → "those, good God,"; «după care sora. / Grace» → "Sister / Sister Grace".
+- **Stiff English:** "to be we a sign", «tot mai mult» → "the more we seek", «tot mai puțini» → "still fewer".
+- **Timing:** first word 4.8-6.4 s, one 14.5 s on a single long phrase; mt 0.5-1.1 s; speech -19..-26 dB;
+  "captions behind ~10 s (queue 0)" alerts only while on Hide.
+
+### Rest of Sunday evening 2026-11-08 (19:00-20:09; recording from 19:13:55, `logs/recordings/2026-11-08_191355.wav`, 31 marks)
+
+- **English sermon, EN→RO (NLLB):** "fall" → «și să cadă» (toamna); "You guys sounded fantastic" → «Voi sună
+  fantastic»; "practices" → «practicile» (repetițiile); "the way I used to live" → «modul în care am folosit
+  pentru a trăi»; "your old manner" → «vechile maniere»; "by the book" → «de carte»; "it's fully not Jesus" →
+  «nu este cu totul Isus»; "Didn't say" → «N-am spus»; "social influencer" → «influența mea socială»; "if we are
+  called" → «pentru că»; "we are to be changed" → «Vom fi»; "do not be foolish" → «Nu fiți proști!»; "arise from
+  the dead" → «învierea din morți»; "on your own matter" → «din cauza ta»; missing diacritics again. Recogniser:
+  "fragrant offering" → "vagrant" → «ofrandă vagabond»; "Praise the Lord" → "Prashisa Lord". Boundary: "God… /
+  take control of our lives" → «să ne controlam viețile» (we control).
+- **Code-switching speaker (idea 12):** Romanian inside English mode passed through as garbage: «FSN
+  capitolopatru, versetus shaptashpe» (Efeseni 4:17), «Sudhid… Sadiqam Tot Simpichware»; back to Romanian took
+  ~1 min at 19:17 (hidden). Romanian reference inside English → run the RO recogniser on low-score EN chunks.
+- **Cornilescu matcher on English reading:** Eph 4:17 shown twice (NLLB + Cornilescu); 4:22-23 recogniser
+  "do not be renewed" → «să nu fiți reînnoiți în trupul vostru» (reversed + invented); Eph 5:2 "pentru noi"
+  doubled; Eph 5:14-17 not matched.
+- **Pastor's sermon (Best, RO→EN), the key phrase lost every time:** «puțin credincioșilor / puțin credinciosule»
+  (Mt 8:26, Mt 6:30) → "the unfaithful", "slightly faithful", "few faithful ones", "less faithful", "little by
+  little faithful", "you few who are faithful", "few of the faithful", "do not be a little faithful anymore"
+  (11 times, never right). «sintagmă» heard «simptomă / simă / sma / st» → "symptom", "veil", "shadow",
+  "substance", "hypocrisy" (~15 times).
+- **Reversed meanings (sermon):** «nu de puține ori vedem» → "we don't see many people"; «nu mai recunoaștem»
+  split → "we again recognize"; «o viață trăită… ne face să uităm» → "let us forget"; «căci trăim» → "because
+  we are dying"; Job 2:10 «nu se cade… să le primim» → "it is not easy"; «ne potrivim chipului veacului» →
+  "conform to His likeness"; «uitați ce zice» → "forget what it says" (and «uităm» → "we see / we look" ×3);
+  «dacă mai există printre noi» (gestures) → "if He still exists among us"; «Biserica are viitor» → "is the
+  future" ×2.
+- **Person / reference:** the pastor's self-mocking monologue (I) → "He won't take", "God has given you", "you
+  can spend"; «te trezește / îl trezești» → "you wake up"; «Păi știe Domnul» → "I know, the Lord"; «Dumnezeu să
+  fie cum vrea el» (the children) → "let God be"; «copiii cărora le spui» → "children whom He"; "Your right
+  hand", "You have changed nothing" (capital for a person); «dacă vreți să cădem de acord cu voi» → "agree with
+  us"; Abel's testimony → "Cain, who gave a testimony".
+- **Glossary rows:** «rânduit» → "scheduled" ×3 (ordained/appointed; morning gave "persecuted"); «imanența» heard
+  «Eminența» → "His Eminence"; «robii» → "victims" (slaves); «robiți și învinși» → "shaped and taught";
+  «falimentul» → "the thread"; «stare» → "truth"; «să ne revenim» → "see each other again"; «omul lui Dumnezeu»
+  → "man, God"; «trimitere» (commission) → "authority"; «tot felul de» → "the same kind of"; «își punea amprenta»
+  → "told its imprint"; «oameni, neoameni» → "among the people of the world"; «citim 5 versete» → "verse 5";
+  «spunea de fratele X» → "about brother X" (by); «are clopotul lui» → "is His bell"; «până la liman» →
+  "until the shore"; English «pe bas» (bus) → "in the game".
+- **Verse matcher (idea 3), evening total 65 verse lines:** doubled Ps 121:3 ("to be moved. He who keeps you"
+  ×2), Ps 46:10 (paraphrase + verse, "as the psalmist says" ×2), Heb 11:2-6 ("elders obtained approval" ×2,
+  "still speaks" ×2, 11:6 in full ×2), Jn 20:27 ("said to Thomas" ×2), Heb 11:1 mixed with Gemma ("un unwavering
+  trust…"); Mt 6:30 cut at "you" so the tail «puțin credincioșilor» went to Gemma ("few of the faithful"); Mk
+  16:15 with stray "to them,"; Ps 30:7, Job 2:10, Mt 8:26, Prov 24:10 not matched; «24 cu 10» → "24 with 10"
+  (reference «X cu Y» = X:Y not converted). Clean: Is 41:10-14, Ps 121:7-8, Ps 46:10-11, Mt 16:18 (WEB
+  "assembly" → say "church").
+- **Garbage shown (idea 17):** "Appius in the mind", "rom.", "feet yet.", lone «să-l.» → "call out.", «n-amar 4
+  nambăr» → "not 4. number".
+- **ProPresenter:** unreachable from 19:15:01 (port 1025 closed, host up), back 19:15:37, gone again 19:15:42;
+  the app kept captioning and retrying. `pp_health` floods the log every 5 s (tooling note above).
+
+### Review of Sunday evening 2026-11-08
+
+- **Numbers:** 1054 phrases 17:35-20:09; 774 captioned (653 RO / 121 EN), 242 held by Hide; Best only; audio
+  4.1/6.7 s, stt 0.2/0.3 s, mt 0.7/1.1 s, first word 5.7/9.5 s (one 14.5 s), latency 1.5/3.2 s; speech -21 dB,
+  peak max -1 dB; auto gain -4..+10 dB; "captions behind ~10 s (queue 0)" alerts only while hidden; no crash.
+- **Priorities (evening adds weight to the morning list):**
+  1. **Reversed meanings at phrase boundaries** (idea 32 + Best boundaries): negations split from their verb
+     («nu mai / recunoaștem», «prețul. / n-are valoare») and idioms read literally («nu de puține ori», «nu se
+     cade», «uitați ce zice»). Hold a clause that ends on «nu / nu mai / n-» for the next piece; add a prompt rule
+     with these idioms; bench the marked clips.
+  2. **Repeated sermon phrases learned live:** «puțin credincioșilor» (11×) and «sintagmă» (15×) wrong all
+     evening. Fixed glossary rows for the first; for the second, a live "repeated unknown word" detector that
+     suggests a term to the operator (or learns it like idea 26's names).
+  3. **Verse matcher doubling and tails** (idea 3): one verse = one caption; don't send the verse's last words
+     to the translator after a match; map «X cu Y» to X:Y.
+  4. **Person and capitals:** first-person monologue → "you/He"; capital He/You for people. Prompt rule:
+     keep the speaker's person; capitalise He/You only for God.
+  5. **Code-switching:** Romanian inside English mode (references, "let's stand") → run both recognisers on
+     low-score chunks, or drop low-score English.
+- **Clips:** recording from 19:13:55 only; 17:35-19:13 (Romanian exhortation with most reversed meanings)
+  exists only in the log.
+
+## 35. Meaning reversed at Romanian piece boundaries and in negative idioms (Best, Gemma) — `idea` — P1
+
+- **Evidence (2026-11-08 evening, log `2026-11-08_173244`, Best, shown; the 17:35-19:13 part has no recording, 19:13:55 on is in
+  `logs/recordings/2026-11-08_191355.wav`):**
+  - 18:55:02 / 18:55:11 «…ca semn pentru cei din jurul tău. **prețul.**» | «**n-are valoare.** Soția a murit» → "the
+    price." | "**have value**." (the price has no value: negation lost at the cut).
+  - 19:50:59 / 19:51:04 «…în ceața aceea că **nu.**» | «**mai recunoaștem**» → "where we do not" | "**we again
+    recognize**" (we no longer recognise).
+  - 19:55:29 «și **nu de puțini** o vedem oameni când le merge bine» (not rarely = often) → "**we don't see many**
+    people"; 19:49:14 Job 2:10 «**nu se cade**… să le primim și pe acestea» (shall we not receive) → "**it is not easy**";
+    19:53:12 «căci **trăim**» → "because **we are dying**"; 19:57:26 «și **uitați** ce zice» (look what it says) →
+    "and **forget** what it says", 19:51:15 / 19:51:22 «uităm» (we forget) → "we **look at**" (uitați/uităm swapped both
+    ways); 18:44:10 «ne place, nu-i așa?» → "**it's hard**, isn't it?" (the previous line's "too difficult" leaked in);
+    18:55:11 «n-a putut nici măcar să-l **jelească**» → "couldn't even **help** her" (mourn); 19:53:01 «ne face să uităm» →
+    "**let us** forget".
+  - Same family in the morning: 11:54:19 «[nu] ca să-i dezamăgească, ci ca să-i trezească» → "so that they might be
+    disappointed" (the «nu» in the previous piece).
+- **Change:** (a) segmentation: never end a Romanian piece on «nu», «nu mai», «n-», «nici» or on a bare noun followed
+  by a negated verb; hold it for the next piece (like the preposition rule in idea 20); (b) prompt rule for Gemma with
+  the traps: «nu de puține ori» = often, «nu se cade» = it is not fitting / shall we not, «uitați-vă / uitați ce zice»
+  = look, «uităm» = we forget; (c) the negation guard (idea 5) also compares across the previous pair when the source
+  starts with «n-» / «nu». Bench on the corrected sermons and the 19:13+ clip.
+- **Effort:** small (a, b), medium (c).
+
+## 36. A sermon's key phrase is wrong every time it is said: «puțin credincioșilor», «sintagmă» — `idea` — P1
+
+- **Evidence (2026-11-08 evening, log `2026-11-08_173244`, Best, shown, the pastor's sermon on Matt 8:26):** «puțin credincioșilor / puțin credinciosule» (you of
+  little faith) came out 11 times and never right: 19:33:29 "the **unfaithful**", 19:33:36 "**slightly** faithful",
+  19:35:12 "**few** faithful ones", 19:37:46 "**less** faithful", 19:50:59 "**little by little** faithful", 19:56:49
+  "**few of the faithful**", 19:57:34 "**you few who are faithful**", 20:00:19 "do not be **a little faithful** anymore".
+  Matt 6:30 was matched but cut at "you", so the tail went to Gemma. The second key word «sintagmă» (phrase, saying) was
+  heard «simptomă / simă / sma / st» ~15 times → "symptom", "veil", "shadow", "hypocrisy", "substance" (idea 28).
+- **Change:** (a) glossary row «puțin credincios / puțin credinciosule / puțin credincioșilor» = "of little faith / you
+  of little faith"; when a verse match ends mid-phrase, extend it to the verse's last words; (b) «sintagmă» to
+  `CHURCH_PHRASES`; (c) later: count unknown or repaired words during a service and, when one repeats ≥ 3 times, show it
+  to the operator as a suggested Names & words entry.
+- **Effort:** (a, b) tiny; (c) medium.
