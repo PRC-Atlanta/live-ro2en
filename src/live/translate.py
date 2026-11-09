@@ -177,6 +177,29 @@ def around_verse(around: str, caption: str) -> str:
     return "" if len(words & _gist(caption)) >= 0.4 * len(words) else around
 
 
+def _wordlist(text: str) -> list[str]:
+    return [fold_diacritics(fix_cedilla(w.lower())) for w in re.findall(r"[^\W\d_]+(?:'[^\W\d_]+)?", text)]
+
+
+def echoes_previous(src: str, out: str, prev: tuple) -> bool:
+    """The translation is (at least 80 % of its words) the previous piece's translation while the
+    source is a different piece: the model repeated itself instead of translating (idea 4)."""
+    p_src, p_out = prev[0], prev[1]
+    o, po = _wordlist(out), _wordlist(p_out)
+    if len(o) < 3 or not po:
+        return False
+    s, ps = set(_wordlist(src)), set(_wordlist(p_src))
+    if s and len(s & ps) >= 0.6 * len(s):
+        return False                                    # the speaker said it again: so may the caption
+    pool = list(po)
+    hit = 0
+    for w in o:
+        if w in pool:
+            pool.remove(w)
+            hit += 1
+    return hit >= 0.8 * len(o)
+
+
 def tiny(text: str) -> bool:
     """A 1-2 character fragment ("T."): with context, Gemma translated the context instead."""
     return sum(c.isalnum() for c in text) <= 2
@@ -644,6 +667,16 @@ class MLXLLMTranslator:
         if small and len(out.split()) > 3:
             out = ""                              # "T." -> two sentences: not a translation of it
         out = postedit(out, tgt)
+        if not small and ctx and echoes_previous(text, out, ctx[-1]):
+            # its own previous caption again, the new words dropped: «poporului tău, poate chiar în
+            # biserica noastră» → "a living sign before You and before" (2026-11-08 evening, idea 4)
+            self.context = []
+            try:
+                again = postedit(clean_output(self._generate(self._prompt(text, src, tgt, glossary, hint, note))), tgt)
+            finally:
+                self.context = ctx
+            if again.strip():
+                out = again
         if use_context and not small:
             self.context = (self.context + [(text, out, src)])[-max(self.context_clauses, 1):]
         return out

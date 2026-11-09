@@ -214,3 +214,19 @@ def test_prompt_stays_short(tr, gloss):
     p = T.SYSTEM[("ro", "en")] + tr._prompt("mama noastră, au crescut toți cei 14 copii, te rugăm frumos.",
                                             "ro", "en", gloss, S.Reading().hint(S.find("Evrei 13:7"), "ro", "en"))
     assert len(p) < 2500
+
+
+# idea 4 (2026-11-08 evening): Gemma gave its previous caption again and dropped the new words
+def test_a_repeat_of_the_previous_caption_is_translated_again_without_context(monkeypatch, tr, gloss):
+    answers = iter(["a living sign before You and before", "of Your people, perhaps even in our church"])
+    seen = []
+
+    def gen(model, tok, prompt, **k):
+        seen.append(prompt)
+        return next(answers)
+    monkeypatch.setitem(sys.modules, "mlx_lm", types.SimpleNamespace(generate=gen))
+    tr.context = [("să fim un semn viu înaintea Ta și înaintea", "a living sign before You and before", "ro")]
+    out = tr.translate("poporului tău, poate chiar în biserica noastră", "ro", "en", gloss, use_context=True)
+    assert out == "of Your people, perhaps even in our church"
+    assert "semn viu" in seen[0] and "semn viu" not in seen[1]     # the retry has no context
+    assert tr.context[-1][1] == out
