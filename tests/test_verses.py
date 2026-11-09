@@ -253,3 +253,50 @@ def test_a_piece_that_does_not_start_with_the_verse_end_is_kept(m):
               "nu vă va îmbrăca El cu mult mai mult pe voi."]:
         m.match(p, "ro", "en", reading.update(p))
     assert m.take_tail("Și acum fraților, ascultați.", "ro") == "Și acum fraților, ascultați."
+
+
+# idea 3 (2026-11-08 evening): Psalm 121:3 "to be moved. He who keeps you" captioned again 36 s later
+def test_verse_words_captioned_a_moment_ago_are_not_captioned_again(m):
+    reading = S.Reading()
+    a = "El nu va lăsa să ți se clatine piciorul. Cel ce te păzește nu va dormita."
+    first = m.match(a, "ro", "en", reading.update(a))
+    assert first is not None and "He who keeps you will not slumber" in first.caption
+    for filler in ["Și vreau să vă spun ceva, fraților, despre aceasta.", "Am trecut prin multe încercări în viață.",
+                   "Dar Domnul a fost acolo de fiecare dată cu noi.", "Ne-a ținut în mâna Lui, ne-a purtat.",
+                   "Așa că vreau să ne aducem aminte de lucrul acesta astăzi."]:
+        m.match(filler, "ro", "en", reading.update(filler))
+    again = m.match(a, "ro", "en", reading.update(a))
+    assert again is None or "to be moved" not in again.caption
+
+
+def test_a_reannounced_verse_is_captioned_again(m):
+    reading = S.Reading()
+    a = "El nu va lăsa să ți se clatine piciorul. Cel ce te păzește nu va dormita."
+    m.match(a, "ro", "en", reading.update(a))
+    ann = "Să citim din nou Psalmul 121, versetul 3."
+    m.match(ann, "ro", "en", reading.update(ann), reading.announced)
+    again = m.match(a, "ro", "en", reading.update(a), reading.announced)
+    assert again is not None and "to be moved" in again.caption
+
+
+def test_n_cu_m_after_the_book_is_chapter_and_verse():
+    r = S.Reading()
+    r.update("Și acum citim din Proverbe 12.")
+    assert r.update("24 cu 10, că dacă slăbești în ziua necazului").name("en") == "Proverbs 24:10"
+    r = S.Reading()
+    r.update("Deschideți la Matei 24")
+    assert r.update("cu 3, ucenicii au venit").name("en") == "Matthew 24:3" and r.announced
+    assert S.Reading().update("Am mers cu 3 prieteni") is None
+
+
+# idea 3 (2026-11-08 evening): the stutter «picioare nuț» captioned "feet yet." with no reference
+def test_a_verse_fragment_under_four_words_needs_a_reference(m, bible):
+    first = "Îmi ridic ochii spre munți. De unde-mi va veni ajutorul?"
+    reading = S.Reading()
+    m.match(first, "ro", "en", reading.update(first))
+    assert m.match("Ajutorul meu vine.", "ro", "en", reading.update("Ajutorul meu vine.")) is None
+    m2, reading = V.Matcher(background=False), S.Reading()
+    for p in ("Citim din Psalmul 121.", first):
+        m2.match(p, "ro", "en", reading.update(p), reading.announced)
+    out = m2.match("Ajutorul meu vine.", "ro", "en", reading.update("Ajutorul meu vine."))
+    assert out is not None and out.caption == "My help comes"

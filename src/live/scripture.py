@@ -213,10 +213,23 @@ class Reading:
                 ref = dataclasses.replace(ref, verse=vo[0], verse_end=vo[1])
             self.ref, self.left, self.announced = ref, self.chunks, True
             return ref
-        self.announced = False
+        prev_announced, self.announced = self.announced, False
         if self.ref is None or self.left <= 0:
             self.ref = None
             return None
+        # «X cu Y» at the start of a piece, the book said in the piece before (2026-11-08 evening):
+        # «Proverbe 12.» | «24 cu 10, că dacă slăbești…» came out "24 with 10", «Matei 24» | «cu 3»
+        # "with 3". Read as chapter:verse of the book in force.
+        w = _words(text)
+        if self.ref.book is not None:
+            if len(w) >= 3 and w[0].isdigit() and w[1] == "cu" and w[2].isdigit() and int(w[0]) <= 150:
+                self.ref = dataclasses.replace(self.ref, chapter=int(w[0]), verse=int(w[2]), verse_end=None)
+                self.left, self.announced = self.chunks, True
+                return self.ref
+            if len(w) >= 2 and w[0] == "cu" and w[1].isdigit() and prev_announced and self.ref.verse is None:
+                self.ref = dataclasses.replace(self.ref, verse=int(w[1]))
+                self.left, self.announced = self.chunks, True
+                return self.ref
         self.left -= 1
         vo = verse_only(text)
         if vo is not None:

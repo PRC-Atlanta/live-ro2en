@@ -625,7 +625,7 @@ class MLXLLMTranslator:
         hint = ""
         if use_context and reading is not None:
             hint = reading.hint(reading.update(text), src, tgt)
-        verse = self.verses.match(text, src, tgt, reading.ref) \
+        verse = self.verses.match(text, src, tgt, reading.ref, reading.announced) \
             if use_context and reading is not None and getattr(self, "verses", None) is not None else None
         if verse is not None:
             return self._verse(verse, text, src, tgt, glossary)
@@ -809,7 +809,7 @@ class ByDirection:
             self.last_verse = None
             return ""
         self.reading.update(text)
-        verse = self.verses.match(text, src, tgt, self.reading.ref)
+        verse = self.verses.match(text, src, tgt, self.reading.ref, self.reading.announced)
         if verse is None:
             self.last_verse = None
             return tr.translate(text, src, tgt, glossary)
