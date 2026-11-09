@@ -314,7 +314,22 @@ def mismatches(src: str, out: str, lang: str, tgt: str) -> dict:
     na, nb = negated(src, lang), negated(out, tgt)
     if na != nb and not ambiguous_negation(src if lang == "ro" else out, "ro"):
         issues["negation"] = {"source": na, "translation": nb}
+    elif na and nb:
+        # both say "not" somewhere, but one sentence lost its own: «n-are valoare. Soția a murit, n-a
+        # putut…» → "have value. His wife died, and he couldn't…" (2026-11-08 evening, idea 35).
+        # Compared sentence by sentence only when both have the same number of sentences.
+        sa, sb = _sentences(src), _sentences(out)
+        if len(sa) == len(sb) > 1:
+            for x, y in zip(sa, sb):
+                nx, ny = negated(x, lang), negated(y, tgt)
+                if nx != ny and not ambiguous_negation(x if lang == "ro" else y, "ro"):
+                    issues["negation"] = {"source": nx, "translation": ny, "sentence": x}
+                    break
     return issues
+
+
+def _sentences(text: str) -> list[str]:
+    return [x for x in re.split(r"(?<=[.!?])\s+", text.strip()) if re.search(r"[^\W\d_]", x)]
 
 
 # --- warnings for the translator ---------------------------------------------------------------

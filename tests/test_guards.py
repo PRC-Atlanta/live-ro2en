@@ -453,3 +453,14 @@ def test_days_glued_next_to_a_month():
     assert G.month_days("în noiembrie 2021.", "în noiembrie 2021.")[0] == "în noiembrie 2021."
     assert G.month_days("în decembrie 2026.")[0] == "în decembrie 2026."
     assert G.month_days("cu 1520 mai mult")[0] == "cu 1520 mai mult"
+
+
+# idea 35 (2026-11-08 evening): one sentence lost its «nu» while another kept one
+def test_a_negation_lost_in_one_sentence_of_several():
+    assert "negation" in G.mismatches("n-are valoare. Soția a murit, n-a putut nici măcar să-l jelească.",
+                                      "have value. His wife died, and he couldn't even help her.", "ro", "en")
+    assert "negation" not in G.mismatches("n-are valoare. Soția a murit, n-a putut nici măcar să-l jelească.",
+                                          "has no value. His wife died, and he couldn't even mourn her.", "ro", "en")
+    # different sentence counts: the whole-piece comparison only
+    assert "negation" not in G.mismatches("N-are valoare, soția a murit. N-a putut.",
+                                          "It has no value, his wife died and he could not.", "ro", "en")

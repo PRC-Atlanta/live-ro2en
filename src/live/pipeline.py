@@ -51,9 +51,18 @@ DANGLING = frozenset("din de la în cu pe pentru și că care dar iar sau ca să
                      "of to in on for and but that which the a an".split())
 
 
+# a Romanian phrase that stops on a negation lost it at the cut: «în ceața aceea că nu.» |
+# «mai recunoaștem» came out "where we do not" | "we again recognize" (2026-11-08 evening, idea 35)
+NEGATION_END = frozenset({"nu", "nici", "n"})
+
+
 def dangling(text: str) -> bool:
     words = tokens(text)
-    return bool(words) and words[-1] in DANGLING
+    if not words:
+        return False
+    if words[-1] in DANGLING or words[-1] in NEGATION_END:
+        return True
+    return words[-1] == "mai" and len(words) > 1 and words[-2] in NEGATION_END     # «nu mai.»
 
 
 def pack_parts(parts: list[str], max_words: int) -> list[str]:
