@@ -617,6 +617,11 @@ class MLXLLMTranslator:
             if glossary is not None:
                 text = namelist.map_back(text, glossary.names, gate.lexicon()["en"])   # Dragosh → Dragoș, Souchava → Suceava
         reading = getattr(self, "reading", None)
+        if use_context and getattr(self, "verses", None) is not None:
+            text = self.verses.take_tail(text, src)     # the verse's last words, already captioned
+            if not text.strip():
+                self.last_verse = None
+                return ""
         hint = ""
         if use_context and reading is not None:
             hint = reading.hint(reading.update(text), src, tgt)
@@ -799,6 +804,10 @@ class ByDirection:
             text = guards.to_digits(text, "en")
             if glossary is not None:
                 text = namelist.map_back(text, glossary.names, gate.lexicon()["en"])
+        text = self.verses.take_tail(text, src)         # the verse's last words, already captioned
+        if not text.strip():
+            self.last_verse = None
+            return ""
         self.reading.update(text)
         verse = self.verses.match(text, src, tgt, self.reading.ref)
         if verse is None:

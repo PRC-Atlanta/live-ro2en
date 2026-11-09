@@ -65,11 +65,14 @@ def test_data_is_bundled_and_documented():
 # --- recognising verses -------------------------------------------------------------------
 def test_psalm_71_3_with_recognition_errors(m):
     out = read(m, ["Fii o stâncă de adăpost pentru mine.", "unde să pot fugi totdeauna.",
-                   "ai hotărât să mă scap.", "căci tu ești stânca.", "și cetățenia. mea."])
-    assert [o.ref for o in out] == ["Psalm 71:3"] * 5
+                   "ai hotărât să mă scap.", "căci tu ești stânca."])
+    assert [o.ref for o in out] == ["Psalm 71:3"] * 4
     assert out[0].caption == "Be to me a rock of refuge"
     assert "Give the command to save me" in out[2].caption            # not "cast me off"
-    assert out[4].caption == "and my fortress."
+    # 1-3 words before the verse's end: captioned to the end (idea 36), and the speaker's
+    # «și cetățenia. mea.» right after is not translated again
+    assert out[3].caption.endswith("my rock and my fortress.")
+    assert m.take_tail("și cetățenia. mea.", "ro") == ""
     assert out[0].log() == {"ref": "Psalm 71:3", "score": 1.0, "words": 7, "near": False}
 
 
@@ -227,3 +230,26 @@ def test_words_around_a_verse_that_say_it_again_are_dropped():
     assert T.around_verse("păcatele ei", "De aceea îți spun: Păcatele ei, care sunt multe, sunt iertate") == ""
     assert T.around_verse("He", "Whoever tends the fig tree shall eat its fruit.") == ""
     assert T.around_verse("And now let me tell you a story", cap) == "And now let me tell you a story"
+
+
+# idea 36 (2026-11-08 evening): Matthew 6:30 stopped at "clothe you, you", and «puțin credincioșilor»
+# went to the translator alone as "few faithful ones"
+def test_a_verse_cut_just_before_its_end_is_captioned_to_the_end(m):
+    reading = S.Reading()
+    pieces = ["Așa, că dacă astfel îmbracă Dumnezeu iarba de pe câmp.",
+              "care astăzi este, este, dar mâine va fi aruncată în cuptor.",
+              "nu vă va îmbrăca El cu mult mai mult pe voi."]
+    out = [m.match(p, "ro", "en", reading.update(p)) for p in pieces]
+    assert out[-1] is not None and out[-1].caption.rstrip().endswith("of little faith?")
+    nxt = "puțin credincioșilor. E o sintagmă în care"
+    assert m.take_tail(nxt, "ro") == "E o sintagmă în care"
+    assert m.take_tail(nxt, "ro") == nxt                # only once, right after that caption
+
+
+def test_a_piece_that_does_not_start_with_the_verse_end_is_kept(m):
+    reading = S.Reading()
+    for p in ["Așa, că dacă astfel îmbracă Dumnezeu iarba de pe câmp.",
+              "care astăzi este, este, dar mâine va fi aruncată în cuptor.",
+              "nu vă va îmbrăca El cu mult mai mult pe voi."]:
+        m.match(p, "ro", "en", reading.update(p))
+    assert m.take_tail("Și acum fraților, ascultați.", "ro") == "Și acum fraților, ascultați."
