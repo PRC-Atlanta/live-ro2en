@@ -89,7 +89,13 @@ CHURCH_PHRASES = ["slăvit să fie Domnul", "slăviți să fie", "lăudat să fi
                   # «ocupăm lucrurile» (locurile), English names in announcements
                   "Preaiubiților", "iubiții mei", "cerul slavei", "prisosul inimii", "Iehova", "mlădiță",
                   "viță roditoare", "corul bisericii", "să vă ocupați locurile", "să ne ocupăm locurile",
-                  "Samaritan's Purse", "Operation Christmas Child", "shoebox", "hallway", "fundraiser"]
+                  "Samaritan's Purse", "Operation Christmas Child", "shoebox", "hallway", "fundraiser",
+                  # 2026-11-08 evening: «împărțirea» (împărăția) → "the division of God", «Eminența» (imanența),
+                  # «filamentul» (falimentul) → "the thread", «înviți» (învinși), «simptomă» (sintagmă, ~15×);
+                  # English inside Romanian: «Hellker» (healthcare) → "legal" / "illegal", «Sandis» (Sunday
+                  # school), «bas» (bus) → "the game"
+                  "împărăția lui Dumnezeu", "imanența", "falimentul", "robiți și învinși", "sintagmă",
+                  "healthcare", "Sunday school", "bus", "outside"]
 
 class NemoSTT:
     """NeMo hybrid TDT/CTC model called directly: preprocessor + encoder on the Apple GPU
