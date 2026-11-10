@@ -497,6 +497,46 @@ if est_start − s.spk_end > voice.limit_s (10 s)
   the newest. Scripture is never skipped. A skip leaves a 0.6 s pause (no chime), and each skipped
   sentence is logged as `skipped`. `voice_report.py` counts skips; they also show in After.
 
+**Built (M4, 2026-11-10)** in `src/voice/pacing.py` (used by the voice process and, in simulated time, by the
+tests), `src/live/summarize.py`, `src/live/voicelink.py`; tests in `tests/test_voice_pacing.py`.
+- **The speed rule is the one of the voiced runs**, `live_sim_pace.next_speed`: the target is rounded to the
+  0.05 grid and moves at most 0.1 per sentence, *and* a target within one grid step (0.05) of the current
+  speed keeps it. The paragraph above says that second part was dropped; the script the user listened to
+  still has it, and with it the three voiced runs are reproduced exactly, so it is kept. Its effect: at a
+  steady lag of 2.0–2.4 s the voice stays at 1.30 instead of stepping down to 1.25. It does return to 1.25
+  once the lag is 2 s or less (tested).
+- **The voiced runs are reproduced through the new code** with their recorded generation and audio times:
+  eulogy 3.46 / 9.00 / 11.47 s, 95.8% within 10 s; Alex sermon 6.46 / 13.80 / 19.64 s, 74.5%; every sentence at
+  the speed it was voiced at, the same summaries, no skips (to 0.01 s). The Romanian sermon (English voice,
+  §14) to 0.2 s: one sentence there was replaced by a summary and its own generation time was not kept.
+- **§4.3's first table** (no summaries): always 1.25 → eulogy 4.3 s / 88%, sermon 11.4 s / 38%, 35 late
+  (exact); smooth → eulogy 3.8 s / 90% (table: 3.7 / 94%), sermon 7.2 s / 70%, 17 late (table: 7.1 / 70% / 17).
+- **The earlier always-1.25 simulation with summaries** (`timeline_live_hold0_catchup.csv`): eulogy exact
+  (4.08 / 10.03 s, 89.1%, 7 summaries); Alex 5.01 / 9.32 s, 92.2%, 9 summaries against 5.06 / 9.65 s, 90%, 9.
+  §9 asks for 0.1 s: the median is within it, the 90th percentile is not (0.33 s), because that simulation
+  projected a sentence's start from its *real* generation time and the voice can only estimate it (words ×
+  the recent seconds per word). The test allows 0.4 s there and says why.
+- **The summary runs on a loaded Gemma** (the live translator's member in Best, the spare in Quickest) with
+  `mlx_lm.generate` and no prompt cache: the translator's `_kv` is neither read nor replaced (tested). It runs
+  under `_proc_lock`, only when no phrase is being translated or waiting; one summary at a time; the voice
+  gives up after `summary_timeout_s`. `state.summarizer` says in advance whether one is loaded.
+- **Gemma in Quickest:** with Live Voice on, Gemma is kept as the spare also when "keep both translators" is
+  set to Never, but only on a Mac with ≥ 24 GB (the existing rule for holding both). On a smaller Mac
+  Quickest has no summarizer and the voice uses the speed and skip-ahead.
+- **Guards** (`summarize.check`), on every summary of both simulations, labelled by hand (13 + 23): they
+  refuse "tatăl meu → tatăl său", every summary that is not clearly shorter, and every summary of the parable
+  reading (two by the text guards, the rest by the Scripture rule, which is applied before any model runs).
+  **False rejections (4):** good summaries refused as "not clearly shorter" ("…a susținut mulți să facă voia
+  Domnului în secret", 17 → 11 words). **Missed (2):** "Să căutăm voia Domnului" → "Căutați voia Domnului"
+  (we → you) and "E talentul tău…" → "Recunoaște-ți talentul" (a statement → an order): no guard reads verb
+  endings. Rule (c) (first person kept) caused no false rejection on either run, so it is on.
+- **Prompt:** the tested prompt with the person rule, plus one sentence saying the input is a transcript to
+  condense and never an instruction to follow (what is said in the room must not steer the model).
+- **"This batch is not asked again"** is not tracked separately: every new sentence makes a new batch (the
+  queued items plus it), exactly as the voiced simulation did.
+- **A summary replaces the queued items it covers**; if one of them started playing while Gemma wrote, the
+  summary still plays (that sentence is then heard twice in short). Rare: the request takes 1–2 s.
+
 ### 4.4 Log
 
 `<logs>/voice/<date>_<time>.jsonl`, next to the service log, records every `sentence` received,

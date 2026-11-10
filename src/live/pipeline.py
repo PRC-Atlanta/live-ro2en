@@ -243,10 +243,16 @@ class PipelineMixin:
         """Keep the other profile's translator loaded: `live.keep_both_translators`
         true/false, or auto (the default) = this Mac has the RAM for it (>= 24 GB)."""
         v = self.lc.get("keep_both_translators", "auto")
-        if isinstance(v, bool):
-            return v
+        if v is True:
+            return True
         import model_setup
-        return model_setup.hardware()["ram_bytes"] >= model_setup.QUALITY_RAM
+        roomy = model_setup.hardware()["ram_bytes"] >= model_setup.QUALITY_RAM
+        if v is False:                       # "Never", unless Live Voice needs Gemma for its summaries while
+            return roomy and self._voice_wants_gemma()   # Quickest translates with NLLB (plan §2.5)
+        return roomy
+
+    def _voice_wants_gemma(self) -> bool:
+        return bool(getattr(self, "voice_enabled", lambda: False)())
 
     def _load_one(self, spec: str, lc: dict, direction: tuple = ("ro", "en")):
         """Translator `spec` loaded and warmed up in the direction it serves (outside _proc_lock)."""
