@@ -85,6 +85,18 @@ CALLS = [
     ["live", "POST", "blank", {}],
     ["live", "POST", "diagnostics", {}],
     ["settings", "POST", "retract", {}],
+    # Live Voice and the AI / Local knob
+    ["live", "POST", "engine", {"engine": "ai"}],
+    ["live", "POST", "engine", {"engine": "cloud"}],
+    ["live", "POST", "engine", {"engine": "local"}],
+    ["settings", "POST", "ai/key", {"key": "sk-ant-" + "a1B2" * 12}],
+    ["settings", "POST", "ai/key", {"key": "nope"}],
+    ["settings", "POST", "ai/key", {"key": None}],
+    ["settings", "POST", "engine", {"engine": "ai"}],
+    ["settings", "POST", "voice/test", {"lang": "ro"}],
+    ["settings", "POST", "voice/test", {"lang": "fr"}],
+    ["settings", "PUT", "settings", {"values": {"voice.enabled": True}}],
+    ["settings", "POST", "setup/download", {"profile": "voice"}],
 ]
 
 
@@ -159,7 +171,7 @@ def test_the_mock_answers_like_the_backend_where_it_matters(answers):
     assert resumed["state"] == "running" and resumed["pct"] >= dl["pct"], "a new download resumes the partial files"
     assert by[("fresh_install", "GET", "setup")][-1]["data"]["profiles"]["quality"]["ready"]
     puts = by[("settings", "PUT", "settings")]
-    assert [p["status"] for p in puts] == [200, 200, 400, 400, 400, 200, 200, 200, 200]
+    assert [p["status"] for p in puts] == [200, 200, 400, 400, 400, 200, 200, 200, 200, 200]   # the last: voice.enabled
     assert puts[2]["data"] == {"error": "rejected", "keys": ["live.translator"], "detail": "these settings cannot be changed here"}
     assert puts[3]["data"]["keys"] == ["live"], "nested {live: {...}} is not the API's shape"
     assert set(puts[4]["data"]["detail"]) == {"propresenter.port", "propresenter.host"}

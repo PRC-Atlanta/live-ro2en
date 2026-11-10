@@ -19,6 +19,34 @@ export function summary(s) {
     delay: s.latency_median == null ? "–" : `${Number(s.latency_median).toFixed(1)} s`,
     firstWords: s.first_word_ok_pct == null ? "–" : `${Math.round(s.first_word_ok_pct)}%`,
     ppErrors: c.pp_error || 0, corrections: s.corrections_n || 0,
+    engines: enginesLine(s.ai?.used), voice: voiceFacts(s.voice),
+  };
+}
+
+// "AI 38 min · Local 4 min (2 min of it while AI did not answer)", or null when AI was never used
+export function enginesLine(u) {
+  if (!u) return null;
+  const min = v => Math.round(((v && v.s) || 0) / 60);
+  const ai = u.ai?.phrases || 0, fb = u.local_fallback?.phrases || 0, loc = u.local?.phrases || 0;
+  if (!ai && !fb) return loc ? "Local models" : null;
+  const parts = [`AI ${min(u.ai)} min (${ai} captions)`];
+  if (loc || fb) parts.push(`Local ${min(u.local) + min(u.local_fallback)} min (${loc + fb} captions` +
+                            (fb ? `, ${fb} of them while AI did not answer)` : ")"));
+  return parts.join(" · ");
+}
+
+// Live Voice's numbers (plan §5), or null when it was off or played nothing
+export function voiceFacts(v) {
+  const x = v?.session;
+  if (!v?.enabled && !(x && x.items)) return null;
+  if (!x || !x.items) return { played: "Nothing spoken yet" };
+  return {
+    played: `${x.items} sentences`,
+    delay: x.delay_median_s == null ? "–" : `${Number(x.delay_median_s).toFixed(1)} s`,
+    within: x.within_10s_pct == null ? "–" : `${Math.round(x.within_10s_pct)}%`,
+    summaries: `${x.summaries} spoken, ${x.summaries_refused} refused`,
+    peak: `${x.peak_listeners.ro} Romanian · ${x.peak_listeners.en} English`,
+    late: x.within_10s_pct != null && x.within_10s_pct < 70,
   };
 }
 
@@ -75,10 +103,15 @@ export function render(el, store) {
     else { free.disabled = false; memMsg.say(r.notBuilt ? `Freeing memory is ${NOT_BUILT.toLowerCase()} Quitting the app does the same.` : "Couldn't free memory. Quitting the app does the same.", r.notBuilt ? "warn" : "bad"); }
   });
 
+  const voiceFactsEl = h("dl.fx-facts");
+  const voicePanel = h("section.fx-panel",
+    h("div.fx-head", h("span.fx-label", "Live Voice"), h("span.fx-sub", "What listeners heard")), voiceFactsEl);
+  voicePanel.hidden = true;
   const unframe = screenFrame(el, store,
     h("section.fx-panel",
       h("div.fx-head", h("span.fx-label", "After the sermon"), h("span.fx-sub", "Summary of this service")),
       facts),
+    voicePanel,
     h("section.fx-panel",
       h("div.fx-head", h("span.fx-label", "How did it go?"), h("span.fx-sub", "Helps tune the translator")),
       h("div.fx-sec",
@@ -107,7 +140,14 @@ export function render(el, store) {
       fact("Typical delay", m.delay), fact("First words within 6 s", m.firstWords),
       fact("Skipped phrases", String(m.skipped), m.skipped ? "warn" : ""),
       fact("ProPresenter errors", String(m.ppErrors), m.ppErrors ? "warn" : "good"),
-      fact("Corrections", String(m.corrections)));
+      fact("Corrections", String(m.corrections)),
+      ...(m.engines ? [fact("Translated by", m.engines)] : []));
+    const v = m.voice;
+    voicePanel.hidden = !v;
+    if (v) voiceFactsEl.replaceChildren(
+      fact("Spoken", v.played),
+      ...(v.delay ? [fact("Typical delay after the speaker", v.delay), fact("Started within 10 s", v.within, v.late ? "warn" : "good"),
+                     fact("Catch-up summaries", v.summaries), fact("Most listeners at once", v.peak)] : []));
     const live = s.running || ["captioning", "listening", "starting"].includes(s.phase);
     if (live && !free.disabled) memMsg.say("Captions are still running. Stop them on the Live screen first.", "warn");
     free.disabled = live || s.phase === "stopped" && memMsg.textContent.startsWith("Memory freed");

@@ -173,6 +173,144 @@ export function render(el, store) {
       };
     },
 
+    // Live Voice (docs/live_voice_plan.md §5): the switch, how it is doing, the address phones open (with
+    // a QR code to print, drawn by the Mac app), Test voice, and the few settings.
+    voice() {
+      const on = getPath(settings, "voice.enabled") === true;
+      const swMsg = note();
+      const sw = h("button.fx-ppsw", { type: "button", role: "switch", "aria-checked": String(on), "aria-label": "Live Voice",
+        onclick: async () => {
+          swMsg.say("Saving…");
+          const r = await call("PUT", "settings", patch("voice.enabled", !on));
+          if (r.ok) { const s = settingsOf(r.data); if (Object.keys(s).length) settings = s; show("voice", true); }
+          else { const n = saveNote(r); swMsg.say(n.text, n.tone); }
+        } }, h("b"), h("span", on ? "ON" : "OFF"));
+      pane.append(h(`div.fx-sec.fx-ppbox.calm${on ? "" : ".off"}`,
+        h("div.fx-ppbox-t", h("strong", "Live Voice"),
+          h("span", on ? "On: the captions are read aloud to phones on the church Wi-Fi, in Romanian and in English."
+                       : "Off: nothing is spoken and no address is open. Captions work as always.")),
+        sw), swMsg);
+
+      const status = h("p.fx-note", { "aria-live": "polite" });
+      const dlMsg = note();
+      const download = button("Download the voice (401 MB)", async () => {
+        dlMsg.say("Starting the download…");
+        const r = await call("POST", "setup/download", { profile: "voice" });
+        dlMsg.say(r.ok ? "Downloading. It starts by itself when the download is done." : r.data?.msg || "Couldn't start the download.", r.ok ? "" : "bad");
+      }, ".primary");
+      const dlRow = h("div.fx-row", download);
+      dlRow.hidden = true;
+
+      const addr = h("strong.fx-pin");
+      const qr = h("div.fx-qr");
+      const print = button("Print the card", () => window.print());
+      const addrBox = h("div.fx-sec.fx-voicecard", h("span.fx-label", "Address for listeners"),
+        h("p.fx-text", "Listeners join the church Wi-Fi, scan this code (or type the address) and tap Ascultă în română or Listen in English. No app and no password."),
+        h("div.fx-row", qr, h("div", addr, h("p.fx-hint", "Give this Mac a fixed address on the church router, or the code stops working when the address changes."))),
+        h("div.fx-row.noprint", print));
+      const testMsg = note();
+      const test = lang => button(lang === "ro" ? "Test the Romanian voice" : "Test the English voice", async () => {
+        const r = await call("POST", "voice/test", { lang });
+        testMsg.say(r.ok && r.data?.ok ? "Speaking one sentence into the stream now." : "The voice is not running.", r.ok && r.data?.ok ? "good" : "warn");
+      });
+      const conn = h(`div.fx-conn${on ? "" : ".off"}`,
+        h("div.fx-sec", h("span.fx-label", "Now"), status, dlRow, dlMsg),
+        addrBox,
+        h("div.fx-sec", h("span.fx-label", "Test voice"), h("div.fx-row", test("ro"), test("en")), testMsg),
+        h("div.fx-sec", h("span.fx-label", "Settings"), ...FIELDS.voice.map(control)));
+      if (!on) conn.inert = true;
+      pane.append(conn);
+
+      let lastUrl = null;
+      const WORDS = { off: "Off", starting: "Starting: loading the voice…", ready: "Ready: streaming silence until someone speaks",
+                      speaking: "Speaking", behind: "Behind the speaker: speaking faster and shortening", stopped: "Stopped" };
+      onState = s => {
+        const v = s.voice || {};
+        const n = v.listeners ? `${v.listeners.ro} listening in Romanian, ${v.listeners.en} in English` : "";
+        const missing = v.enabled && v.model === false;
+        status.textContent = missing ? "The voice is not downloaded yet."
+          : v.state === "stopped" ? `Stopped${v.error ? `: ${v.error}` : ""}. Captions are not affected.`
+          : [WORDS[v.state] || "", v.behind_s != null && v.state === "behind" ? `(${Math.round(v.behind_s)} s)` : "", n && v.state !== "off" ? `· ${n}` : ""].filter(Boolean).join(" ");
+        status.dataset.tone = v.state === "stopped" || missing ? "bad" : v.state === "behind" || v.state === "starting" ? "warn" : v.state === "off" ? "" : "good";
+        dlRow.hidden = !missing;
+        addr.textContent = v.url || (v.enabled ? "This Mac is not on a network." : "");
+        if (v.url !== lastUrl) {
+          lastUrl = v.url;
+          qr.replaceChildren();
+          const bridge = window.webkit?.messageHandlers?.qrCode;      // the Mac app draws the code (CoreImage)
+          if (v.url && bridge) bridge.postMessage({ text: v.url }).then(src => {
+            if (typeof src === "string" && src.startsWith("data:image/png")) qr.replaceChildren(h("img", { src, alt: `QR code for ${v.url}`, width: 168, height: 168 }));
+          }, () => {});
+        }
+      };
+    },
+
+    // The AI / Local knob's home: the key (kept in the macOS Keychain), which engine, and how AI is doing.
+    ai() {
+      const keyState = h("p.fx-note", { "aria-live": "polite" });
+      const keyMsg = note();
+      const input = h("input", { type: "password", placeholder: "sk-ant-…", autocomplete: "off", spellcheck: false,
+                                 "aria-label": "Anthropic API key" });
+      const save = button("Save the key", async () => {
+        const key = input.value.trim();
+        if (!key) { keyMsg.say("Paste the key first.", "warn"); return; }
+        keyMsg.say("Saving…");
+        const r = await call("POST", "ai/key", { key });
+        input.value = "";
+        keyMsg.say(r.ok ? "Saved in this Mac's Keychain." : r.data?.detail || "The key was not saved.", r.ok ? "good" : "bad");
+      }, ".primary");
+      const remove = button("Remove the key", async () => {
+        const r = await call("POST", "ai/key", { key: null });
+        keyMsg.say(r.ok ? "Removed. Translation is Local." : "The key was not removed.", r.ok ? "good" : "bad");
+      }, ".danger");
+      const engMsg = note();
+      const pick = async e => {
+        engMsg.say("Switching…");
+        const r = await call("POST", "engine", { engine: e });
+        engMsg.say(r.ok ? "" : r.data?.detail || "Couldn't switch.", r.ok ? "" : "warn");
+      };
+      const engBox = h("div");
+      const now = h("p.fx-note", { "aria-live": "polite" });
+      const used = h("dl.fx-facts");
+      pane.append(
+        h("div.fx-sec", h("span.fx-label", "Translator"),
+          h("p.fx-text", "Local: this Mac's own models translate, and nothing leaves the building. " +
+                         "AI: Claude Haiku translates over the internet and also writes Live Voice's short summaries. " +
+                         "The local models stay loaded and take over, phrase by phrase, whenever the AI does not answer in time. " +
+                         "It is the same switch as the Translator knob on the Live screen (key A)."),
+          engBox, now, engMsg),
+        h("div.fx-sec", h("span.fx-label", "Anthropic API key"),
+          h("p.fx-text", "AI needs a key from console.anthropic.com. It is kept in this Mac's Keychain, never in a file, a log or on another Mac. " +
+                         "With AI on, everything said into the microphone is sent to Anthropic as text to be translated."),
+          keyState, h("div.fx-row", input, save, remove), keyMsg),
+        h("div.fx-sec", h("span.fx-label", "This service"), used));
+      const SRC = { keychain: "A key is saved in this Mac's Keychain.", env: "Using the key from this Mac's environment (ANTHROPIC_API_KEY).",
+                    dotenv: "Using the key from the developer's .env file.", test: "Using a test key." };
+      const STATE = { local: "Local models are translating.", ai: "AI is translating.", no_key: "AI is chosen but there is no key: Local is translating.",
+                      fallback: "AI is not answering: the local models are translating until it does." };
+      let lastSel = null;
+      onState = s => {
+        const a = s.ai || {};
+        keyState.textContent = a.available ? SRC[a.key_source] || "A key is set." : "No key yet: the Translator knob stays on Local.";
+        keyState.dataset.tone = a.available ? "good" : "warn";
+        remove.hidden = a.key_source !== "keychain";
+        if (a.selected !== lastSel || engBox.dataset.av !== String(!!a.available)) {
+          lastSel = a.selected; engBox.dataset.av = String(!!a.available);
+          engBox.replaceChildren(choice("Translator", [["local", "Local", "Nothing leaves this Mac"], ["ai", "AI", "Claude Haiku, online"]],
+                                        a.selected || "local", pick, { disabled: a.available ? {} : { ai: "Add a key first" } }));
+        }
+        now.textContent = [STATE[a.state] || "", a.state === "fallback" && a.down_s != null ? `(${Math.round(a.down_s)} s so far)` : "",
+                           a.state === "ai" && a.latency_median_s != null ? `Typical answer: ${a.latency_median_s.toFixed(1)} s.` : ""].filter(Boolean).join(" ");
+        now.dataset.tone = a.state === "fallback" || a.state === "no_key" ? "warn" : a.state === "ai" ? "good" : "";
+        const u = a.used || {};
+        const mins = v => (v ? `${v.phrases} captions · ${Math.round((v.s || 0) / 60)} min` : "–");
+        used.replaceChildren(
+          h("div.fx-fact", h("dt", "AI"), h("dd", mins(u.ai))),
+          h("div.fx-fact", h("dt", "Local"), h("dd", mins(u.local))),
+          h("div.fx-fact", h("dt", "Local while AI did not answer"), h("dd", mins(u.local_fallback))));
+      };
+    },
+
     names() {
       const kwMsg = note(), spMsg = note(), blMsg = note();
       const words = listEditor({ label: "Names & words", placeholders: ["e.g. Ionuț Pop"], addLabel: "Add a name or word",

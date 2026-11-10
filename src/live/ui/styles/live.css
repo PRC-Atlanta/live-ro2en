@@ -343,6 +343,16 @@ kbd { font: 600 12px var(--num); color: var(--cyan-hi); background: #050b0e; bor
   .earlier li { grid-template-columns: 1fr; gap: 2px; }
   .banner { flex-wrap: wrap; }
 }
+/* a window shorter than the default (the app opens at 1280×800): the 30-second history and the
+   earlier-phrases drawer make room, and the deck is a little smaller, so the dial and every control
+   stay in view also while a problem banner shows */
+@media (max-height: 780px) and (min-height: 601px) {
+  .lvl .hist { display: none; }
+  .earlier { display: none; }
+  .mirror { padding-bottom: 8px; }
+  .deck { zoom: .86; }
+  .foot { margin-top: 4px; }
+}
 /* small window beside ProPresenter (600×500): keep the dial above the fold */
 @media (max-height: 600px) {
   main:has(> .unit) { padding: 0; }
