@@ -146,6 +146,39 @@ speaker's language switches to Romanian, the operator presses Stop, or no chunk 
 `flush_s` (4 s) after a chunk that had no closing punctuation. Without that timeout a speaker who
 trails off would hold a sentence back for ever.
 
+**Built (M1, 2026-11-10)** in `src/live/speech.py` (`SentenceBuilder`, `SpeechMixin`); tests in
+`tests/test_voice_sentences.py`, data in `tests/data/voice/` (`scripts/voice_testdata.py`).
+- **Hindsight mode reproduces the simulation exactly** on all three runs: eulogy 48/48, Alex sermon 56/56,
+  the Romanian sermon `tts-live-ro-nelu` (English sentences) 51/51: text, reason, chunks and ready time.
+- **Live rule against the simulation's boundaries:** eulogy 47/48, Alex 56/56, nelu 51/51 (gate ≥ 95%).
+  The one mismatch, checked by hand: the eulogy's "Acest om a susținut financiar mulți, mulți, mulți | să facă
+  voia Domnului…" is split because the speaker said a Romanian phrase in between, and a language switch
+  closes the sentence (§2.2); the simulation ignored Romanian chunks. One sentence per run differs in a
+  capital only (a name not seen yet when its chunk arrived). In the unit test the pause is read from every
+  phrase the engine committed, because the service log has no voice-activity readings; the real readings
+  are used in the M6 replays.
+- **A phrase that was not captioned counts as the pause** (my addition; without it Alex was 49/56): when
+  the open sentence's last chunk ended in `. ? !`, the speaker went on within `pause_s`, and that next phrase
+  came out empty or was dropped (`empty_stt`, `low_confidence`, `scrap`…), the sentence is closed there.
+  In the simulation such phrases were not in the input, so the next chunk came "after a pause".
+- **"Did the speaker pause?"** (`level_gap`): the level reading that holds `t_end` and the one after it still
+  say speech (the meter's flag covers the previous reading), so readings count as silence only once one says
+  so: continuous speech → no pause, speech after a silent reading → a breath of that length, silence up to
+  `t_end + pause_s` → a pause. With no readings at all (no engine) it is a pause after `pause_s + 1.5 s`.
+- **The flush timer** fires `flush_s` after the last chunk only when nothing is on its way (no phrase held,
+  queued or being translated, no speech in the last second), and after 3 × `flush_s` whatever the engine
+  hears. A plain 4 s timer would cut every sentence of a speaker whose next 5 s phrase is still being spoken.
+- **Scripture marking** uses the sentence step's own `scripture.Reading`, replayed over every shown chunk
+  with the verse-match window, exactly as the simulation's `scripture_ids` did, instead of an accessor on the
+  translator: it works the same for NLLB, Gemma and Haiku, and the Fast profile (one NLLB, no reading of its
+  own) is covered too.
+- **Book numbers** come from `data/bible_books.csv` (Timotei included). A number after "capitolul / chapter /
+  versetul / verse" is left alone ("în capitolul 2 Ioan spune").
+- **Replay clock:** the offset is the smallest (arrival − capture time) over the engine's level readings
+  while `LIVE_FILE_SPEED` is set, not `arrival − t_emit` (`t_emit` is already on the wall clock).
+- A late verse: the voice gets the previous chunk without its last part, and the verse chunk without the
+  repeated first parts; a blocklist `***` is never read.
+
 ### 2.3 What a sentence carries
 
 ```json

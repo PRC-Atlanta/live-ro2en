@@ -94,6 +94,33 @@ profiles:
     phrase_min_words: 6       # at least 6 words per translation: slow speakers' 3-word pieces wait (+~1 s average delay)
     context_clauses: 4        # Gemma sees the previous 4 chunks, so short chunks still read as sentences
 
+# Live Voice (docs/live_voice_plan.md): reads the captions aloud to phones on the church Wi-Fi.
+voice:
+  enabled: false
+  port: 8767
+  voices: {ro: M2, en: M2}   # Supertonic 3 preset voice per language
+  en: {enabled: true}        # the English stream (/listen/en) is on with Live Voice
+  steps: 8
+  speed: 1.25           # normal speed
+  speed_max: 1.5        # most it speeds up to when behind (§4.3)
+  speed_lag_lo_s: 2.0   # behind by this much or less: normal speed
+  speed_lag_hi_s: 6.0   # behind by this much or more: speed_max
+  speed_step: 0.1       # most the speed changes from one sentence to the next
+  speed_round: 0.05     # the target speed is rounded to this step
+  threads: 4            # onnxruntime threads (M0: 4 → RTF 0.19 alone, 0.21 under a Quality replay)
+  bitrate_kbps: 64
+  preroll_s: 1.0
+  gap_s: 0.25
+  limit_s: 10.0         # catch-up when a sentence would start later than this after the speaker finished
+  skip_s: 20.0          # no summary possible and this far behind: skip queued non-Scripture sentences
+  summary_timeout_s: 4.0
+  summary_min_words: 12
+  pause_s: 0.6          # sentence step (§2.2)
+  max_words: 30
+  cap_words: 45
+  comma_lo_s: 0.3
+  flush_s: 4.0
+
 propresenter:
   enabled: true               # false: captions stay in the app and the captions display (nothing is sent)
   host: 127.0.0.1

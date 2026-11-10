@@ -109,6 +109,6 @@ def references(text: str, lang: str) -> str:
 
 
 def speakable(text: str, lang: str = "ro") -> str:
-    text = text.translate(QUOTES)
+    text = re.sub(r"\*{2,}", " ", text.translate(QUOTES))     # a masked word (the blocklist's ***) is not read
     text = references(book_numbers(text, lang), lang)
     return re.sub(r"\s+", " ", text).strip()

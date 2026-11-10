@@ -540,6 +540,11 @@ class PipelineMixin:
         with self.lock:
             self.counts[outcome] += 1
         self._write_log(rec)
+        if hasattr(self, "_speech_dropped") and outcome != "stt_error":   # Live Voice (speech.py)
+            try:
+                self._speech_dropped(ev)
+            except Exception:                           # noqa: BLE001  the voice never stops a caption
+                self._state_failed(self._speech_dropped)
 
     def _guard_fallback(self):
         """A loaded NLLB for the guard's last try (idea 5): Quality keeps one for English →
@@ -851,6 +856,16 @@ class PipelineMixin:
             elif ok is False:                           # None: nothing was sent (hidden or held)
                 self.counts["pp_error"] += 1
         self._write_log(rec)
+        if hasattr(self, "_speech_chunk"):              # Live Voice: the sentence step (speech.py)
+            said, prev_left = translation, None
+            if redo:                                    # a late verse: the previous chunk keeps its first parts
+                prev_left = " ".join(last_out[:-1])
+                said = translation[len(prev_left):].strip() if prev_left and translation.startswith(prev_left) \
+                    else translation
+            try:
+                self._speech_chunk(ev, tgt, said, src_text, outcome, t_disp, verse=verse, redo_prev=prev_left)
+            except Exception:                           # noqa: BLE001  the voice never stops a caption
+                self._state_failed(self._speech_chunk)
 
     def _blocklist(self) -> re.Pattern | None:
         """`safety.blocklist` (words or phrases), the lines of `paths.blocklist` if set, the

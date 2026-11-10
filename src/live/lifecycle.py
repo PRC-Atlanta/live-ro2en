@@ -487,6 +487,8 @@ class LifecycleMixin:
                 self._reader_thread.join(30)  # let the final clause be translated, shown and logged
             self._flush()                    # a held fragment is shown before the service ends
             self._drain()                    # nothing from this run may land in the next one
+            if hasattr(self, "_speech_stop"):
+                self._speech_stop()          # Live Voice: the open sentence is spoken (speech.py)
             self.running = False
             self.phase_hint = None
             if warm:
@@ -849,6 +851,8 @@ class LifecycleMixin:
                                      bool(ev.get("speech"))))
         if ev.get("speech"):
             self._last_voice_t = now
+        if hasattr(self, "_speech_level"):
+            self._speech_level(ev, now)                # Live Voice: the replay clock (speech.py)
         if ev.get("auto") and isinstance(ev.get("gain_db"), (int, float)):
             self._eng_gain = float(ev["gain_db"])
         if now - self._last_level_push >= 0.05:        # the meter moves at the engine's rate (≤ 20 Hz)

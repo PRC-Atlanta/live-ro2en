@@ -55,13 +55,15 @@ import settings                                      # noqa: E402
 from settings import SettingsMixin                   # noqa: E402
 from report import SessionMixin                      # noqa: E402
 from state import StateMixin                         # noqa: E402
+from speech import SpeechMixin                       # noqa: E402
 from translate import Glossary                       # noqa: E402
 # re-exported: tests and tools import these from live.app
 from pipeline import is_echo, merge_clauses, pack_parts            # noqa: E402,F401
 from security import LOOPBACK, allowed_hosts, request_allowed      # noqa: E402,F401
 
 
-class Live(LifecycleMixin, PipelineMixin, OutputMixin, DisplayMixin, RemoteMixin, SessionMixin, StateMixin, SettingsMixin):
+class Live(LifecycleMixin, PipelineMixin, OutputMixin, DisplayMixin, RemoteMixin, SessionMixin, StateMixin, SettingsMixin,
+           SpeechMixin):
     """One service: the engine child, the translator, ProPresenter and the control state.
     The behaviour lives in the mixins (lifecycle, pipeline, output, state); this is the data."""
 
