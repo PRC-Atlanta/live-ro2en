@@ -7,6 +7,7 @@ export const KEYS = {
   escape: "blank",
   "1": "mode_auto", "2": "mode_ro", "3": "mode_en",
   q: "quality",
+  a: "engine",            // the AI / Local knob
   backspace: "retract",
   e: "fix",               // opens the fix-last-caption box, which then posts `correct`
   t: "terms",             // opens today's names & words, which then posts `terms`
@@ -35,6 +36,9 @@ export function callFor(intent, s, extra = {}) {
     case "mode_en": return ["mode", { mode: "en-ro" }];
     case "quality": return ["profile", { profile: profiles[(profiles.indexOf(s.profile) + 1) % profiles.length] }];
     case "quickest": return ["profile", { profile: "fast" }];
+    case "engine": return ["engine", { engine: s.ai?.selected === "ai" ? "local" : "ai" }];
+    case "engine_ai": return ["engine", { engine: "ai" }];
+    case "engine_local": return ["engine", { engine: "local" }];
     case "retract": return ["retract", {}];
     case "correct": return ["correct", { text: extra.text ?? "" }];
     case "terms": return ["terms", { lines: extra.lines ?? [], save: !!extra.save }];

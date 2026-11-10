@@ -758,7 +758,7 @@ _META_OPEN = re.compile(
     r"\b(?:the|this) (?:input|piece|text|source|transcript|transcription) (?:is|was|seems|appears|does|has|contains)\b|"
     r"\bnu (?:pot|se poate|am putut)\b|\bîmi pare rău\b|\b(?:textul|fragmentul|piesa) (?:este|pare|nu)\b)", re.IGNORECASE)
 _META_TASK = re.compile(
-    r"\b(?:translat\w+|transcri\w+|the input|(?:the|this) piece|(?:the|this|source) text (?:is|was|seems|appears)(?: to be)? (?:incomplete|unclear|cut|empty|not |too )|"
+    r"\b(?:translat\w+|transcri\w+|the input|(?:the|this) piece|(?:the|this|source) text (?:is|was|seems|appears)(?: to be)? (?:incomplete|unclear|cut off|empty|not clear|not complete|too short)|"
     r"more context|garbled|unintelligible|understandable|make out|what was said|incomplete|"
     r"speech[- ]recognition|per the (?:rules|glossary|instructions)|as instructed|traduc\w+|transcrier\w+)\b", re.IGNORECASE)
 # the speaker's own words about translating, texts or meaning: then the reply may speak of them too

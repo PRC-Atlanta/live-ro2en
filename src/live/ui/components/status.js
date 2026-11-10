@@ -37,7 +37,8 @@ export function delayOf(s) {
 
 // pill: [cls '', 'warn', 'err'] + words. Sound uses the meter's verdict key.
 export function pillsFor(s, meterKey) {
-  if (s.offline) return { sound: ["", S.pills.sound.unknown], pp: ["", S.pills.pp.unknown], pace: ["", S.pills.pace.unknown] };
+  if (s.offline) return { sound: ["", S.pills.sound.unknown], pp: ["", S.pills.pp.unknown], pace: ["", S.pills.pace.unknown],
+                          voice: null, engine: null };
   const out = {};
   const vk = s.audio?.engine === false ? "idle" : s.audio && s.audio.ok === false ? "none" : meterKey || "good";
   const [vword] = S.meter.verdict[vk];
@@ -53,7 +54,31 @@ export function pillsFor(s, meterKey) {
   const d = delayOf(s);
   out.pace = st === "behind" ? ["err", d != null ? S.pills.pace.behindBy(d) : S.pills.pace.behind]
            : st === "slow" ? ["warn", S.pills.pace.slow] : ["", S.pills.pace.ok];
+  out.voice = voicePill(s);
+  out.engine = enginePill(s);
   return out;
+}
+
+// Live Voice's light: null while it is off (no pill). Green = ready or speaking, amber = starting or
+// more than 10 s behind, red = stopped. The words carry the listeners per language.
+export function voicePill(s) {
+  const v = s.voice;
+  if (!v || !v.enabled || v.state === "off") return null;
+  const ro = v.listeners?.ro ?? 0, en = v.listeners?.en ?? 0;
+  const n = S.pills.voice.listeners(ro, en, !!v.en);
+  if (v.state === "stopped") return ["err", S.pills.voice.stopped];
+  if (v.state === "starting") return ["warn", S.pills.voice.starting];
+  if (v.state === "behind") return ["warn", S.pills.voice.behind(v.behind_s ?? 10, n)];
+  return ["", v.state === "speaking" ? S.pills.voice.speaking(n) : S.pills.voice.ready(n)];
+}
+
+// The engine that is translating now. Amber when AI is chosen but the local models are answering.
+export function enginePill(s) {
+  const a = s.ai;
+  if (!a) return null;
+  if (a.state === "fallback") return ["warn", a.down_s != null ? S.pills.engine.fallbackFor(a.down_s) : S.pills.engine.fallback];
+  if (a.state === "no_key") return ["warn", S.pills.engine.no_key];
+  return ["", a.state === "ai" ? S.pills.engine.ai : S.pills.engine.local];
 }
 
 // -> null or {code, severity, msg, action:{id,label}}

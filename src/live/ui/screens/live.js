@@ -40,17 +40,19 @@ const DECK = `
   </div>
 
   <div class="ledrow">
-    <div class="pills">
+    <div class="pills" role="status">
       <span class="pill" data-pill="sound"><i></i><span></span></span>
       <span class="pill" data-pill="pp"><i></i><span></span></span>
       <span class="pill" data-pill="pace"><i></i><span></span></span>
+      <span class="pill" data-pill="voice" hidden><i></i><span></span></span>
+      <span class="pill" data-pill="engine" hidden><i></i><span></span></span>
     </div>
   </div>
 
   <div class="banner" data-banner role="alert"><p></p><button class="bbtn"></button></div>
 
   <div class="deck">
-    <div class="ctlstack">
+    <div class="ctlrow left">
       <div class="ctl" data-k-gain></div>
       <div class="ctl" data-k-mode></div>
     </div>
@@ -73,8 +75,8 @@ const DECK = `
       <div class="label stateline" data-stateline></div>
       <div class="sub" id="lt-bighint" data-bighint></div>
     </div>
-    <div class="ctlstack">
-      <div class="ctl">
+    <div class="ctlrow right">
+      <div class="ctl hidectl">
         <button class="hidebtn" data-hide aria-pressed="false" aria-label="${S.hide}" title="${S.hideTitle}">
           <svg viewBox="0 0 32 32" aria-hidden="true">
             <path d="M9 22H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h20a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/>
@@ -86,6 +88,7 @@ const DECK = `
         <div class="sub">${S.hideKey}</div>
       </div>
       <div class="ctl" data-k-prof></div>
+      <div class="ctl" data-k-engine title="${S.engine.title}"></div>
     </div>
   </div>
   <div class="sr" data-announce aria-live="polite"></div>`;
@@ -134,19 +137,28 @@ export function render(el, store) {
   const setMode = knob(q("[data-k-mode]"), {
     id: "mode", label: S.mode.label, keys: S.mode.keys, face: S.mode.face,
     positions: [
-      { value: "ro-en", label: S.mode.knob["ro-en"], at: "left:0;top:86px", angle: 50 },
+      { value: "ro-en", label: S.mode.knob["ro-en"], at: "left:-4px;top:86px", angle: 50 },
       { value: "auto", label: S.mode.knob.auto, at: "left:50%;top:-6px;transform:translateX(-50%)", angle: 180 },
-      { value: "en-ro", label: S.mode.knob["en-ro"], at: "right:0;top:86px", angle: -50 },
+      { value: "en-ro", label: S.mode.knob["en-ro"], at: "right:-4px;top:86px", angle: -50 },
     ],
     onPick: m => run({ auto: "mode_auto", "ro-en": "mode_ro", "en-ro": "mode_en" }[m]),
   });
   const setProf = knob(q("[data-k-prof]"), {
     id: "prof", label: S.quality.label, keys: S.quality.keys, face: S.quality.face,
     positions: [
-      { value: "fast", label: S.quality.knob.fast, at: "left:-10px;top:92px", angle: 50 },
-      { value: "quality", label: S.quality.knob.quality, at: "right:-10px;top:92px", angle: -50 },
+      { value: "fast", label: S.quality.knob.fast, at: "left:-12px;top:92px", angle: 50 },
+      { value: "quality", label: S.quality.knob.quality, at: "right:-6px;top:92px", angle: -50 },
     ],
     onPick: p => { if (p !== s.profile) run("quality"); },
+  });
+  // AI / Local: which engine translates. Without a key the knob stays on Local and says why.
+  const setEngine = knob(q("[data-k-engine]"), {
+    id: "engine", label: S.engine.label, keys: S.engine.keys, face: S.engine.face,
+    positions: [
+      { value: "local", label: S.engine.knob.local, at: "left:-2px;top:92px", angle: 50 },
+      { value: "ai", label: S.engine.knob.ai, at: "right:4px;top:92px", angle: -50 },
+    ],
+    onPick: e => { if (e !== (s.ai?.selected || "local")) run(e === "ai" ? "engine_ai" : "engine_local"); },
   });
 
   // ---- actions ----------------------------------------------------------------------------
@@ -156,6 +168,7 @@ export function render(el, store) {
     retract: () => S.toast.removed, correct: () => S.toast.fixed, reconnect: () => S.toast.reconnecting,
     start: () => S.toast.started, stop: () => S.toast.stopped,
     mode: b => S.toast.mode(S.mode.long[b.mode]), profile: b => S.toast.quality(S.quality.long[b.profile] || b.profile),
+    engine: b => S.toast.engine(S.engine.long[b.engine] || b.engine),
     terms: b => S.toast.termsSaved(b.lines.length),
   };
   async function post(call) {
@@ -273,6 +286,11 @@ export function render(el, store) {
 
     setMode(s.mode || "auto");
     setProf(s.profile || "fast");
+    setEngine(s.ai?.selected || "local");
+    const ek = q("[data-k-engine]");
+    ek.dataset.state = s.ai?.state || "local";           // fallback / no_key: amber ring
+    ek.classList.toggle("nokey", !!s.ai && !s.ai.available);
+    ek.title = s.ai && !s.ai.available ? S.engine.noKey : S.engine.title;
 
     const hidden = !!s.paused;
     const hb = q("[data-hide]");
@@ -317,8 +335,11 @@ export function render(el, store) {
     dv.title = S.delayTitle(s.latency_last, s.latency_median);
 
     const pills = pillsFor(s, meter.key());
-    for (const [k, [cls, txt]] of Object.entries(pills)) {
+    for (const [k, pill] of Object.entries(pills)) {
       const p = q(`[data-pill="${k}"]`);
+      p.hidden = !pill;                                  // Live Voice off: no VOICE light at all
+      if (!pill) continue;
+      const [cls, txt] = pill;
       p.className = `pill ${cls}`;
       p.dataset.state = cls || "ok";
       if (p.lastChild.textContent !== txt) p.lastChild.textContent = txt;

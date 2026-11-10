@@ -57,6 +57,15 @@ export const S = {
     long: { fast: "Quickest", quality: "Best quality" },
     label: "Quality", keys: "Q",
   },
+  // the AI / Local knob: which engine translates (and writes Live Voice's summaries)
+  engine: {
+    knob: { local: "Local", ai: "AI" },
+    face: { local: "Local", ai: "AI" },
+    long: { local: "Local models", ai: "AI (Claude Haiku)" },
+    label: "Translator", keys: "A",
+    title: "Local: this Mac's own models, nothing leaves it. AI: Claude Haiku over the internet; the local models take over by themselves when it does not answer.",
+    noKey: "AI needs an Anthropic API key. Add one in Settings → AI.",
+  },
   lang: { ro: "Romanian", en: "English" },
 
   hide: "Hide captions", hideKey: "H", hideTitle: "Blank ProPresenter and the stage display. Recognition and the log carry on. H again to show.",
@@ -74,6 +83,17 @@ export const S = {
     pp: { ok: "ProPresenter connected", down: "ProPresenter not connected", missing: "ProPresenter message not found",
           unknown: "ProPresenter", off: "ProPresenter off" },
     pace: { unknown: "Pace", ok: "Keeping up", slow: "A bit slow", behind: "Falling behind", behindBy: s => `About ${Math.round(s)} s behind` },
+    // Live Voice (shown only while it is on) and the engine that is translating right now
+    voice: {
+      starting: "Voice starting", stopped: "Voice stopped",
+      ready: n => `Voice ready · ${n}`, speaking: n => `Voice · ${n}`,
+      behind: (s, n) => `Voice ${Math.round(s)} s behind · ${n}`,
+      listeners: (ro, en, both) => (both ? `${ro} RO · ${en} EN` : `${ro} listening`),
+    },
+    engine: {
+      local: "Local models", ai: "AI translating", fallback: "AI not answering: Local", no_key: "AI has no key: Local",
+      fallbackFor: s => `AI not answering (${Math.round(s)} s): Local`,
+    },
   },
 
   // the strip under the sound meter (the panel glows red while one shows)
@@ -146,7 +166,7 @@ export const S = {
     reconnecting: "Reconnecting to ProPresenter…",
     pressAgain: "Press Space again to stop",
     started: "Captioning", stopped: "Stopped",
-    mode: m => `Speaker: ${m}`, quality: q => `Quality: ${q}`,
+    mode: m => `Speaker: ${m}`, quality: q => `Quality: ${q}`, engine: e => `Translator: ${e}`,
     nothingToFix: "There is no caption to fix yet.",
     nothingToRemove: "There is no caption to remove.",
     ppOn: "Captions go to ProPresenter again",

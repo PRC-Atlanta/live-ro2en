@@ -576,6 +576,17 @@ const level = (t, lvl, { music = false } = {}) => {
   const rms = music ? lvl + 3 * Math.sin(t / 2) : talking ? lvl + 5 * Math.sin(t / 2) : Math.min(lvl - 20, -56);
   return { rms_db: rms, peak_db: Math.min(0, rms + 8), speech: talking, last_voice_s: talking ? 0 : 9 };
 };
+const SESSION0 = { items: 0, delay_median_s: null, within_10s_pct: null, summaries: 0, summaries_refused: 0, cut: 0,
+                   peak_listeners: { ro: 0, en: 0 } };
+const voiceOf = (state, listeners, behind = null) => ({
+  enabled: true, state, behind_s: behind ?? (state === "speaking" ? 4.2 : null), listeners, en: true,
+  url: "http://192.168.1.20:8767/", port: 8767, model: true, summarizer: true, error: null,
+  session: state === "stopped" ? SESSION0 : { items: 212, delay_median_s: 4.6, within_10s_pct: 93, summaries: 3, summaries_refused: 2, cut: 1,
+                                               peak_listeners: { ro: 16, en: 4 } } });
+const aiOf = (selected, state) => ({
+  selected, state, available: true, key_source: "keychain", model: "claude-haiku-5-5", reason: null, down_s: null,
+  latency_median_s: state === "ai" ? 0.9 : null,
+  used: { ai: { phrases: 180, s: 1500 }, local: { phrases: 20, s: 170 }, local_fallback: { phrases: 6, s: 52 } } });
 const withLevel = (t, lvl, opts) => {
   const s = SCENARIOS.live(t);
   return { ...s, audio: { ...s.audio, ...level(t, lvl, opts) } };
@@ -599,6 +610,17 @@ Object.assign(SCENARIOS, {
                           problem: { code: "pp_unreachable", severity: "error", action: { id: "reconnect", label: "Try again" } } }),
   pp_message_missing: t => ({ ...SCENARIOS.live(t), pp: { connected: true, since: null, last_ms: 4, error_code: "message_missing", enabled: true },
                               problem: { code: "pp_message_missing", severity: "error", action: { id: "settings", label: "Open Settings" } } }),
+  // Live Voice and the AI / Local knob (docs/live_voice_plan.md §5, §15)
+  voice_on: t => ({ ...SCENARIOS.live(t), voice: voiceOf("speaking", { ro: 14, en: 3 }) }),
+  voice_ready: t => ({ ...SCENARIOS.live(t), voice: voiceOf("ready", { ro: 2, en: 0 }) }),
+  voice_behind: t => ({ ...SCENARIOS.live(t), voice: voiceOf("behind", { ro: 14, en: 3 }, 13.4),
+                        problem: { code: "voice_behind", severity: "info", action: { id: "help", label: "What this means" } } }),
+  voice_stopped: t => ({ ...SCENARIOS.live(t), voice: { ...voiceOf("stopped", { ro: 0, en: 0 }), error: "the voice stopped (exit 9) and was not restarted again" },
+                         problem: { code: "voice_stopped", severity: "warn", action: { id: "settings", label: "Open Settings" } } }),
+  ai_on: t => ({ ...SCENARIOS.live(t), ai: aiOf("ai", "ai"), voice: voiceOf("speaking", { ro: 14, en: 3 }) }),
+  ai_fallback: t => ({ ...SCENARIOS.live(t), ai: { ...aiOf("ai", "fallback"), reason: "timeout", down_s: 12 },
+                       voice: voiceOf("speaking", { ro: 14, en: 3 }) }),
+  ai_no_key: t => ({ ...SCENARIOS.live(t), ai: { ...aiOf("local", "local"), available: false, key_source: null } }),
   no_sound: t => { const s = withLevel(t, null);
                    return { ...s, audio: { ...s.audio, ok: false },
                             problem: { code: "no_sound", severity: "warn", action: { id: "help", label: "What to check" } } }; },

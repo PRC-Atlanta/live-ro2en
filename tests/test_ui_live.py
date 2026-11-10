@@ -220,7 +220,9 @@ def test_no_contact_with_the_app_shows_connecting_not_a_stale_state():
                                    banner: bannerFor(stale), space: [g({ offline: true }), g(stale)] }));""")
     for d in (res["first"], res["lost"]):
         assert d["phase"] == "offline" and d["ring"] == "busy" and not d["live"] and d["small"] == "Connecting to the app"
-    assert all(cls == "" for cls, _ in res["pills"].values()) and res["pills"]["pp"][1] == "ProPresenter"
+    shown = [p for p in res["pills"].values() if p]              # no VOICE or engine light without contact
+    assert all(cls == "" for cls, _ in shown) and res["pills"]["pp"][1] == "ProPresenter"
+    assert res["pills"]["voice"] is None and res["pills"]["engine"] is None
     assert res["banner"] is None and res["space"] == [None, None]
 
 
