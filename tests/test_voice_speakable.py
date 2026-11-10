@@ -62,3 +62,58 @@ def test_model_dir_and_verify(tmp_path, monkeypatch):
     assert sorted(model.verify(d, lock)) == ["config.json: differs", "onnx/tts.json: missing"]
     monkeypatch.setenv("LIVE_HOME", str(tmp_path / "home"))                 # packaged: never ~/.cache/supertonic3
     assert pathlib.Path("~/.cache/supertonic3").expanduser() not in model.candidates(lock)
+
+
+@pytest.mark.parametrize("lang,text,want", [
+    # a number before a name that is not a book number (M0 review)
+    ("en", "In chapter 3 John writes that", "In chapter 3 John writes that"),
+    ("ro", "În capitolul 2 Ioan spune că", "În capitolul 2 Ioan spune că"),
+    ("en", "Psalm 23, verse 1 John", "Psalm 23, verse 1 John"),
+    ("en", "between 2 John's", "between 2 John's"),
+    ("ro", "citim din 2 Timotei.", "citim din A doua Timotei."),
+    ("ro", "1 Tesaloniceni, capitolul 4", "Întâi Tesaloniceni, capitolul 4"),
+    # a clock time after a name
+    ("en", "Mark 10:30 am meeting", "Mark 10:30 am meeting"),
+    ("en", "at Job 9:00 tomorrow", "at Job 9:00 tomorrow"),
+    # ranges and lists are rewritten whole
+    ("ro", "Ioan 3:16-4:2", "Ioan 3, versetul 16 până la capitolul 4, versetul 2"),
+    ("ro", "Ioan 3:16 și 4:5", "Ioan 3, versetul 16 și capitolul 4, versetul 5"),
+    ("ro", "Ioan 3:16,17", "Ioan 3, versetele 16 și 17"),
+    ("en", "John 3:16 and 4:5, 2,500 dollars", "John 3, verse 16 and chapter 4, verse 5, 2,500 dollars"),
+    ("en", "1 John 1:9 and Psalm 90:1-2", "First John 1, verse 9 and Psalm 90, verses 1 to 2"),
+])
+def test_speakable_review_cases(lang, text, want):
+    assert S(text, lang) == want
+
+
+def test_level_is_bounded_and_does_not_touch_its_input():
+    np = pytest.importorskip("numpy")
+    from voice import synth
+    quiet = np.full(44100, 1e-5, np.float32)
+    assert np.abs(synth.level(quiet)).max() <= 1e-4 + 1e-9             # +20 dB at most
+    x = np.sin(np.arange(44100) * 0.05).astype(np.float32) * 0.05
+    y, before = synth.level(x), x.copy()
+    assert (x == before).all() and abs(20 * np.log10(np.sqrt((y[2000:-2000] ** 2).mean())) + 20) < 1.5
+    assert np.abs(synth.level(x * 100)).max() <= 10 ** (-1 / 20) + 1e-6
+    assert synth.level(np.zeros(0)).shape == (0,) and synth.level(np.ones(1)).shape == (1,)
+    assert not np.isnan(synth.level(np.array([np.nan, 0.5, -0.5], np.float32))).any()
+
+
+def test_candidates_order_and_absent_lock_line(tmp_path, monkeypatch):
+    for k in ("HF_HUB_CACHE", "HF_HOME", "LIVE_HOME", "LIVE_VOICE_MODEL_DIR"):
+        monkeypatch.delenv(k, raising=False)
+    rev = model.lock_line()["rev"]
+    monkeypatch.setenv("HF_HOME", str(tmp_path / "hf"))
+    assert model.candidates()[0] == tmp_path / "hf" / "hub" / "models--Supertone--supertonic-3" / "snapshots" / rev
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hub"))
+    assert model.candidates()[0].parts[-4] == "hub" and str(tmp_path / "hub") in str(model.candidates()[0])
+    monkeypatch.setenv("LIVE_VOICE_MODEL_DIR", str(tmp_path / "own"))
+    assert model.candidates()[0] == tmp_path / "own"
+    empty = tmp_path / "lock.txt"
+    empty.write_text("hf other/repo " + "b" * 40 + "\n")
+    assert model.lock_line(empty) is None and model.hashes(empty) == {}
+
+
+def test_the_voice_line_is_not_part_of_the_caption_profiles():
+    import model_lock
+    assert all(i["repo"] != model.REPO for i in model_lock.subset("quality"))

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import pathlib
 import statistics
 import sys
@@ -28,7 +27,6 @@ def main():
     ap.add_argument("--speed", type=float, default=1.25)
     ap.add_argument("--repeat", type=int, default=1)
     a = ap.parse_args()
-    os.environ["LIVE_VOICE_THREADS"] = str(a.threads)
     from voice import speakable, synth
     import soundfile as sf
     out = pathlib.Path(a.out)

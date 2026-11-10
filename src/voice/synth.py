@@ -13,12 +13,13 @@ SR = 44100
 TARGET_RMS_DB = -20.0          # every item at the same speech level (plan §4.1)
 PEAK_DB = -1.0
 EDGE_FADE_S = 0.010
+MAX_GAIN = 10.0               # +20 dB at most
 WARMUP = {"ro": "Bună ziua.", "en": "Good morning."}
 
 
 def level(wav: np.ndarray, rms_db: float = TARGET_RMS_DB, peak_db: float = PEAK_DB, sr: int = SR) -> np.ndarray:
     """The wave at `rms_db` (measured over its loud parts), peaks held under `peak_db`, 10 ms fades."""
-    wav = np.asarray(wav, dtype=np.float32).reshape(-1)
+    wav = np.nan_to_num(np.array(wav, dtype=np.float32, copy=True).reshape(-1), nan=0.0, posinf=0.0, neginf=0.0)
     if not len(wav):
         return wav
     win = max(1, int(0.05 * sr))
@@ -29,8 +30,8 @@ def level(wav: np.ndarray, rms_db: float = TARGET_RMS_DB, peak_db: float = PEAK_
         rms = float(np.sqrt((loud ** 2).mean())) if len(loud) else 0.0
     else:
         rms = float(np.sqrt((wav ** 2).mean()))
-    if rms > 1e-6:
-        wav = wav * (10 ** (rms_db / 20) / rms)
+    if rms > 1e-6:                                  # near-silence is not raised into noise
+        wav = wav * min(10 ** (rms_db / 20) / rms, MAX_GAIN)
     peak = float(np.abs(wav).max())
     top = 10 ** (peak_db / 20)
     if peak > top:
@@ -51,6 +52,9 @@ class Synth:
         d = model_dir or model.model_dir(tuple(set(self.voices.values())))
         if d is None:
             raise FileNotFoundError("the voice model (Supertonic 3) is not downloaded")
+        bad = model.verify(d)
+        if bad:                                     # not the pinned files (requirements/models.lock.txt)
+            raise RuntimeError(f"the voice model in {d} is not the pinned one: {'; '.join(bad[:3])}")
         self.model_dir = d
         self.tts = TTS(model="supertonic-3", model_dir=str(d), auto_download=False,
                        intra_op_num_threads=int(threads), inter_op_num_threads=1)
