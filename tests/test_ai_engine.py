@@ -731,3 +731,21 @@ def test_stuck_calls_never_stand_in_the_way_of_the_next_one():
     assert e.call("s", [{"role": "user", "content": "y"}])[0] == "ok"    # the next one is sent at once and answers
     assert e.up
     e.close()
+
+
+def test_child_processes_never_get_the_api_key(monkeypatch):
+    """Security review 2026-11-10: with ANTHROPIC_API_KEY set in the shell (dev), the engine, the voice and
+    the model download would inherit it."""
+    import model_setup
+    import paths
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-" + "x" * 40)
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://elsewhere.example")
+    for env in (paths.engine_env(), paths.voice_env(), model_setup.child_env()):
+        assert env is not None and not [k for k in env if k.startswith("ANTHROPIC_")]
+    monkeypatch.setenv("LIVE_ENGINE_PYTHONPATH", "/x")
+    monkeypatch.setenv("LIVE_VOICE_PYTHONPATH", "/y")
+    for env in (paths.engine_env(), paths.voice_env()):
+        assert not [k for k in env if k.startswith("ANTHROPIC_")] and env["PYTHONPATH"] in ("/x", "/y")
+    monkeypatch.delenv("ANTHROPIC_API_KEY"); monkeypatch.delenv("ANTHROPIC_BASE_URL")
+    monkeypatch.delenv("LIVE_ENGINE_PYTHONPATH"); monkeypatch.delenv("LIVE_VOICE_PYTHONPATH")
+    assert paths.engine_env() is None and paths.voice_env() is None        # nothing secret: inherit, as before

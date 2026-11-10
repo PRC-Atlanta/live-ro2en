@@ -406,7 +406,7 @@ def download(profile: str, root: pathlib.Path = paths.REPO, lock=None, out=None)
 # --- the orchestrator side -----------------------------------------------------------------
 def child_env(root: pathlib.Path = paths.REPO) -> dict:
     """Network on for the download child only; same model cache as the app's loaders."""
-    env = {k: v for k, v in os.environ.items() if k not in OFFLINE_VARS}
+    env = {k: v for k, v in paths.without_secrets(dict(os.environ)).items() if k not in OFFLINE_VARS}
     env.update(LIVE_ALLOW_NETWORK="1", HF_HOME=str(paths.hf_home(root)), HF_HUB_CACHE=str(paths.hf_cache(root)))
     return env
 

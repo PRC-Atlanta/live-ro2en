@@ -153,6 +153,25 @@ def test_bad_and_slow_requests_are_refused(feed):
         stream.HEAD_TIMEOUT_S = old
 
 
+def test_connections_that_send_nothing_cannot_use_up_the_server(monkeypatch):
+    """Security review 2026-11-10: half-open connections are capped, and listeners still get in."""
+    import socket
+    monkeypatch.setattr(stream, "PENDING_MAX", 4)
+    f = Feed()
+    try:
+        idle = [socket.create_connection(("127.0.0.1", f.port)) for _ in range(12)]     # say nothing
+        time.sleep(0.3)
+        assert sum(f.server._pending.values()) <= 4
+        time.sleep(stream.HEAD_TIMEOUT_S + 0.5)                                         # the waiting ones time out
+        assert sum(f.server._pending.values()) == 0
+        c, r = f.get("/listen/ro")
+        assert r.status == 200
+        for s in idle:
+            s.close()
+    finally:
+        f.close()
+
+
 def test_listener_limits():
     f = Feed(max_clients=3)
     try:

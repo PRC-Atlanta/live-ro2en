@@ -7,7 +7,7 @@ phones on the church Wi-Fi.
             rehearsal mode. Nothing else: no control route, no files.
 
 The server answers only private, link-local and loopback clients, reads at most MAX_HEAD bytes of
-request within HEAD_TIMEOUT_S, serves at most `max_clients` listeners (and a few per address beyond
+request within HEAD_TIMEOUT_S, serves at most `max_clients` listeners (`per_addr` of them from one address beyond
 which a new one is refused), and never queues more than SLOW_S of audio for a slow client: such a
 client is moved to the live edge."""
 from __future__ import annotations
@@ -25,7 +25,12 @@ SR = 44100
 RING_S = 30.0
 SLOW_S = 10.0                      # a client this far behind is moved to the live edge
 MAX_HEAD = 4096
-HEAD_TIMEOUT_S = 5.0
+HEAD_TIMEOUT_S = 2.0
+# Connections that have not sent their request yet (they hold a socket, and count for nothing else):
+# at most this many at once, and a few per address, so one device cannot use up the process's files.
+PENDING_MAX = 128
+PENDING_PER_ADDR = 32         # not fewer: a guest Wi-Fi may put every phone behind one address, and they all
+                              # reconnect at once after a Wi-Fi drop (the page retries a refused connection)
 MAX_STATS_BODY = 2048
 LAG_S = 3.0                        # a listener holding back more than this much unsent audio is dropped:
                                    # its page reconnects at the live edge instead of staying behind
@@ -120,6 +125,7 @@ class Server:
         self._wake: dict[str, asyncio.Event] = {}
         self._by_addr: collections.Counter = collections.Counter()
         self._clients = 0
+        self._pending: collections.Counter = collections.Counter()      # address -> connections still sending a request
         self._ready = threading.Event()
         self.error: str | None = None
 
@@ -178,10 +184,19 @@ class Server:
         try:
             if not private(addr):
                 return await self._reply(writer, 403, b"forbidden\n")
+            local = addr.startswith("127.") or addr == "::1"
+            if sum(self._pending.values()) >= PENDING_MAX or (not local and self._pending[addr] >= PENDING_PER_ADDR):
+                writer.transport.abort()                          # no reply: nothing is spent on it
+                return None
+            self._pending[addr] += 1
             try:
                 head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), HEAD_TIMEOUT_S)
             except (asyncio.TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError, ConnectionError):
                 return await self._reply(writer, 400, b"bad request\n")
+            finally:
+                self._pending[addr] -= 1
+                if self._pending[addr] <= 0:
+                    del self._pending[addr]
             lines = head.decode("latin-1").split("\r\n")
             parts = lines[0].split(" ")
             if len(parts) != 3 or not parts[2].startswith("HTTP/1."):

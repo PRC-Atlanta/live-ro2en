@@ -35,6 +35,23 @@ Plan and status: [docs/APP_PLAN.md](docs/APP_PLAN.md).
       converted to CoreML, VAD in CoreML/ONNX. Smaller, sturdier app; big effort, worth it only
       once models and settings stabilise.
 
+## Live Voice and the AI / Local knob (branch `live-voice`, 2026-11-10)
+
+Plan, measurements and every decision: [docs/live_voice_plan.md](docs/live_voice_plan.md) (§15 for AI).
+
+- [x] M0–M7 built: model pin, sentence step, voice process and stream, corrections, pacing and
+      summaries, UI in both apps, bench gates, `site/voice` in the runtime.
+- [x] AI / Local knob (Claude Haiku 5.5, local hot spare, per-phrase fallback, key in the Keychain).
+- [ ] **Listen** to the M6 recordings in full, summaries included (paths in the plan §9).
+- [ ] **M0 on the Mac Studio**: RTF alone and under a Quality replay (all numbers so far are from the dev Mac).
+- [ ] **Copy Supertonic 3 to the church Hugging Face repo** (`PRC-Media`): the lock pins `Supertone/supertonic-3`
+      for now; `scripts/publish_models.py`, then change the lock line.
+- [ ] **R1, R2, R3** (plan §10, checklists there): the church, the Studio, real phones.
+- [ ] **Evening 2026-11-08 bench for AI**: `scripts/ai_regression.py` on the Mac that has the
+      recording and its 39 marked errors (neither is on the dev Mac).
+- [ ] Developer ID signing and notarization of the DMG with `site/voice` (needs the certificate).
+- [ ] Decide the default for a new install after R2 (now Local; DECISIONS 2026-11-10).
+
 ## Accuracy / data
 - [ ] Learn from corrections immediately: suggested spelling rules, term-list and glossary
       entries from verified corrections, approved with one click in the correction tool.

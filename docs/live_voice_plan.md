@@ -385,7 +385,12 @@ copy of stdout and points fd 1 at stderr, so library prints cannot corrupt the s
   Anything else is 404 or 405. No file is ever read from a request path.
 - **Limits:** 300 listeners in all (`voice.max_clients`), 150 per address (`voice.per_addr`; this Mac itself
   exempt, and high because a guest Wi-Fi may put every phone behind one address: check in R1); a refused
-  listener gets 503 with `Retry-After: 5` and the page reconnects. **A listener that holds back more than
+  listener gets 503 with `Retry-After: 5` and the page reconnects. Connections that have not sent their request
+  yet are limited too (128 in all, 32 per address, 2 s to send it), and the process raises its open-file limit
+  to 4096, so half-open connections cannot use up its files (security review, 2026-11-10). The review also
+  asked for a few listeners per address instead of 150: not changed until R1 shows whether the church Wi-Fi
+  gives each phone its own address (then set `voice.per_addr: 8`); two devices would be needed to fill the
+  300 places, and captions are not affected either way. **A listener that holds back more than
   3 s of unsent audio is dropped** (small kernel send buffer, 3 s in the server): its page reconnects at the
   live edge, instead of staying 15 s behind for the rest of the service after a Wi-Fi dropout. A new
   listener starts on a whole chunk of the encoder's output, 1 s before the live edge.
@@ -816,6 +821,7 @@ During (Rehearsal plays an English recording through the full chain, 30 minutes 
 - [ ] One check of that number against the room: a phone and the Mac's speaker side by side, "Test voice" chime, delay by ear or by a recording.
 - [ ] "Listen in English" on one phone during a Romanian part of the recording, if it has one.
 - [ ] The VOICE light: listeners per language match the phones in the room.
+- [ ] Addresses: in the voice log (rehearsal mode logs them), does each phone have its own address? If yes, set `voice.per_addr: 8`; if they all share one (a guest network behind NAT), leave it at 150.
 
 After:
 - [ ] Report: median delay, share within 10 s, summaries spoken and refused, sentences cut. Compare with §9 (eulogy ≤ 4.0 s / ≥ 94%, continuous sermon ≤ 7.0 s / ≥ 72%).
@@ -1013,6 +1019,7 @@ early (one run of one sample; `work/tts_bakeoff/live_sim_*_haiku*`).
 | Time budget | **2.5 s per call, 4 s per phrase** (`ai.timeout_s`, `ai.phrase_s`), **wall clock**: the request runs on a worker thread and is waited for exactly that long, so a dead DNS or a slow trickle cannot hold a caption (the HTTP client's own timeout only bounds each step). A phrase the guards ask about again shares one 4 s budget; past it the local model answers. Measured over 650 calls in the 2026-11-10 replays: median 0.9 s, p95 1.1–1.7 s, p99 1.5–2.6 s, max 3.5 s. 2.5 s is just over the p99: about 1 phrase in 100 goes to the local model for nothing, and no caption waits longer than 2.5 s plus the local model's own time. |
 | Hot spare | The profile's local translators stay loaded and are kept warm by the existing keep-warm ping (`self.tr` is never unloaded by the knob). |
 | Where it can connect | The client is built with a fixed base URL, its own transport (the SDK otherwise reads `HTTPS_PROXY` / `ALL_PROXY` itself: found by testing), no redirects, and `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_PROFILE` removed from the process. Tried against the API with a proxy and a gateway URL set: it went straight to `api.anthropic.com`, audit log empty. |
+| Security review (Opus, 2026-11-10, whole branch against main) | Nothing high. Fixed: half-open connections to the listener server are capped and the voice raises its open-file limit; the engine, the voice and the model download never inherit `ANTHROPIC_*` from the shell. Accepted, not changed: (1) the key is stored with `/usr/bin/security`, so any program running as the operator's own user can read it without a prompt (the same as any file that user can read; the stricter way is to keep it from the signed Swift shell with an access list, left for later); (2) 150 listeners per address until R1 shows the Wi-Fi's addressing (§7); (3) AI mode is proven by how the client is built and by a real call with a hostile proxy and base URL set, not by a sandbox: macOS's sandbox filters by address, not by host name, and `netaudit` sees Python sockets only. (4) A Live Remote PIN holder may turn the knob to AI (and so send the transcript to Anthropic), by design; they can never read or set the key. |
 | Fallback | Per phrase, inside one translator: when the API times out, errors, refuses or there is no network, the **same piece** is translated by the local model for that direction with the service's own context, verse and reading state (Gemma gets the same prompt; NLLB gets the phrase clause by clause). The engine is then **down**: the API is not tried again for captions until a probe (one tiny request every 10 s, `ai.retry_s`) succeeds; then it is **up** again by itself. A refusal sends that one phrase to the local model without taking the engine down. |
 | What the operator sees | `state.ai.state`: `local`, `ai`, `fallback` (AI chosen, local answering: amber, with the reason and for how long) or `no_key`. "AI is not answering…" and "AI is answering again" appear in the app's list of what it did by itself. Each caption's log record says `engine: ai | local | local_fallback`. |
 | After | `summary.engines`: captions and seconds of service per engine. |

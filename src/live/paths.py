@@ -50,6 +50,14 @@ def engine_python(stt_venv: str, root: pathlib.Path = REPO) -> pathlib.Path:
     return _env("LIVE_ENGINE_PYTHON") or root / stt_venv / "bin" / "python"
 
 
+SECRET_PREFIXES = ("ANTHROPIC_",)          # the API key and its settings: for the orchestrator only
+
+
+def without_secrets(env: dict) -> dict:
+    """A child process's environment: never the API key (it may be set in the shell in dev)."""
+    return {k: v for k, v in env.items() if not k.startswith(SECRET_PREFIXES)}
+
+
 def engine_env() -> dict | None:
     """Environment for the engine child; None (inherit) unless the runtime sets a PYTHONPATH.
     In the app the engine also gets its own HOME under the caches: onnxruntime and lhotse
@@ -58,8 +66,8 @@ def engine_env() -> dict | None:
     HOME (exports go to the real Desktop)."""
     pp = os.environ.get("LIVE_ENGINE_PYTHONPATH")
     if not pp:
-        return None
-    env = {**os.environ, "PYTHONPATH": pp}
+        return without_secrets(dict(os.environ)) if any(k.startswith(SECRET_PREFIXES) for k in os.environ) else None
+    env = {**without_secrets(dict(os.environ)), "PYTHONPATH": pp}
     if _env("LIVE_CACHE_DIR"):
         home = cache_dir() / "engine-home"
         home.mkdir(parents=True, exist_ok=True)
@@ -150,8 +158,8 @@ def voice_env() -> dict | None:
     engine it gets its own HOME under the caches (onnxruntime creates folders in HOME on import)."""
     pp = os.environ.get("LIVE_VOICE_PYTHONPATH")
     if not pp:
-        return None
-    env = {**os.environ, "PYTHONPATH": pp}
+        return without_secrets(dict(os.environ)) if any(k.startswith(SECRET_PREFIXES) for k in os.environ) else None
+    env = {**without_secrets(dict(os.environ)), "PYTHONPATH": pp}
     if _env("LIVE_CACHE_DIR"):
         home = cache_dir() / "voice-home"
         home.mkdir(parents=True, exist_ok=True)

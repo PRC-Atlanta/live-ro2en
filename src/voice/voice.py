@@ -645,6 +645,14 @@ def main(argv=None, make_synth=None) -> int:
     ap.add_argument("--log", help="the voice log (jsonl)")
     a = ap.parse_args(argv)
     protect_stdout()
+    try:                                              # 300 listeners need more files than the 256 an app's child gets
+        import resource
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        want = 4096 if hard == resource.RLIM_INFINITY else min(4096, hard)
+        if soft < want:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (want, hard))
+    except (ImportError, ValueError, OSError):
+        pass
     try:
         cfg = json.loads(a.cfg)
     except ValueError:
