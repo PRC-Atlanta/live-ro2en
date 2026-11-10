@@ -594,6 +594,27 @@ log into the `live_sim` numbers (§9).
 
 ---
 
+**Built (M5, 2026-11-10)**: `src/live/ui/` (Live screen, Settings → Live Voice and → AI, After, Help,
+mock scenarios), `src/voice/page.html`, `remote/Sources/LiveRemote/` (voice line and an AI / Local key in
+the toolbar, key ⌃⌥A; `POST /remote/engine`), `macos/Sources/LiveRO2EN/QRCode.swift` (the QR code and
+"Print the card": a WKWebView draws no QR and ignores `window.print()`, so the Mac app does both).
+Screens checked against the real backend, with a recorded sermon playing and three listeners connected:
+`docs/live_voice_shots/after_*.png` (and `before_*.png` for the old Live screen). Choices made:
+- **Live screen layout.** The health lights are one row under the captions, with **VOICE** (state and
+  listeners per language) and the **engine** light added. The deck is one row: Input gain and Speaker ·
+  the dial · Hide, Quality and the new **Translator** knob (key A). It used to be two stacks of two beside
+  the dial, which pushed the bottom controls out of the app's own 1280×800 window whenever a problem
+  banner showed. Everything a service needs is in view from 600×500 up: the 30-second level history and
+  the earlier-phrases drawer make room first, then the deck is drawn smaller.
+- **Footer.** "Offline · on this Mac" becomes "AI translation · online" while AI is chosen: it must not
+  claim offline while speech is sent to the API.
+- **No key.** The Translator knob sends nothing and says "AI needs an Anthropic API key. Add one in
+  Settings → AI."
+- **Live Remote.** An older captions app has no `voice` / `ai` in its feed: the fields are optional, the
+  voice line stays hidden and the AI key is disabled. An amber "Local" key = AI chosen, local answering.
+- **Listener page.** Romanian first, "Ascultă în română" / "Listen in English", headphones note in both
+  languages; it reconnects by itself.
+
 ## 6. Sharing the Mac Studio
 
 This is the new risk now that the voice runs on the captions Mac. **The captions must not get
