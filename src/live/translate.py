@@ -695,9 +695,12 @@ def make_translator(spec: str):
         return NLLBTranslator(name)
     if kind == "mlx":
         return MLXLLMTranslator(name)
-    if kind == "claude":                          # claude:<model>  or  claude:<model>:tuned (CLAUDE_RULES added)
+    if kind == "claude":      # claude:<model>[:tuned][,whole]  tuned: CLAUDE_RULES added; whole: one call per phrase
         model, _, variant = name.partition(":")
-        return ClaudeTranslator(model, tuned=variant == "tuned")
+        opts = set(variant.split(","))
+        tr = ClaudeTranslator(model, tuned="tuned" in opts)
+        tr.whole_phrase = "whole" in opts
+        return tr
     raise ValueError(spec)
 
 

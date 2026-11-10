@@ -69,6 +69,16 @@ def test_tuned_adds_rules_and_drops_comments():
     assert t.translate("The translation of the text.", "en", "ro", None) == "Traducerea textului."
 
 
+def test_whole_phrase_only_for_a_translator_that_asks():
+    import pipeline
+    t = make(FakeClient())
+    assert not pipeline._whole_phrase(t, "en", "ro")
+    t.whole_phrase = True
+    assert pipeline._whole_phrase(t, "en", "ro")
+    both = T.ByDirection({("ro", "en"): object(), ("en", "ro"): t}, {("ro", "en"): "a", ("en", "ro"): "b"})
+    assert pipeline._whole_phrase(both, "en", "ro") and not pipeline._whole_phrase(both, "ro", "en")
+
+
 def test_truncation_from_stop_reason():
     t = make(FakeClient(stop="max_tokens"))
     t.translate("A long piece.", "en", "ro", None)
