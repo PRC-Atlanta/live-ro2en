@@ -397,6 +397,17 @@ class MLXLLMTranslator:
             self.verses.reset()
 
     def _prompt(self, text, src, tgt, glossary, hint: str = "", note: str = ""):
+        msgs = self._messages(text, src, tgt, glossary, hint, note)
+        try:
+            return self.tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False,
+                                                enable_thinking=False)
+        except Exception:      # templates without a system role
+            msgs = [{"role": "user", "content": SYSTEM[(src, tgt)] + "\n\n" + msgs[1]["content"]}]
+            return self.tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False)
+
+    def _messages(self, text, src, tgt, glossary, hint: str = "", note: str = "") -> list[dict]:
+        """The system and user messages for one piece: glossary, names, Scripture hint, notes and
+        the previous pieces (shared by every LLM translator, so they all get the same prompt)."""
         import guards
         lines = []
         if glossary is not None:
@@ -432,14 +443,8 @@ class MLXLLMTranslator:
             lines.append("Previous pieces (context only, already translated: do not translate them again):\n" +
                          "\n".join(f"{LANG[l]}: {s}" for s, t, l in ctx))
         lines.append(f"Translate the next piece into {LANG[tgt]}:\n{text}")
-        msgs = [{"role": "system", "content": SYSTEM[(src, tgt)]},
+        return [{"role": "system", "content": SYSTEM[(src, tgt)]},
                 {"role": "user", "content": "\n\n".join(lines)}]
-        try:
-            return self.tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False,
-                                                enable_thinking=False)
-        except Exception:      # templates without a system role
-            msgs = [{"role": "user", "content": SYSTEM[(src, tgt)] + "\n\n" + msgs[1]["content"]}]
-            return self.tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False)
 
     def _old_testament(self) -> bool:
         """Iacov is Jacob, not James: a verse with Iacov in it matched earlier in the service was in
@@ -524,7 +529,7 @@ class MLXLLMTranslator:
             out = self._generate(self._prompt(text, src, tgt, glossary, hint, note))
         finally:
             self.context = ctx
-        self.last_truncated = len(self.tok.encode(out)) >= self.max_tokens - 1
+        self.last_truncated = self._truncated(out)
         out = clean_output(out)
         if small and len(out.split()) > 3:
             out = ""                              # "T." -> two sentences: not a translation of it
@@ -532,6 +537,9 @@ class MLXLLMTranslator:
         if use_context and not small:
             self.context = (self.context + [(text, out, src)])[-max(self.context_clauses, 1):]
         return out
+
+    def _truncated(self, out: str) -> bool:
+        return len(self.tok.encode(out)) >= self.max_tokens - 1
 
     def _verse(self, verse, text: str, src: str, tgt: str, glossary) -> str:
         """A piece that is part of a verse: the published text, the words around it translated alone."""
@@ -561,6 +569,60 @@ class MLXLLMTranslator:
         return self._suppressors
 
 
+class ClaudeTranslator(MLXLLMTranslator):
+    """EXPERIMENT ONLY (2026-11-10, Live Voice test): Gemma's exact prompt sent to a Claude model
+    through the Anthropic API. It breaks the app's offline rule: it refuses to load unless
+    LIVE_ALLOW_NETWORK=1, needs ANTHROPIC_API_KEY, and sends every caption to Anthropic. Never
+    a default. Spec 'claude:<model id>', e.g. 'claude:claude-haiku-5-5'. The SDK is not in the
+    app's venvs: LIVE_CLAUDE_SDK names a folder it was installed into (pip --target).
+    Each call is appended to $LIVE_LOG_DIR/claude_usage.jsonl (tokens, seconds)."""
+
+    def __init__(self, model: str, max_tokens: int = 200, context_clauses: int = 2):
+        import os
+        if os.environ.get("LIVE_ALLOW_NETWORK") != "1":
+            raise RuntimeError("claude: translator needs the internet; set LIVE_ALLOW_NETWORK=1 (experiment only)")
+        if os.environ.get("LIVE_CLAUDE_SDK") and os.environ["LIVE_CLAUDE_SDK"] not in sys.path:
+            sys.path.append(os.environ["LIVE_CLAUDE_SDK"])      # after the venv: its packages win
+        import anthropic
+        self.client = anthropic.Anthropic(timeout=15.0, max_retries=2)
+        self.repo = self.model_id = model
+        self.max_tokens = max_tokens
+        self.context: list[tuple[str, str, str]] = []
+        self.context_clauses = context_clauses
+        self.last_truncated = False
+        self.reading = scripture.Reading()
+        self.verses = verses.Matcher()
+        self.last_verse = None
+        self._stop = None
+        self._usage_log = (pathlib.Path(os.environ["LIVE_LOG_DIR"]) / "claude_usage.jsonl"
+                           if os.environ.get("LIVE_LOG_DIR") else None)
+
+    def _prompt(self, text, src, tgt, glossary, hint: str = "", note: str = ""):
+        return self._messages(text, src, tgt, glossary, hint, note)
+
+    def _generate(self, msgs) -> str:
+        """One Messages API call, thinking off (as Gemma runs with enable_thinking=False)."""
+        import json
+        t0 = time.perf_counter()
+        r = self.client.messages.create(
+            model=self.model_id, max_tokens=self.max_tokens,
+            system=msgs[0]["content"], messages=msgs[1:],
+            thinking={"type": "disabled"})
+        dt = time.perf_counter() - t0
+        self._stop = r.stop_reason
+        out = "".join(b.text for b in r.content if b.type == "text")
+        if self._usage_log is not None:
+            u = r.usage
+            with open(self._usage_log, "a") as f:
+                f.write(json.dumps({"t": round(time.time(), 3), "kind": "translate", "model": self.model_id,
+                                    "s": round(dt, 3), "in": u.input_tokens, "out": u.output_tokens,
+                                    "stop": r.stop_reason, "request_id": r._request_id}) + "\n")
+        return out
+
+    def _truncated(self, out: str) -> bool:
+        return self._stop == "max_tokens"
+
+
 def banned_ids(tok) -> list[int]:
     """The special-token ids a translation must never contain: all of them except end-of-turn."""
     try:
@@ -586,12 +648,15 @@ def _ban_processor(ids: list[int]):
 
 
 def make_translator(spec: str):
-    """'nllb:<ct2 dir name>' or 'mlx:<hf repo>'."""
+    """'nllb:<ct2 dir name>' or 'mlx:<hf repo>' ('claude:<model id>': an online experiment, see
+    ClaudeTranslator)."""
     kind, _, name = spec.partition(":")
     if kind == "nllb":
         return NLLBTranslator(name)
     if kind == "mlx":
         return MLXLLMTranslator(name)
+    if kind == "claude":
+        return ClaudeTranslator(name)
     raise ValueError(spec)
 
 
