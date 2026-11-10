@@ -107,6 +107,20 @@ def router(live) -> APIRouter:
         await run(live.renew_remote_pin)
         return live.state()
 
+    @r.post("/api/engine")
+    async def engine(request: Request):
+        body = await request.json() if await request.body() else {}
+        code, out = await run(live.set_engine, body.get("engine") if isinstance(body, dict) else None)
+        return out if code == 200 else JSONResponse(out, status_code=code)
+
+    @r.post("/api/ai/key")
+    async def ai_key(request: Request):
+        body = await request.json() if await request.body() else {}
+        if not isinstance(body, dict) or "key" not in body or not (body["key"] is None or isinstance(body["key"], str)):
+            return _bad("key must be a string, or null to remove it")
+        code, out = await run(live.set_ai_key, body["key"])
+        return out if code == 200 else JSONResponse(out, status_code=code)
+
     @r.post("/api/voice/test")
     async def voice_test(request: Request):
         body = await request.json() if await request.body() else {}

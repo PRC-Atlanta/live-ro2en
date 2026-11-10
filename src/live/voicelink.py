@@ -514,6 +514,15 @@ class VoiceMixin:
                 "cut": sum(1 for i in played if i.get("cut")),
                 "peak_listeners": {"ro": int(self._voice_peak.get("ro", 0)), "en": int(self._voice_peak.get("en", 0))}}
 
+    def _voice_end_run(self):
+        """A service ended (lifecycle.stop): its peak listeners go into its log, for After."""
+        if self.voice_enabled() and getattr(self, "log_path", None) and self._voice_peak:
+            try:
+                self._log_event({"event": "voice_listeners", "ro": int(self._voice_peak.get("ro", 0)),
+                                 "en": int(self._voice_peak.get("en", 0))})
+            except Exception:                           # noqa: BLE001
+                pass
+
     def _voice_new_run(self):
         """A new service: its own numbers."""
         self._voice_items, self._voice_counts = [], collections.Counter()

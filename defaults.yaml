@@ -95,6 +95,16 @@ profiles:
     phrase_min_words: 6       # at least 6 words per translation: slow speakers' 3-word pieces wait (+~1 s average delay)
     context_clauses: 4        # Gemma sees the previous 4 chunks, so short chunks still read as sentences
 
+# The AI / Local knob. Local (the default): the profile's own models, nothing leaves this Mac.
+# AI: Claude Haiku 5.5 translates and writes the voice's summaries; the local models stay loaded and
+# take over, phrase by phrase, when the API does not answer within timeout_s.
+ai:
+  enabled: false
+  model: claude-haiku-5-5
+  timeout_s: 2.5          # per phrase (measured 2026-11-10: median 0.9 s, p95 1.3 s, p99 2.2 s)
+  retry_s: 10.0           # while down, look every this often whether the API answers again
+  summary_timeout_s: 3.0
+
 # Live Voice (docs/live_voice_plan.md): reads the captions aloud to phones on the church Wi-Fi.
 voice:
   enabled: false

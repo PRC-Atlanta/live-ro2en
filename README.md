@@ -173,7 +173,7 @@ English speech is recognised by **Parakeet-TDT-0.6B-v3**, the same model that te
 from English in **Auto** mode; Romanian keeps Jackrabbit. Each short chunk is recognised with the
 previous `context_s` seconds of audio (2.7% WER on a real English sermon, see DECISIONS.md).
 With the language locked to **EN → RO**, only Parakeet runs. If Parakeet cannot load, the app
-runs RO → EN only and says why. It runs fully offline: Hugging Face offline mode is forced before
+runs RO → EN only and says why. It runs fully offline (the one exception is the AI / Local knob set to AI, which reaches `api.anthropic.com` and nothing else; Local is the default, see DECISIONS 2026-11-10): Hugging Face offline mode is forced before
 any model loads, and **nothing goes to the network while it runs** (`LIVE_ALLOW_NETWORK=1` only
 when updating models).
 

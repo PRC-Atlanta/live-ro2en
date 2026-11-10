@@ -105,7 +105,10 @@ def test_hide_hold_song_clear_and_remove_last(rig):
 def test_the_feed_has_what_the_toolbar_shows(rig):
     live, client, pin = rig
     feed = client.get("/remote/state", headers=pin).json()
-    assert set(feed) == {"name", "phase", "running", "paused", "held", "song", "screen", "lag_s", "terms_n", "pp"}
+    assert set(feed) == {"name", "phase", "running", "paused", "held", "song", "screen", "lag_s", "terms_n", "pp",
+                         "voice", "ai"}
+    assert set(feed["voice"]) == {"enabled", "state", "behind_s", "listeners"}       # no address, no error text
+    assert set(feed["ai"]) == {"selected", "state", "available"}                     # and nothing about the key
     assert set(feed["pp"]) == {"enabled", "connected"}
     assert "pin" not in json.dumps(feed)
 

@@ -796,30 +796,33 @@ class PipelineMixin:
             return
         src_info.update(gated)
         tgt = "en" if lang == "ro" else "ro"
+        tr = self._translator() if hasattr(self, "_translator") else self.tr   # AI or local (aimode.py)
+        if hasattr(tr, "engines_used"):
+            tr.engines_used.clear()
         clauses, tail = split_clauses(src_text)
         parts = clauses + ([tail] if tail else [])        # at a pause everything is committed
-        if _whole_phrase(self.tr, lang, tgt):             # an online translator: one round trip per phrase
+        if _whole_phrase(tr, lang, tgt):             # an online translator: one round trip per phrase
             parts = [src_text]
         if ev.get("caught_up"):                           # catching up: few calls, each bounded
             parts = pack_parts(parts, int(self.lc.get("catchup_max_words", 60)))
         t0 = time.time()
         out, truncated, verse, is_verse = [], False, [], []
         for p in parts:
-            out.append(self.tr.translate(p, lang, tgt, self.gloss, use_context=True)
-                       if hasattr(self.tr, "context") else self.tr.translate(p, lang, tgt, self.gloss))
-            truncated |= bool(getattr(self.tr, "last_truncated", False))
-            verse += [getattr(self.tr, "last_verse", None)] if getattr(self.tr, "last_verse", None) else []
-            is_verse.append(bool(getattr(self.tr, "last_verse", None)))
+            out.append(tr.translate(p, lang, tgt, self.gloss, use_context=True)
+                       if hasattr(tr, "context") else tr.translate(p, lang, tgt, self.gloss))
+            truncated |= bool(getattr(tr, "last_truncated", False))
+            verse += [getattr(tr, "last_verse", None)] if getattr(tr, "last_verse", None) else []
+            is_verse.append(bool(getattr(tr, "last_verse", None)))
         # a published verse is not checked for numbers/negations ("nu voi duce lipsă" = "I shall
         # lack nothing"); the other parts of the same phrase still are
         if not verse:
-            translation, guard = guards.check(self.tr, src_text, " ".join(o for o in out if o),
+            translation, guard = guards.check(tr, src_text, " ".join(o for o in out if o),
                                               lang, tgt, self.gloss, fallback=self._guard_fallback())
         else:
             guard = {}
             for i, (p, o) in enumerate(zip(parts, out)):
                 if o and not is_verse[i]:
-                    out[i], g = guards.check(self.tr, p, o, lang, tgt, self.gloss,
+                    out[i], g = guards.check(tr, p, o, lang, tgt, self.gloss,
                                              fallback=self._guard_fallback())
                     guard = guard or g
             translation = " ".join(o for o in out if o)
@@ -833,7 +836,15 @@ class PipelineMixin:
             translation = guards.hide_odd(src_text, translation)
             src_info["odd_figure"] = True
         t_tr = time.time() - t0
-        self._tr_used[id(self.tr)] = time.time()
+        used = set(getattr(tr, "engines_used", None) or ()) if tr is not self.tr else {"local"}
+        engine = "ai" if used == {"ai"} else "local" if tr is self.tr else "local_fallback"
+        if "local" in used:
+            self._tr_used[id(self.tr)] = time.time()
+        src_info["engine"] = engine
+        if engine == "local_fallback":
+            src_info["engine_reason"] = getattr(tr, "last_reason", None)
+            with self.lock:
+                self.counts["ai_fallback"] += 1
         if not translation.strip():                     # nothing new to show: not a success
             self._log_failure(ev, "empty_mt", lang=lang, source=src_text, mt_s=round(t_tr, 3))
             return

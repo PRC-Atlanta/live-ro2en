@@ -37,7 +37,7 @@ PIN_COOKIE = "live_pin"
 # What the Live screen may do from there: the console's controls. Setup, Settings, After and
 # quitting stay on this Mac, and so do settings beyond the gain and ProPresenter's switch.
 APP_CALLS = {("POST", "/api/" + a) for a in ("start", "stop", "pause", "hold", "song", "blank", "retract",
-                                             "correct", "terms", "mode", "profile", "reconnect")} \
+                                             "correct", "terms", "mode", "profile", "reconnect", "engine")} \
     | {("GET", "/api/state"), ("GET", "/api/terms"), ("PUT", "/api/settings")}
 APP_SETTINGS = {"live.input_gain_db", "live.input_gain_auto", "propresenter.enabled"}
 MAX_FAILS, FAIL_WINDOW_S = 10, 60.0     # wrong PINs from one address within the window: locked out
@@ -188,7 +188,10 @@ class RemoteMixin:
                 "held": bool(st.get("held")), "song": bool(st.get("song")),
                 "screen": st.get("screen") or "", "lag_s": st.get("lag_s"),
                 "terms_n": int(st.get("session_terms_n") or 0),
-                "pp": {"enabled": bool(pp.get("enabled", True)), "connected": bool(pp.get("connected"))}}
+                "pp": {"enabled": bool(pp.get("enabled", True)), "connected": bool(pp.get("connected"))},
+                # Live Voice and the AI / Local knob, for the toolbar (no address, no key, no error text)
+                "voice": {k: (st.get("voice") or {}).get(k) for k in ("enabled", "state", "behind_s", "listeners")},
+                "ai": {k: (st.get("ai") or {}).get(k) for k in ("selected", "state", "available")}}
 
     # --- Bonjour -----------------------------------------------------------------------
     def _bonjour_sync(self):

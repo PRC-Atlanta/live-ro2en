@@ -498,6 +498,8 @@ class LifecycleMixin:
                     self._speech_stop()      # Live Voice: the open sentence is spoken (speech.py)
                 except Exception:            # noqa: BLE001  the voice never keeps a service from stopping
                     self._state_failed(self._speech_stop)
+            if hasattr(self, "_voice_end_run"):
+                self._voice_end_run()
             self.running = False
             self.phase_hint = None
             if warm:
