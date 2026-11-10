@@ -720,10 +720,10 @@ OmniVoice, Higgs and FireRed were left out because they need a cloned reference 
 The rule works for English. The English voice simply runs faster: Romanian-to-English captions arrive
 later (median 2.85 s after the speaker's end, against 1.9 s for English to Romanian), and the Romanian
 speaker's sentences are longer (32 words against 21). So the 2 s threshold is passed before the
-voice is really behind, and it speaks at 1.40–1.50 for most of the sermon. The plan keeps the §4.3
-settings for both languages. If 1.45 sounds too fast for English, the thresholds can be set per
-language (`voice.en.lag_lo_s`), at the cost of fewer sentences within 10 s (88%).
-The user has not yet listened for this: `work/tts_bakeoff/en/pacing/`.
+voice is really behind, and it speaks at 1.40–1.50 for most of the sermon. Both languages keep the §4.3
+settings. Per-language thresholds (`voice.en.lag_lo_s`) stay possible but are not planned; they would
+lower the share within 10 s to 88%.
+The user listened to `work/tts_bakeoff/en/pacing/` and kept the §4.3 rule for English (2026-11-10).
 
 **What changes for the English stream:**
 - **A second stream, `/listen/en`.** `/listen` stays Romanian (alias `/listen/ro`). Each listener picks a
