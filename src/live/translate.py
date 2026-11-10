@@ -770,7 +770,7 @@ _META_SRC = re.compile(r"\b(?:tradu\w*|versiun\w*|tâlcui\w*|tălmăc\w*|transl\
 _META_STRONG = re.compile(
     r"\b(?:(?:the|this) (?:input|piece|source|transcript|transcription)\b|more context|garbled|unintelligible|"
     r"(?:appears|seems) (?:to be )?(?:incomplete|cut off|empty|unclear)|please provide|could you (?:provide|clarify|share)|"
-    r"speech[- ]recognition|per the (?:rules|glossary|instructions)|as instructed|make out|what was said)", re.IGNORECASE)
+    r"speech[- ]recognition|per the (?:rules|glossary|instructions)|as instructed|make out)", re.IGNORECASE)
 _META_SRC_STRONG = re.compile(r"\b(?:incomplet\w*|input\w*|neclar\w*|neînțeles\w*|unclear|garbled|unintelligible|"
                               r"cut off)\b", re.IGNORECASE)
 
@@ -893,12 +893,14 @@ class HybridTranslator(ClaudeTranslator):
         self.last_reason: str | None = None           # why the last local answer was needed
         self._local_cut = False                       # the local answer hit its own length limit
         self._phrase_t0 = time.time()
+        self._phrase_gens = 0
 
     def begin_phrase(self):
         """A new phrase (pipeline): its engines, and its time budget for the API across every call the
         guards and the repeat check may add (`ai.phrase_s`), start now."""
         self.engines_used.clear()
         self._phrase_t0 = time.time()
+        self._phrase_gens = 0
 
     def _budget(self) -> float:
         """Seconds this call may take: the per-call budget, and no more than what is left of the phrase's."""
@@ -919,6 +921,7 @@ class HybridTranslator(ClaudeTranslator):
     def _generate(self, piece) -> str:
         from ai import Unavailable
         self._stop, self._local_cut = None, False
+        self._phrase_gens += 1                          # answers asked for this phrase, from either engine
         budget = self._budget()
         if budget < 0.3:                              # this phrase has used its time with the API
             self.last_reason = "phrase_budget"
@@ -928,8 +931,11 @@ class HybridTranslator(ClaudeTranslator):
                 # its timeout must not take the engine down for the next phrases
                 # ("short" against the smaller of the two budgets: with ai.timeout_s set above ai.phrase_s
                 # a phrase's first call is still a full one, and a hung API shows as the amber light)
+                # A phrase's first answer (from either engine) is never short: what runs before it
+                # (verses, the prompt) must not make it so.
                 cfg = self.engine.cfg
-                short = budget < min(float(cfg.get("timeout_s", 2.5)), float(cfg.get("phrase_s", 4.0))) - 0.05
+                short = self._phrase_gens > 1 and \
+                    budget < min(float(cfg.get("timeout_s", 2.5)), float(cfg.get("phrase_s", 4.0))) - 0.05
                 out, self._stop = self.engine.call(piece[0]["content"], list(piece[1:]), self.max_tokens,
                                                    timeout=budget, soft=short)
                 self.engines_used.add("ai")

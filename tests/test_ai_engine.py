@@ -709,6 +709,7 @@ def test_a_phrases_first_call_takes_the_engine_down_whatever_the_timeout_setting
     ("It seems the input is incomplete.", "mi se pare că inputul este incomplet", False),     # the speaker says so
     ("It seems the input is incomplete.", "haideți să vedem contextul", True),
     ("I can't make out what was said.", "înțelegeți ce vreau să spun", True),
+    ("I cannot understand what was said.", "Nu pot înțelege ce s-a spus", False),            # the speaker's own words
     ("This text is not about translation.", "textul acesta nu e despre traducere", False),
     ("I cannot understand this translation.", "nu pot înțelege traducerea aceasta", False),
 ])

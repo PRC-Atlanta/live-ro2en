@@ -211,7 +211,8 @@ class RemoteMixin:
             try:
                 self._bonjour = subprocess.Popen(["/bin/sh", "-c", WATCH, "sh", name, str(port), str(os.getpid())],
                                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                                 stderr=subprocess.DEVNULL, start_new_session=True)
+                                                 stderr=subprocess.DEVNULL, start_new_session=True,
+                                                 env=paths.without_secrets(dict(os.environ)))
             except OSError:
                 self._bonjour = None
         elif not want and self._bonjour is not None:

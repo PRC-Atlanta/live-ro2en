@@ -36,6 +36,9 @@ def main() -> int:
     ap.add_argument("--name", default="aireg")
     ap.add_argument("--reuse", action="store_true", help="score the runs of this name that are already there")
     a = ap.parse_args()
+    for k in ("audio", "errors"):                                  # relative paths are the repo's, wherever this runs
+        p = pathlib.Path(getattr(a, k))
+        setattr(a, k, str(p if p.is_absolute() or p.exists() else ROOT / p))
     missing = [p for p in (a.audio, a.errors) if not (ROOT / p).exists() and not pathlib.Path(p).exists()]
     if missing:
         print("ai_regression: not on this Mac: " + ", ".join(missing), file=sys.stderr)

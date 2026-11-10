@@ -555,7 +555,8 @@ class Voice:
         langs = {}
         with self.wake:
             waiting = [j[1] for j in self.inbox if j[0] == "sentence"]
-        for lang in self.langs:
+        making = self.current                           # the sentence being generated counts as queued:
+        for lang in self.langs:                         # "nothing to say" must not be true while one is on its way
             p, ch = self.players[lang], self.channels[lang]
             with p.lock:
                 cur, queue = p.cur, list(p.queue)
@@ -568,7 +569,8 @@ class Voice:
                 if nxt:
                     behind = now - nxt
             langs[lang] = {"listeners": ch.listeners, "peak": ch.peak,
-                           "queue_n": len(queue) + sum(1 for s in waiting if s.get("lang") == lang),
+                           "queue_n": len(queue) + sum(1 for s in waiting if s.get("lang") == lang)
+                           + (1 if making is not None and making.get("lang") == lang else 0),
                            "queue_s": round(sum(q.audio_s for q in queue), 1),
                            "behind_s": round(behind, 1) if behind is not None else None,
                            "playing_sid": (cur.sids[0] if cur is not None and cur.sids else None),
