@@ -281,6 +281,13 @@ copy of stdout and points fd 1 at stderr, so library prints cannot corrupt the s
   Romanian if Supertonic reads digits badly. How Supertonic reads digits and references in
   Romanian has **not been checked**. M0 checks 20 sample sentences and adds `num2words(lang="ro")`
   only if needed.
+  **Built (M0, 2026-11-10):** checked on 20 Romanian and 20 English sentences (`data/voice/m0_*.txt`,
+  `scripts/voice_m0.py --raw`, heard back with Whisper large-v3-turbo by `scripts/voice_asr_check.py`).
+  Plain numbers are read right in both languages (1989, 2.500, 5,000, 47, "19 mai 1963", clock times), so
+  **`num2words` is not added**. Chapter:verse after a book is garbled in both ("Romani 8:28" → "828",
+  "Apocalipsa 21:4" → "24", "1 Corinteni 13:4-7" → "3, 47", "John 3:16" → "John 3"), so
+  `src/voice/speakable.py` rewrites it after a book name from `data/bible_books.csv`: "N, versetul M" /
+  "N, versetele M până la K", and "N, verse M" / "N, verses M to K" (§14). Heard back correctly after the rewrite.
 - **Loudness**: each item is normalised to the same speech level (RMS −20 dBFS, peaks ≤ −1 dBFS),
   with a 10 ms fade at the edges and a 0.25 s gap between items (`voice.gap_s`).
 
@@ -454,6 +461,23 @@ within 6 s may drop at most 2 points. Supertonic's RTF under load must stay ≤ 
 The dev Mac also runs the user's audiobook renders: never run these measurements while
 `audiobook.py render|repair` or `llama-tts-server` is running.
 
+**Built (M0, 2026-11-10), measured on the dev Mac, not the Mac Studio** (Apple M3 Max, 14 cores, 36 GB,
+macOS 26.7.1; onnxruntime 1.31.1, supertonic 1.3.1; 40 sentences, speed 1.25; generation time ÷ audio length):
+
+| onnxruntime threads | Alone: RTF (median s per sentence) | During a Quality replay (`m0-load`, Alex sermon ×1) |
+|---|---|---|
+| (a) 4, normal priority | 0.19 (0.77 s ro, 0.75 s en) | 0.21–0.22 (0.92 s ro, 0.77 s en) |
+| (b) 2, normal priority | 0.21 (0.87 s, 0.85 s) | 0.23 (1.03 s, 0.91 s) |
+| (c) 4, `taskpolicy -b` (efficiency cores) | **1.28** (5.6 s): slower than real time | not run |
+
+**`voice.threads: 4`** is kept: (c) fails outright, and (a) and (b) both stay far under the 0.35 gate, with
+(a) about 0.1 s quicker per sentence. Whether 4 threads hurt the captions is the M6 gate (§9), not M0. The
+voice process's peak memory is about 0.7 GB (model plus generation; the 30 s MP3 ring is 240 KB per stream).
+Gemma as a spare in Fast is the same memory as the Quality profile with both translators loaded, which the
+app already allows only on ≥ 24 GB Macs (`_keep_both_translators`): on a smaller Mac the Fast profile has no
+summarizer and the voice uses skip-ahead (`state.summarizer: false`). **To repeat on the Mac Studio at R1**:
+`.venv-voice/bin/python scripts/voice_m0.py --threads 4 --out logs/voice_m0/studio`.
+
 ---
 
 ## 7. Offline rules and security
@@ -467,6 +491,18 @@ The dev Mac also runs the user's audiobook renders: never run these measurements
   - **Our own copy** of the files and the OpenRAIL-M licence goes to the church HF organisation
     (`PRC-Media/supertonic-3`, as for the NLLB build) and to the backup drive. The lock file points
     at our copy, so the app still installs if the original repo disappears.
+  - **Built (M0, 2026-11-10):** pinned from the dev Mac's local copy (`~/.cache/supertonic3`, commit
+    `724fb5ab…` as fetched by supertonic 1.3.1), 19 files, 401 MB, sha256 for each, tag `profile=voice`.
+    `PRC-Media/supertonic-3` was **not** uploaded (no drive or repo mounted, and publishing is the user's
+    call): the lock line still names `Supertone/supertonic-3`. Upload the same 19 files, then change the
+    repo name and commit on that one line; the sha256 lines stay.
+  - **Built:** the model folder is the Hugging Face cache snapshot the app's downloader already writes
+    (`<HF cache>/models--Supertone--supertonic-3/snapshots/<commit>`), passed to `TTS(model_dir=…,
+    auto_download=False)`, instead of a separate `<Application Support>/Live RO2EN/supertonic3` folder: one
+    downloader, one resume and checksum path. `LIVE_VOICE_MODEL_DIR` overrides it; in dev
+    `~/.cache/supertonic3` is used when the snapshot is absent (`src/voice/model.py`).
+  - **Built:** macOS 14 wheels confirmed: onnxruntime 1.31.1 and numpy 2.5.4 are `macosx_14_0_arm64`,
+    lameenc 1.9.0 and soundfile 0.14.0 `macosx_11_0_arm64`. Pins: `requirements/voice.txt` (`.venv-voice`).
 - **No network at run time**: `voice.py` sets `HF_HUB_OFFLINE=1`, `DO_NOT_TRACK=1` and the rest
   of the offline variables before any import, unless `LIVE_ALLOW_NETWORK=1` (setup only). The
   model download runs in the `model_setup.py` child, like the other models.

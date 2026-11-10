@@ -1,5 +1,15 @@
 # Progress
 
+## WHERE I AM (Live Voice, branch `live-voice`; update before every long step)
+Task: `docs/live_voice_plan.md` M0–M7 + Haiku AI/Local knob + ideas 12/13 + main-screen layout (the user's
+brief of 2026-11-10). Worktree `.claude/worktrees/live-voice` (venvs, models, logs, work, .env are symlinks
+to the main checkout; `.venv-voice` is new).
+- Done: branch = plan commits + PR #6 (`fix/2026-11-08-evening`) + `claude/cool-bohr-d46fbc` merged (no
+  conflicts); baseline 719 tests pass. **M0** done (model pinned, RTF, digits, wheels).
+- Next: M1 sentence step (`src/live/speech.py`), then M2 voice process (`src/voice/`), M3, M4, AI knob, M5 UI,
+  M6 benches (both modes), security review, M7 `make dist`.
+- Each milestone: commit, then an Opus subagent code review, fix, fix review.
+
 Resume: open this folder in Claude Code and say "resume from PROGRESS.md".
 Repo: https://github.com/PRC-Atlanta/live-ro2en (private). Audio, models, .env, correction data and transcripts are not tracked (see .gitignore).
 Venvs (uv, Python 3.12): `.venv` (core/scoring/Google), `.venv-nemo` (Jackrabbit/SpeD/Canary, live engine),
