@@ -125,6 +125,12 @@ if [ -f "$RES/app/src/voice/voice.py" ] && imp "$IH/caches/voice-home" "$RES/sit
        voice.pacing voice.speakable voice.stream voice.synth voice.model supertonic onnxruntime lameenc soundfile numpy netaudit; then
   ok "voice side (site/voice)"
 else bad "voice side (site/voice):"; tail -15 "$T/imports.log" | sed 's/^/        /'; fi
+# ... and as the app starts it: the script itself, on its own path order (--help ends after its imports)
+if (cd "$RES/app" && env -i HOME="$IH/caches/voice-home" PATH=/usr/bin:/bin TMPDIR="${TMPDIR:-/tmp}" LANG=en_US.UTF-8 \
+      PYTHONPATH="$RES/site/voice:$RES/site/common" PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 HF_HUB_OFFLINE=1 \
+      "$PY" "$RES/app/src/voice/voice.py" --help) > "$T/voice-help.log" 2>&1 && grep -q -- "--cfg" "$T/voice-help.log"; then
+  ok "voice.py starts as a script from the bundle"
+else bad "voice.py as a script:"; tail -15 "$T/voice-help.log" | sed 's/^/        /'; fi
 left=$(ls -A "$IH" | grep -vE '^(numba|caches)$' || true)
 [ -z "$left" ] && ok "nothing written to the user's HOME (engine writes stay in its own)" ||
   bad "written to the user's HOME: $(printf '%s' "$left" | tr '\n' ' ')"

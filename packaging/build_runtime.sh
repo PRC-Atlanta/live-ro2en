@@ -120,7 +120,7 @@ find "$OUT/site" -maxdepth 2 -name '*.pth' -print | sed "s|$OUT/||" || true
 du_k() { du -sk "$1" | cut -f1; }
 mb() { awk -v k="$1" 'BEGIN{printf "%.0f MB", k/1024}'; }
 before_rt=$(du_k "$OUT/runtime"); before_c=$(du_k "$OUT/site/common")
-before_n=$(du_k "$OUT/site/nemo"); before_m=$(du_k "$OUT/site/mt")
+before_n=$(du_k "$OUT/site/nemo"); before_m=$(du_k "$OUT/site/mt"); before_v=$(du_k "$OUT/site/voice")
 say "prune (packaging/prune.txt)"
 while read -r kind pat _; do
   case "$kind" in ''|'#'*) continue;; esac
@@ -162,7 +162,7 @@ while IFS= read -r f; do
   nscrub=$((nscrub + 1))
 done < <(macho_files "$OUT")
 echo "  rewrote $nscrub files"
-pr_rt=$(du_k "$OUT/runtime"); pr_c=$(du_k "$OUT/site/common"); pr_n=$(du_k "$OUT/site/nemo"); pr_m=$(du_k "$OUT/site/mt")
+pr_rt=$(du_k "$OUT/runtime"); pr_c=$(du_k "$OUT/site/common"); pr_n=$(du_k "$OUT/site/nemo"); pr_m=$(du_k "$OUT/site/mt"); pr_v=$(du_k "$OUT/site/voice")
 
 # --- 5. precompile -------------------------------------------------------------------------
 # unchecked-hash: valid wherever the folder is copied (no mtime/path check) and never rewritten;
@@ -222,15 +222,15 @@ say "size report"
   echo "Embedded runtime size report ($(date '+%Y-%m-%d %H:%M'), python $PBS_PY / pbs $PBS_TAG)"
   echo
   printf '%-14s %12s %12s %12s\n' part installed pruned "with .pyc"
-  for p in "runtime:$before_rt:$pr_rt" "site/common:$before_c:$pr_c" "site/nemo:$before_n:$pr_n" "site/mt:$before_m:$pr_m"; do
+  for p in "runtime:$before_rt:$pr_rt" "site/common:$before_c:$pr_c" "site/nemo:$before_n:$pr_n" "site/mt:$before_m:$pr_m" "site/voice:$before_v:$pr_v"; do
     IFS=: read -r d b q <<< "$p"
     printf '%-14s %12s %12s %12s\n' "$d" "$(mb "$b")" "$(mb "$q")" "$(mb "$(du_k "$OUT/$d")")"
   done
-  printf '%-14s %12s %12s %12s\n' total "$(mb $((before_rt + before_c + before_n + before_m)))" \
-    "$(mb $((pr_rt + pr_c + pr_n + pr_m)))" "$(mb "$(du_k "$OUT")")"
+  printf '%-14s %12s %12s %12s\n' total "$(mb $((before_rt + before_c + before_n + before_m + before_v)))" \
+    "$(mb $((pr_rt + pr_c + pr_n + pr_m + pr_v)))" "$(mb "$(du_k "$OUT")")"
   echo
   echo "compressed estimate (tar | gzip -1): $(tar cf - -C "$OUT" runtime site | gzip -1 | wc -c | awk '{printf "%.0f MB", $1/1048576}')"
-  for d in common nemo mt; do
+  for d in common nemo mt voice; do
     echo; echo "largest in site/$d:"
     du -sk "$OUT/site/$d"/* | sort -rn | head -12 |
       awk -F'\t' '{n = $2; sub(/.*\//, "", n); printf "  %7.0f MB  %s\n", $1 / 1024, n}'
