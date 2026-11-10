@@ -3,7 +3,7 @@
 // One message and one action for each contract.json problem_code (the test fails on a missing one).
 
 export const S = {
-  app: { mark: ["LIVE", "TRANSLATE"], brand: "RO ⇄ EN", offline: "Offline · on this Mac" },
+  app: { mark: ["LIVE", "TRANSLATE"], brand: "RO ⇄ EN", offline: "Offline · on this Mac", online: "AI translation · online" },
 
   toolbar: {
     rehearsal: "Rehearsal", rehearsalHint: "Run a rehearsal with a recorded sermon",
@@ -188,6 +188,7 @@ export const S = {
     ["Esc", "Blank the big screen now"],
     ["1 / 2 / 3", "Speaker: Auto-detect / Romanian / English"],
     ["Q", "Quality: Quickest or Best"],
+    ["A", "Translator: AI or Local"],
     ["Backspace", "Remove the last caption"],
     ["E", "Fix the last caption"],
     ["T", "Today's names & words"],
@@ -214,6 +215,18 @@ export const S = {
       ["Captions are late", [
         "Captions catch up by themselves; nothing is lost.",
         "If it keeps happening, turn the Quality knob to Quickest (press Q)."]],
+      ["The Translator knob is amber", [
+        "AI is chosen, but the internet or the AI service is not answering, so this Mac is translating by itself. Captions keep coming.",
+        "It goes back to AI by itself. To stop trying, press A for Local."]],
+      ["The Translator knob will not turn to AI", [
+        "AI needs an Anthropic API key. Add it in Settings → AI translation."]],
+      ["People can't hear the voice on their phones", [
+        "Look at the VOICE light at the top. Red: open Settings → Live Voice. Captions are not affected.",
+        "The phone must be on the church Wi-Fi, the same network as this Mac.",
+        "Ask them to scan the QR code in Settings → Live Voice again and tap “Ascultă în română”."]],
+      ["The voice is late", [
+        "It catches up by itself: it speaks a little faster, then gives a short summary of what it missed.",
+        "Bible verses are always read in full."]],
       ["Wrong language", [
         "Turn the Speaker knob: press 2 for a Romanian speaker, 3 for an English speaker, 1 for Auto-detect."]],
       ["A name is spelled wrong", [

@@ -231,3 +231,7 @@ p.fx-note[data-tone="bad"] { color: var(--red); }
 .fx-ppbox.calm.off .fx-ppbox-t span { color: var(--label); font-weight: 400; }
 .fx-ppbox.calm .fx-ppsw[aria-checked="false"] { border-color: #2c3438; color: var(--mute); }
 .fx-ppbox.calm .fx-ppsw[aria-checked="false"] b { background: #3a4144; }
+/* a fact whose value is a sentence (After: which engine translated, and for how long) */
+.fx-fact.wide { grid-column: span 3; }
+.fx-fact.wide dd { font-size: 17px; line-height: 1.35; }
+@media (max-width: 760px) { .fx-fact.wide { grid-column: 1 / -1; } }

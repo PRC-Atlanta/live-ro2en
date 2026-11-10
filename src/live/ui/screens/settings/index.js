@@ -203,7 +203,10 @@ export function render(el, store) {
 
       const addr = h("strong.fx-pin");
       const qr = h("div.fx-qr");
-      const print = button("Print the card", () => window.print());
+      const print = button("Print the card", () => {
+        const app = window.webkit?.messageHandlers?.printPage;     // the Mac app prints (a WKWebView ignores window.print)
+        if (app) app.postMessage({}); else window.print();
+      });
       const addrBox = h("div.fx-sec.fx-voicecard", h("span.fx-label", "Address for listeners"),
         h("p.fx-text", "Listeners join the church Wi-Fi, scan this code (or type the address) and tap Ascultă în română or Listen in English. No app and no password."),
         h("div.fx-row", qr, h("div", addr, h("p.fx-hint", "Give this Mac a fixed address on the church router, or the code stops working when the address changes."))),

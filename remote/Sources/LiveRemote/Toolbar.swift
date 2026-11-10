@@ -160,6 +160,20 @@ struct Look {
         }
     }
 
+    /// Live Voice's line: "" while it is off (or the captions app is older), else its state and
+    /// the listeners per language. Green = ready or speaking, amber = starting or behind, red = stopped.
+    static func voice(_ v: Feed.Voice?, short: Bool) -> (String, NSColor) {
+        guard let v, v.enabled == true, let state = v.state, state != "off" else { return ("", Theme.mute) }
+        let ro = v.listeners?["ro"] ?? 0, en = v.listeners?["en"] ?? 0
+        let n = short ? "\(ro)·\(en)" : "\(ro) RO · \(en) EN"
+        switch state {
+        case "stopped": return (short ? "Voice off" : "Voice stopped", Theme.red)
+        case "starting": return (short ? "Voice…" : "Voice starting", Theme.amber)
+        case "behind": return (short ? "Voice late" : "Voice " + (v.behind_s.map { String(format: "%.0f s late", $0) } ?? "late"), Theme.amber)
+        default: return ("Voice " + n, Theme.lime)
+        }
+    }
+
     var color: NSColor {
         switch kind { case .live: return Theme.lime; case .hidden: return Theme.amber; case .held: return Theme.cyan
                       case .idle: return Theme.label; case .off: return Theme.red }
@@ -180,6 +194,7 @@ final class ToolbarController {
     private let led = Led(size: 9)
     private let phase = PassLabel.make("", size: 11, color: Theme.label)
     private let detail = PassLabel.make("", size: 11, color: Theme.mute)
+    private let voice = PassLabel.make("", size: 9.5, color: Theme.mute)       // Live Voice: light and listeners
     private let peek = PassLabel.make("", size: 13, color: Theme.cyanHi, lines: 2)
     private let problem = PassLabel.make("", size: 12.5, color: Theme.hex(0xffd2cd), lines: 2)
     private let more = MoreButton()
@@ -210,6 +225,7 @@ final class ToolbarController {
         let defs: [(String, String, String, CGFloat)] = [
             ("pause", "eye", "Hide", 70), ("hold", "pause.fill", "Hold", 58), ("blank", "xmark.rectangle", "Clear", 58),
             ("retract", "arrow.uturn.backward", "Remove", 58), ("song", "music.note", "Song", 58),
+            ("engine", "cpu", "Local", 58),
             ("names", "person.text.rectangle", "Names", 58), ("full", "macwindow", "Full", 58)]
         for (a, sym, t, w) in defs {
             let k = KeyButton(action: a, symbol: sym, title: t, width: w)
@@ -251,6 +267,24 @@ final class ToolbarController {
         keys["song"]?.on = feed?.song ?? false
         keys["names"]?.badge = feed?.terms_n
         for (a, k) in keys { k.enabled = connected || a == "names" || a == "full" }
+        // The AI / Local knob: lit while AI is chosen, amber while the local models are answering for it.
+        if let e = keys["engine"] {
+            let ai = feed?.ai
+            let chosen = ai?.selected == "ai"
+            e.on = chosen
+            e.amberWhenOn = chosen && ai?.state != "ai"
+            e.symbol = chosen ? "sparkles" : "cpu"
+            e.title = chosen && ai?.state == "ai" ? "AI" : "Local"      // amber "Local" = AI chosen, local answering
+            e.enabled = connected && ai?.selected != nil && (chosen || ai?.available == true)
+            e.toolTip = !connected || ai?.selected == nil ? nil
+                : chosen ? (ai?.state == "ai" ? "Translator: AI. Click for Local."
+                            : "AI is chosen, but the local models are translating now. Click for Local.")
+                : ai?.available == true ? "Translator: Local. Click for AI."
+                : "AI needs an API key: add it in Settings on the captions Mac."
+        }
+        let (vText, vColor) = Look.voice(feed?.voice, short: vertical)
+        voice.isHidden = vText.isEmpty
+        voice.attributedStringValue = Theme.caps(vText, size: 9.5, color: vColor, weight: .semibold, tracking: 0.08)
         panel.setAccessibilityTitle("Live Remote: \(look.phase)")
     }
 
@@ -285,6 +319,8 @@ final class ToolbarController {
         stat.addArrangedSubview(top)
         detail.alignment = v ? .center : .left
         stat.addArrangedSubview(detail)
+        voice.alignment = v ? .center : .left
+        stat.addArrangedSubview(voice)
         if v { stat.widthAnchor.constraint(equalToConstant: 76).isActive = true; detail.preferredMaxLayoutWidth = 70; detail.maximumNumberOfLines = 2 }
         else { stat.widthAnchor.constraint(greaterThanOrEqualToConstant: 118).isActive = true; detail.maximumNumberOfLines = 1 }
         s.addArrangedSubview(stat)
@@ -294,7 +330,7 @@ final class ToolbarController {
         ks.orientation = v ? .vertical : .horizontal
         ks.spacing = 6
         ks.edgeInsets = v ? NSEdgeInsets(top: 8, left: 7, bottom: 8, right: 7) : NSEdgeInsets(top: 7, left: 8, bottom: 7, right: 8)
-        for a in ["pause", "hold", "blank", "retract", "song"] { if let k = keys[a] { ks.addArrangedSubview(k) } }
+        for a in ["pause", "hold", "blank", "retract", "song", "engine"] { if let k = keys[a] { ks.addArrangedSubview(k) } }
         let sep = Divider(vertical: !v)
         ks.addArrangedSubview(sep)
         if v { sep.widthAnchor.constraint(equalToConstant: 58).isActive = true } else { sep.heightAnchor.constraint(equalToConstant: 46).isActive = true }

@@ -280,6 +280,15 @@ def add_routes(app, live):
         await run(live.blank)
         return live.remote_feed()
 
+    @app.post("/remote/engine")
+    async def engine(request: Request):
+        """The AI / Local knob (docs/live_voice_plan.md §15). Only the two names; never a key."""
+        guard(request)
+        code, payload = await run(live.set_engine, (await body(request)).get("engine"))
+        if code != 200:
+            return JSONResponse({k: payload.get(k) for k in ("error", "detail")}, status_code=code)
+        return live.remote_feed()
+
     @app.post("/remote/retract")
     async def retract(request: Request):
         guard(request)

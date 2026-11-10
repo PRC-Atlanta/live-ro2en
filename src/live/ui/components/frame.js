@@ -40,7 +40,7 @@ export function frame(el, opts = {}) {
       <div class="panel"><div class="panel-body"></div>
         <div class="foot">
           <div class="mark">${S.app.mark[0]}<span></span>${S.app.mark[1]}</div>
-          <div class="brand"><b>${S.app.brand}</b>${S.app.offline}</div>
+          <div class="brand"><b>${S.app.brand}</b><span data-where>${S.app.offline}</span></div>
         </div>
       </div>
     </div>`;

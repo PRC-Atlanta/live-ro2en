@@ -355,6 +355,10 @@ export function render(el, store) {
       strip.querySelector("button").textContent = ps.action.label;
     }
 
+    const where = document.querySelector("[data-where]");          // the footer says "offline" only while it is true
+    const whereText = s.ai?.selected === "ai" ? S.app.online : S.app.offline;
+    if (where && where.textContent !== whereText) where.textContent = whereText;
+
     const b = bannerFor(s), bn = q("[data-banner]");
     bn.classList.toggle("show", !!b);
     if (b) {

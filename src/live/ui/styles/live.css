@@ -353,6 +353,14 @@ kbd { font: 600 12px var(--num); color: var(--cyan-hi); background: #050b0e; bor
   .deck { zoom: .86; }
   .foot { margin-top: 4px; }
 }
+/* a little taller than that (the app's own window is 800 high inside), the same is needed only
+   while a problem takes a row: the banner, or the ProPresenter strip in the meter panel */
+@media (max-height: 900px) and (min-height: 781px) {
+  main:has(.banner.show) .lvl .hist, main:has(.banner.show) .earlier,
+  main:has(.ppstrip:not([hidden])) .lvl .hist, main:has(.ppstrip:not([hidden])) .earlier { display: none; }
+  main:has(.banner.show) .mirror, main:has(.ppstrip:not([hidden])) .mirror { padding-bottom: 8px; }
+  main:has(.banner.show):has(.ppstrip:not([hidden])) .deck { zoom: .9; }
+}
 /* small window beside ProPresenter (600×500): keep the dial above the fold */
 @media (max-height: 600px) {
   main:has(> .unit) { padding: 0; }

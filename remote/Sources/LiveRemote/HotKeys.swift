@@ -13,6 +13,7 @@ final class HotKeys {
         "retract": Key(id: 4, code: UInt32(kVK_ANSI_Z), letter: "Z"),
         "song":    Key(id: 5, code: UInt32(kVK_ANSI_S), letter: "S"),
         "names":   Key(id: 6, code: UInt32(kVK_ANSI_N), letter: "N"),
+        "engine":  Key(id: 7, code: UInt32(kVK_ANSI_A), letter: "A"),
     ]
 
     enum Modifiers: String, CaseIterable {

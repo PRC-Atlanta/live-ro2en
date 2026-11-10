@@ -141,7 +141,7 @@ export function render(el, store) {
       fact("Skipped phrases", String(m.skipped), m.skipped ? "warn" : ""),
       fact("ProPresenter errors", String(m.ppErrors), m.ppErrors ? "warn" : "good"),
       fact("Corrections", String(m.corrections)),
-      ...(m.engines ? [fact("Translated by", m.engines)] : []));
+      ...(m.engines ? [fact("Translated by", m.engines, "wide")] : []));
     const v = m.voice;
     voicePanel.hidden = !v;
     if (v) voiceFactsEl.replaceChildren(

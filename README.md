@@ -167,6 +167,30 @@ Each service is logged to `logs/services/<date>_<time>.jsonl` (in the app:
 
 Test without ProPresenter: `.venv-mt/bin/python src/live/mock_propresenter.py --port 50001`.
 
+## 4a. Live Voice and the AI / Local knob
+
+**Live Voice** speaks the translation on listeners' own phones. Turn it on in **Settings → Live
+Voice**; listeners join the church Wi-Fi, scan the QR code shown there and tap **Ascultă în
+română** (or **Listen in English**, when English is on). The page is served by this Mac on port
+8767 (`voice.port`), to private addresses only. The **VOICE** light on the Live screen shows
+its state and the listeners per language. The voice (Supertonic 3, voice M2) runs in its own
+process and never holds captions back; when it falls more than 10 s behind it speaks a short
+summary instead, never over Scripture. The design, the measurements and every decision are in
+`docs/live_voice_plan.md`. From the source it needs its own environment:
+
+```bash
+python3.12 -m venv .venv-voice && .venv-voice/bin/pip install -r requirements/voice.txt
+.venv-mt/bin/python src/live/model_setup.py download --profile voice   # once: fetches the pinned model
+```
+
+**AI / Local** (the Translator knob on the Live screen, key **A**) chooses who writes the English
+and Romanian translations and the voice's summaries: **Local** is the models on this Mac, with no
+network at all; **AI** is Claude Haiku 5.5 and reaches `api.anthropic.com` and nothing else. In
+AI mode the local models stay loaded: any phrase the AI does not answer in time is translated
+locally, the knob turns amber, and it goes back to AI by itself. The API key is typed once in
+**Settings → AI translation** and kept in the macOS Keychain (from the source, `ANTHROPIC_API_KEY`
+in `.env` also works). Without a key the knob stays on Local and says why.
+
 ## 4b. English speakers (English → Romanian)
 
 English speech is recognised by **Parakeet-TDT-0.6B-v3**, the same model that tells Romanian
