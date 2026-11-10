@@ -50,20 +50,25 @@ def books(lang: str, path: pathlib.Path = BOOKS_CSV) -> tuple[tuple[str, ...], t
 @functools.lru_cache(maxsize=None)
 def _patterns(lang: str):
     names, numbered = books(lang)
-    one, many, to, and_, chapter, before = WORDS[lang]
+    and_, chapter = WORDS[lang][3], WORDS[lang][4]
     alt = "|".join(map(re.escape, names))
     v = r"[1-9]\d{0,2}"
-    # Book N:M, then optionally -K, -N2:M2 or ,K ; never a clock time ("Mark 10:30 am", "9:00")
+    end = rf"(?=\s*(?:[,.;:!?)]|$|{and_}\b))"
+    # Book N:M, then at most one of  -N2:M2 | -K | ,K[,K…]  and then at most one " și/and N2:M2".
+    # Never half a reference: what follows may not be more digits, a colon-digit or another range.
     ref = re.compile(rf"\b({alt})(\s+)({v}):({v})"
-                     rf"(?:\s*[-–]\s*({v}):({v})|\s*[-–]\s*({v})|,\s?({v})(?![\d.]))?"
-                     rf"(?!\d|:\d|\s*(?:am|pm|a\.m|p\.m)\b)")
-    more = re.compile(rf"((?:{one}|{many}) [^.;!?]{{0,24}}?\b{and_}\s+)({v}):({v})(?!\d|:\d)")
+                     rf"(?:\s*[-–]\s*({v}):({v})|\s*[-–]\s*({v})|((?:,\s?{v}{end})+))?"
+                     rf"(?:(\s+{and_}\s+)({v}):({v}))?"
+                     rf"(?!\d|:\d|\s*[-–]\s*\d)")
     num = None
     if numbered:
         nb = "|".join(map(re.escape, numbered))
         # "2 Timotei 3", "1 Corinthians, chapter 4", "din 2 Petru." but not "chapter 3 John writes"
         num = re.compile(rf"(?<![\w:,.])([123])\s+(?=(?:{nb})(?:\s+\d|\s*[,.;:!?]|\s*$|,?\s+{chapter}\b))")
-    return ref, num, more
+    return ref, num
+
+
+_CLOCK_EN = re.compile(r"\s*(?:am|pm|a\.m|p\.m)\b", re.IGNORECASE)
 
 
 def book_numbers(text: str, lang: str) -> str:
@@ -84,17 +89,23 @@ def references(text: str, lang: str) -> str:
     one, many, to, and_, chapter, _ = WORDS[lang]
 
     def sub(m):
-        head = f"{m[1]}{m[2]}{m[3]}, "
+        tail = m[5] or m[7] or m[8] or m[10]
+        if lang == "en" and not tail and _CLOCK_EN.match(m.string, m.end()):
+            return m[0]                            # "Mark 10:30 am": a clock time ("am" is a Romanian verb)
+        out = f"{m[1]}{m[2]}{m[3]}, "
         if m[5]:                                   # 3:16-4:2
-            return f"{head}{one} {m[4]} {to} {chapter} {m[5]}, {one} {m[6]}"
-        if m[7]:                                   # 13:4-7
-            return f"{head}{many} {m[4]} {to} {m[7]}"
-        if m[8]:                                   # 3:16,17
-            return f"{head}{many} {m[4]} {and_} {m[8]}"
-        return f"{head}{one} {m[4]}"
-    ref, _, more = _patterns(lang)
-    text = ref.sub(sub, text)
-    return more.sub(lambda m: f"{m[1]}{chapter} {m[2]}, {one} {m[3]}", text)   # "… și 4:5" in the same reference
+            out += f"{one} {m[4]} {to} {chapter} {m[5]}, {one} {m[6]}"
+        elif m[7]:                                 # 13:4-7
+            out += f"{many} {m[4]} {to} {m[7]}"
+        elif m[8]:                                 # 3:16,17[,18]
+            vs = [m[4]] + re.findall(r"\d+", m[8])
+            out += f"{many} {', '.join(vs[:-1])} {and_} {vs[-1]}"
+        else:
+            out += f"{one} {m[4]}"
+        if m[10]:                                  # "… și 4:5" of the same book
+            out += f"{m[9]}{chapter} {m[10]}, {one} {m[11]}"
+        return out
+    return _patterns(lang)[0].sub(sub, text)
 
 
 def speakable(text: str, lang: str = "ro") -> str:

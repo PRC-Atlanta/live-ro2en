@@ -117,3 +117,18 @@ def test_candidates_order_and_absent_lock_line(tmp_path, monkeypatch):
 def test_the_voice_line_is_not_part_of_the_caption_profiles():
     import model_lock
     assert all(i["repo"] != model.REPO for i in model_lock.subset("quality"))
+
+
+@pytest.mark.parametrize("lang,text,want", [
+    ("en", "Mark 10:30 AM meeting", "Mark 10:30 AM meeting"),
+    ("ro", "Ioan 3:16 am citit", "Ioan 3, versetul 16 am citit"),                 # "am" is a Romanian verb
+    ("ro", "Ioan 3:16-18 am citit", "Ioan 3, versetele 16 până la 18 am citit"),
+    ("en", "Psalm 23:1-6 am", "Psalm 23, verses 1 to 6 am"),
+    ("en", "verse 3 and 10:30 we meet", "verse 3 and 10:30 we meet"),             # no book: a clock time
+    ("ro", "În versetul 28 și 10:30 ne vedem", "În versetul 28 și 10:30 ne vedem"),
+    ("en", "John 3:16, 17 people came", "John 3, verse 16, 17 people came"),
+    ("en", "John 3:16,17,18.", "John 3, verses 16, 17 and 18."),
+    ("ro", "Ioan 3:16-17,20", "Ioan 3, versetele 16 până la 17,20"),              # the range is spoken, the rest left
+])
+def test_speakable_fix_review_cases(lang, text, want):
+    assert S(text, lang) == want
