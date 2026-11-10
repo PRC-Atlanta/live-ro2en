@@ -158,7 +158,7 @@ def run(args) -> pathlib.Path:
 
     import yaml  # noqa: PLC0415 - in .venv-mt; fine when run as `.venv-mt/bin/python scripts/bench.py`
     code = pathlib.Path(args.code).resolve() if args.code else REPO
-    for need in ("models", ".venv-mt", ".venv-nemo"):          # git-ignored, so absent in a worktree
+    for need in ("models", ".venv-mt", ".venv-nemo", ".venv-voice"):          # git-ignored, so absent in a worktree
         if not (code / need).exists() and (REPO / need).exists():
             (code / need).symlink_to(REPO / need)
     cfg = yaml.safe_load((code / "config.yaml").read_text())
@@ -171,6 +171,13 @@ def run(args) -> pathlib.Path:
         "live.input_gain_db": float(args.gain), "live.language_mode": args.mode,
         "live.input_device": None, "live.translator_keepalive_s": 0,
     }
+    voice_port = None
+    if getattr(args, "voice", False):                    # Live Voice on (docs/live_voice_plan.md §9): its own port,
+        import socket                                    # this Mac only; the bench records both streams
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            voice_port = s.getsockname()[1]
+        overrides.update({"voice.enabled": True, "voice.port": voice_port, "voice.host": "127.0.0.1"})
     for kv in args.set or []:
         k, _, v = kv.partition("=")
         try:
@@ -203,7 +210,11 @@ def run(args) -> pathlib.Path:
     print(f"run {name}: {args.profile}, gain {args.gain:+g} dB, x{speed:g} -> {rdir}", flush=True)
     t = time.time()
     with open(rdir / "app.log", "w") as out:
-        rc = subprocess.run(cmd, cwd=str(code), env=env, stdout=out, stderr=subprocess.STDOUT).returncode
+        proc = subprocess.Popen(cmd, cwd=str(code), env=env, stdout=out, stderr=subprocess.STDOUT)
+        rec = _record_voice(voice_port, rdir, proc) if voice_port else []
+        rc = proc.wait()
+        for th in rec:
+            th.join(5)
     logs = sorted((rdir / "services").glob("*.jsonl"))
     info.update({"returncode": rc, "wall_s": round(time.time() - t, 1), "log": str(logs[-1]) if logs else None})
     (rdir / "run.json").write_text(json.dumps(info, indent=1))
@@ -211,6 +222,40 @@ def run(args) -> pathlib.Path:
         sys.exit(f"run failed (exit {rc}); see {rdir / 'app.log'}")
     print(f"done in {info['wall_s']:.0f} s: {logs[-1]}")
     return rdir
+
+
+def _record_voice(port: int, rdir: pathlib.Path, proc) -> list:
+    """A listener inside the bench: /listen/ro -> voice.mp3 and /listen/en -> voice_en.mp3, from the moment
+    the voice answers until the app exits. voice_rec.json holds when each recording began (wall clock)."""
+    import threading
+    import urllib.request
+    started = {}
+
+    def listen(lang: str, out: pathlib.Path):
+        while proc.poll() is None:
+            try:
+                r = urllib.request.urlopen(f"http://127.0.0.1:{port}/listen/{lang}", timeout=5)
+                break
+            except OSError:
+                time.sleep(0.2)
+        else:
+            return
+        started[lang] = time.time()
+        (rdir / "voice_rec.json").write_text(json.dumps({**started, "preroll_s": 1.0}))
+        with open(out, "wb") as f:
+            try:
+                while proc.poll() is None:
+                    data = r.read(4096)
+                    if not data:
+                        break
+                    f.write(data)
+            except OSError:
+                pass
+    ths = [threading.Thread(target=listen, args=(lang, rdir / name), daemon=True)
+           for lang, name in (("ro", "voice.mp3"), ("en", "voice_en.mp3"))]
+    for th in ths:
+        th.start()
+    return ths
 
 
 # --- scoring ----------------------------------------------------------------------------------
@@ -539,6 +584,8 @@ def main() -> None:
     r.add_argument("--name")
     r.add_argument("--code")
     r.add_argument("--terms")
+    r.add_argument("--voice", action="store_true",
+                   help="Live Voice on: starts the voice process and records /listen to voice.mp3 (and voice_en.mp3)")
     s = sub.add_parser("score")
     s.add_argument("run")
     s.add_argument("--errors")

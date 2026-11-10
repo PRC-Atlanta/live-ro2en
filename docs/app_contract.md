@@ -109,6 +109,8 @@ listed here.
 | `captions_behind` | `behind_s` over `lag_warn_s` |
 | `engine_stopped` | the engine exited without `eof` |
 | `english_unavailable` | engine `mode` event / multilingual `warn` |
+| `voice_stopped` | Live Voice is on and its process is not running: it died 3 times in 2 minutes, could not start, or its model is not downloaded (`voicelink.py`) |
+| `voice_behind` | the voice is more than 10 s behind the speaker during a service (`voice.state: behind`) |
 | `pp_unreachable` | ProPresenter connection failed (S2 health ping) |
 | `pp_message_missing` | the configured ProPresenter message does not exist (S2) |
 | `disk_full` | preflight (S9) |

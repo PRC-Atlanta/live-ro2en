@@ -56,6 +56,7 @@ from settings import SettingsMixin                   # noqa: E402
 from report import SessionMixin                      # noqa: E402
 from state import StateMixin                         # noqa: E402
 from speech import SpeechMixin                       # noqa: E402
+from voicelink import VoiceMixin                     # noqa: E402
 from translate import Glossary                       # noqa: E402
 # re-exported: tests and tools import these from live.app
 from pipeline import is_echo, merge_clauses, pack_parts            # noqa: E402,F401
@@ -63,7 +64,7 @@ from security import LOOPBACK, allowed_hosts, request_allowed      # noqa: E402,
 
 
 class Live(LifecycleMixin, PipelineMixin, OutputMixin, DisplayMixin, RemoteMixin, SessionMixin, StateMixin, SettingsMixin,
-           SpeechMixin):
+           SpeechMixin, VoiceMixin):
     """One service: the engine child, the translator, ProPresenter and the control state.
     The behaviour lives in the mixins (lifecycle, pipeline, output, state); this is the data."""
 
@@ -164,6 +165,11 @@ def main():
     live.start_pp_monitor()
     if not a.headless:
         live.start_display_server()   # the view-only captions page, if display.network is on
+    if a.headless:             # a bench replay with --voice: the voice is ready before the file plays
+        if live.voice_start():
+            live.voice_wait_ready(90)
+    else:                      # Live Voice, if on: from app open, not from Start, so phones can connect
+        threading.Thread(target=live.voice_start, daemon=True, name="voice-start").start()   # and hear silence
     if a.headless:             # SIGTERM: stop the service and the engine, then exit
         signal.signal(signal.SIGTERM, lambda *_: threading.Thread(
             target=lambda: (live.shutdown(), os._exit(0)), daemon=True).start())
@@ -175,6 +181,7 @@ def main():
         while not (a.exit_on_eof and live.eof.is_set()):
             time.sleep(0.2)
         time.sleep(3)          # let the last clause finish translating
+        live.voice_drain(180)  # ... and the voice finish speaking (a bench replay with --voice)
         live.shutdown()
         print(json.dumps({"log": str(live.log_path)}))
         return

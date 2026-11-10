@@ -353,6 +353,38 @@ copy of stdout and points fd 1 at stderr, so library prints cannot corrupt the s
 - During a rehearsal, every client's connect time, bytes sent, stalls (slow-socket jumps) and
   disconnect go into the voice log.
 
+**Built (M2, 2026-11-10)** in `src/voice/stream.py`, `src/voice/voice.py`, `src/voice/page.html`; tests in
+`tests/test_voice_stream.py`, `tests/test_voice_offline.py`.
+- **Close-delimited responses** (`Connection: close`, no `Content-Length`, no chunking), the Icecast way: the
+  simplest thing every player accepts. Chunked is not built; R1 decides on a locked iPhone (§10).
+- **The HTTP server is hand-written on asyncio** (one thread, standard library only): it parses a request line
+  and headers of at most 4 KB within 5 s, serves `GET`/`HEAD` on `/`, `/listen`, `/listen/ro`, `/listen/en`
+  and, in rehearsal mode only (`voice.rehearsal: true`), `POST /stats` (≤ 2 KB of JSON, six known fields).
+  Anything else is 404 or 405. No file is ever read from a request path.
+- **Limits:** 300 listeners in all (`voice.max_clients`), 40 per address (this Mac itself exempt); a refused
+  listener gets 503 with `Retry-After: 5` and the page reconnects. A listener whose socket takes nothing for
+  10 s is dropped; one more than 10 s behind is moved to the live edge.
+- **Listeners' addresses are logged only in rehearsal mode.** On an ordinary Sunday the voice log counts
+  listeners and does not name their phones.
+- **The listener page** is Romanian first with both buttons (§14), dark, one tap to play and one to stop,
+  a new URL on every connect (`?t=…`, so nothing buffered is replayed), reconnect with backoff 0.5 → 8 s on
+  `error`/`ended`/`stalled`, and a watchdog that reconnects when the play position has not moved for 6 s.
+  Its Content-Security-Policy allows only itself.
+- **Listeners get new audio every 0.2 s** (8 frames), not every frame: with 100 listeners that is the
+  difference between 19% and 10% of one core. Measured with `scripts/voice_soak.py` (100 listeners on
+  localhost, the real clocks, encoders and server): see the M2 line in §11.
+- **Each language has its own play clock, queue and encoder in one clock thread**; silence is encoded too.
+  If the process was stalled for more than 2 s the clock starts again from now instead of bursting.
+- **Supervision** (`src/live/voicelink.py`): restarted when it exits or sends no status for 5 s (or no
+  `ready` within 60 s), 3 times in 2 minutes, then `voice_stopped` until Live Voice is turned off and on.
+  A missing model or interpreter is the same red light, never an error for the captions.
+- **`scripts/bench.py run --voice`** starts the voice headless on a free port bound to this Mac, waits for
+  `ready` before the file plays, records `/listen/ro` → `voice.mp3` and `/listen/en` → `voice_en.mp3`, and the
+  app waits for the voice to finish its queue before it exits. `scripts/voice_report.py` gives the §9 numbers.
+- **Offline:** the real process with the real model runs under `sandbox-exec -f scripts/offline_voice.sb`
+  (outbound denied) with the network audit on: it loads, serves a listener, speaks both languages, and the
+  audit log is empty (`tests/test_voice_offline.py`).
+
 ### 4.3 Pacing, speed and catch-up (as tested in `live_sim.simulate`)
 
 **Stay as close to the speaker as possible** (user, 2026-11-10). The voice never adds a pause of

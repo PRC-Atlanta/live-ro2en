@@ -55,6 +55,8 @@ PROBLEMS = {
     "recognition_behind": ("warn", "quickest", "Switch to Quickest"),
     "captions_behind": ("warn", "quickest", "Switch to Quickest"),
     "english_unavailable": ("info", "lock_ro", "Romanian speaker only"),
+    "voice_stopped": ("warn", "settings", "Open Settings"),      # Live Voice: captions are not affected
+    "voice_behind": ("info", "help", "What this means"),
 }
 
 
@@ -345,6 +347,8 @@ class LifecycleMixin:
         self.warnings, self.counts = list(self._engine_warnings), collections.Counter()
         if hasattr(self, "_speech_reset"):
             self._speech_reset()                       # Live Voice: no sentence of the last service is left
+        if hasattr(self, "_voice_new_run"):
+            self._voice_new_run()
         self.behind_s = self.stt_behind = None
         self.eof.clear()
         self._stopping = False
@@ -557,6 +561,11 @@ class LifecycleMixin:
                 self.stop()
             self._retire_engine()
         finally:
+            if hasattr(self, "voice_stop"):
+                try:
+                    self.voice_stop()                 # Live Voice ends with the app
+                except Exception:                     # noqa: BLE001
+                    pass
             if hasattr(self, "stop_pp_monitor"):
                 self.stop_pp_monitor()
             if hasattr(self, "_bonjour_stop"):
@@ -618,16 +627,17 @@ class LifecycleMixin:
         d = pathlib.Path(run_dir) if run_dir else paths.log_dir(self.root) / "run"
         d.mkdir(parents=True, exist_ok=True)
         ours = str(ENGINE_SCRIPT)
-        for f in d.glob("engine-*.pid"):
-            try:
-                epid, apid = (int(x) for x in f.read_text().split()[:2])
-            except (OSError, ValueError):
-                f.unlink(missing_ok=True)
-                continue
-            if apid != os.getpid() and not _alive(apid):
-                if _alive(epid) and ours in _command(epid):
-                    _terminate(epid)
-                f.unlink(missing_ok=True)
+        for pat, script in (("engine-*.pid", ours), ("voice-*.pid", str(HERE.parent / "voice" / "voice.py"))):
+            for f in d.glob(pat):
+                try:
+                    epid, apid = (int(x) for x in f.read_text().split()[:2])
+                except (OSError, ValueError):
+                    f.unlink(missing_ok=True)
+                    continue
+                if apid != os.getpid() and not _alive(apid):
+                    if _alive(epid) and script in _command(epid):
+                        _terminate(epid)
+                    f.unlink(missing_ok=True)
         (d / "app.pid").write_text(f"{os.getpid()}\n")
         self._pid_dir = d
 
@@ -1000,6 +1010,8 @@ class LifecycleMixin:
                 return "captions_behind"            # S4's pace: captions lag the speech (not recognition)
         if self._english_unavailable and self._engine_alive() and self.lang.mode != "ro-en":
             return "english_unavailable"
+        if hasattr(self, "voice_problem"):               # Live Voice: least urgent, the captions come first
+            return self.voice_problem()
         return None
 
     def _lifecycle_state(self) -> dict:

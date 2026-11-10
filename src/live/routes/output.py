@@ -107,6 +107,14 @@ def router(live) -> APIRouter:
         await run(live.renew_remote_pin)
         return live.state()
 
+    @r.post("/api/voice/test")
+    async def voice_test(request: Request):
+        body = await request.json() if await request.body() else {}
+        lang = body.get("lang", "ro") if isinstance(body, dict) else None
+        if lang not in ("ro", "en"):
+            return _bad("lang must be ro or en")
+        return {"ok": bool(live.voice_test(lang))}
+
     @r.post("/api/reconnect")
     async def reconnect():
         await run(live.reconnect)

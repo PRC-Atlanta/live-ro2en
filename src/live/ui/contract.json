@@ -3,10 +3,14 @@
   "about": "Contract between the orchestrator (src/live/app.py), the UI (src/live/ui/) and the Mac shell. Types: bool, str, num, int, null, unions 'a|b', {enum:[...]}, {list:T}, {map:T}, {object:{field:T}}; '@name' = types.name. An endpoint's 'errors' maps a refusal's HTTP status to the types its body can have. 'built' false = planned; the owner session adds it. Read docs/app_contract.md first.",
 
   "types": {
+    "voice": {"object": {"enabled": "bool", "state": {"enum": ["off", "starting", "ready", "speaking", "behind", "stopped"]},
+                         "behind_s": "num|null", "listeners": {"object": {"ro": "int", "en": "int"}}, "en": "bool",
+                         "url": "str|null", "port": "int", "model": "bool|null", "summarizer": "bool", "error": "str|null"}},
     "phase": {"enum": ["needs_setup", "loading", "ready", "starting", "listening", "captioning", "stopping", "stopped", "unloading", "error"]},
     "line": {"object": {"src": "str", "dst": "str", "lat": "num", "lang": {"enum": ["ro", "en"]}}},
     "problem_code": {"enum": ["no_sound", "device_lost", "mic_denied", "mic_ask", "recognition_behind", "captions_behind",
                               "engine_stopped", "english_unavailable", "pp_unreachable", "pp_message_missing",
+                              "voice_stopped", "voice_behind",
                               "disk_full", "models_missing"]},
     "not_built": {"object": {"error": {"enum": ["not_implemented"]}, "endpoint": "str", "owner": "str"}},
     "pp_status": {"object": {"connected": "bool", "since": "num|null", "last_ms": "num|null",
@@ -44,7 +48,7 @@
     "device":        {"object": {"index": "int", "name": "str"}},
     "settings":      {"object": {"schema_version": "int", "values": {"map": "bool|num|str|null"}, "defaults": {"map": "bool|num|str|null"},
                                  "overrides": {"list": "str"},
-                                 "fields": {"map": {"object": {"group": {"enum": ["basic", "propresenter", "advanced"]},
+                                 "fields": {"map": {"object": {"group": {"enum": ["basic", "propresenter", "voice", "advanced"]},
                                                                "type": {"enum": ["bool", "int", "num", "str", "enum", "device"]},
                                                                "apply": {"enum": ["now", "start", "launch"]}}}},
                                  "applies": {"map": {"enum": ["now", "start", "launch"]}}, "restart_required": "bool", "notes": {"list": "str"}}},
@@ -111,6 +115,8 @@
     "session_terms_n": {"type": "int", "built": true, "owner": "S3"},
     "corrections_n":  {"type": "int", "built": true, "owner": "S2"},
     "remote":         {"type": {"object": {"enabled": "bool", "pin": "str|null", "clients": "int"}}, "built": true, "owner": "S11"},
+    "voice":          {"type": "@voice", "built": true, "owner": "LV",
+                       "about": "Live Voice (docs/live_voice_plan.md §5): the VOICE light. state: off = turned off; starting = the voice process is loading; ready = streaming silence; speaking; behind = more than 10 s after the speaker (amber); stopped = it died or its model is missing (red, problem voice_stopped). listeners per language; url = what phones open."},
     "preflight":      {"type": "@preflight", "nullable": true, "built": true, "owner": "S9"}
   },
 
@@ -153,6 +159,9 @@
     {"method": "POST", "path": "/api/pp/test_caption", "owner": "S2", "built": true, "response": "@pp_test_caption"},
     {"method": "POST", "path": "/api/remote/pin",   "owner": "S11", "built": true, "response": "@state"},
     {"method": "POST", "path": "/api/reconnect",    "owner": "S2", "built": true, "response": "@state"},
+    {"method": "POST", "path": "/api/voice/test",   "owner": "LV", "built": true, "request": {"lang": {"enum": ["ro", "en"]}},
+     "response": {"object": {"ok": "bool"}}, "errors": {"400": ["@bad_request"]},
+     "about": "Settings → Live Voice → Test voice: speaks one sentence into that language's stream; ok false when the voice is not running"},
 
     {"method": "GET",  "path": "/api/settings",     "owner": "S3", "built": true, "response": "@settings",
      "about": "values/defaults by dotted key; only keys in fields can be changed. apply: now = next phrase, start = next Start, launch = next app launch"},
@@ -172,7 +181,7 @@
     {"method": "POST", "path": "/api/terms",        "owner": "S3", "built": true, "request": {"lines": {"list": "str"}, "save": "bool"}, "response": "@state", "errors": {"400": ["@settings_invalid"]},
      "about": "today's names: 'ro = en' or a bare name per line; replaces the previous list and applies live (glossary, spellings, the names boosted in Romanian recognition); save also keeps them for next time"},
     {"method": "POST", "path": "/api/import_config", "owner": "S3", "built": true, "request": {"text": "str?", "path": "str?"},
-     "response": {"object": {"schema_version": "int", "values": {"map": "bool|num|str|null"}, "defaults": {"map": "bool|num|str|null"}, "overrides": {"list": "str"}, "fields": {"map": {"object": {"group": {"enum": ["basic", "propresenter", "advanced"]}, "type": {"enum": ["bool", "int", "num", "str", "enum", "device"]}, "apply": {"enum": ["now", "start", "launch"]}}}}, "applies": {"map": {"enum": ["now", "start", "launch"]}}, "restart_required": "bool", "notes": {"list": "str"}, "imported": {"list": "str"}, "spellings_added": "int", "ignored": {"list": "str"}}},
+     "response": {"object": {"schema_version": "int", "values": {"map": "bool|num|str|null"}, "defaults": {"map": "bool|num|str|null"}, "overrides": {"list": "str"}, "fields": {"map": {"object": {"group": {"enum": ["basic", "propresenter", "voice", "advanced"]}, "type": {"enum": ["bool", "int", "num", "str", "enum", "device"]}, "apply": {"enum": ["now", "start", "launch"]}}}}, "applies": {"map": {"enum": ["now", "start", "launch"]}}, "restart_required": "bool", "notes": {"list": "str"}, "imported": {"list": "str"}, "spellings_added": "int", "ignored": {"list": "str"}}},
      "about": "the exposed settings and spellings from an old config.yaml (its text, or a .yaml path)"},
     {"method": "GET",  "path": "/api/devices",      "owner": "S6", "built": true, "response": {"list": "@device"}},
     {"method": "GET",  "path": "/api/setup",        "owner": "S6", "built": true, "response": "@setup"},

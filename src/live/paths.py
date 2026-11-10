@@ -137,3 +137,28 @@ def base_config(root: pathlib.Path = REPO) -> pathlib.Path:
     the bundled defaults.yaml otherwise."""
     dev = root / "config.yaml"
     return dev if not _env("LIVE_HOME") and dev.exists() else resource("defaults.yaml", root)
+
+
+# --- Live Voice (docs/live_voice_plan.md) ------------------------------------------------------
+def voice_python(root: pathlib.Path = REPO) -> pathlib.Path:
+    """Interpreter for src/voice/voice.py: LIVE_VOICE_PYTHON (the embedded runtime), else .venv-voice."""
+    return _env("LIVE_VOICE_PYTHON") or root / ".venv-voice" / "bin" / "python"
+
+
+def voice_env() -> dict | None:
+    """Environment for the voice child; None (inherit) unless the runtime sets its PYTHONPATH. Like the
+    engine it gets its own HOME under the caches (onnxruntime creates folders in HOME on import)."""
+    pp = os.environ.get("LIVE_VOICE_PYTHONPATH")
+    if not pp:
+        return None
+    env = {**os.environ, "PYTHONPATH": pp}
+    if _env("LIVE_CACHE_DIR"):
+        home = cache_dir() / "voice-home"
+        home.mkdir(parents=True, exist_ok=True)
+        env["HOME"] = str(home)
+    return env
+
+
+def voice_log_dir(root: pathlib.Path = REPO) -> pathlib.Path:
+    """<logs>/voice: one jsonl per launch of the voice process, next to the service logs."""
+    return log_dir(root) / "voice"

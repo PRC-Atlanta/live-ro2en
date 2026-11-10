@@ -241,7 +241,7 @@ def _live(tmp_path, monkeypatch=None, **voice):
                                                                   "Bună ziua.": "Good day."}.get(t, "Tradus: " + t))
     live.pp = PP()
     live.sent = []
-    live._voice_send = live.sent.append
+    live._voice_send = lambda m: live.sent.append(m) if m.get("type") != "state" else None   # no voice process
     return live
 
 

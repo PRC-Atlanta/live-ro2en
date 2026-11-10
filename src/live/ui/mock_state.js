@@ -13,6 +13,7 @@ const PROBLEMS = {
   no_sound: "warn", device_lost: "error", mic_denied: "error", mic_ask: "error", recognition_behind: "warn",
   captions_behind: "warn", engine_stopped: "error", english_unavailable: "info",
   pp_unreachable: "error", pp_message_missing: "error", disk_full: "error", models_missing: "error",
+  voice_stopped: "warn", voice_behind: "info",
 };
 
 export function baseState() {
@@ -26,6 +27,8 @@ export function baseState() {
     pp: { connected: true, since: Date.now() / 1000 - 600, last_ms: 3, error_code: null, enabled: true },
     display: { size: "large", lines: 2, colors: "white_on_black", network: false, show_hidden: false, remote: false, url: null, network_error: null },
     remote: { enabled: false, pin: null, clients: 0 },
+    voice: { enabled: false, state: "off", behind_s: null, listeners: { ro: 0, en: 0 }, en: true, url: null, port: 8767,
+             model: null, summarizer: false, error: null },
     pace: { state: "ok", behind_s: null }, backlog: { n: 0, oldest_s: null },
     paused: false, held: false, song: false, song_auto: false, problem: null, auto_actions: [],
     elapsed_s: null, first_word_ok_pct: null, rehearsal: false, session_terms_n: 0, corrections_n: 0, preflight: null,
@@ -108,6 +111,11 @@ const MOCK_FIELDS = {
   "propresenter.max_chars_per_line": { group: "propresenter", type: "int", min: 20, max: 80, apply: "now" },
   "propresenter.stage_message": { group: "propresenter", type: "bool", apply: "now" },
   "propresenter.health_every_s": { group: "propresenter", type: "int", min: 0, max: 60, apply: "launch" },
+  "voice.enabled": { group: "voice", type: "bool", apply: "now", default: false },
+  "voice.en.enabled": { group: "voice", type: "bool", apply: "now", default: true },
+  "voice.speed": { group: "voice", type: "num", min: 1.0, max: 1.5, apply: "now", default: 1.25 },
+  "voice.speed_max": { group: "voice", type: "num", min: 1.0, max: 1.75, apply: "now", default: 1.5 },
+  "voice.port": { group: "voice", type: "int", min: 1024, max: 65535, apply: "now", default: 8767 },
   "live.input_gain_target_db": { group: "advanced", type: "num", min: -30, max: -10, apply: "now", default: -20 },
   "live.vad_threshold": { group: "advanced", type: "num", min: 0.1, max: 0.95, apply: "start" },
   "live.hold_min_words": { group: "advanced", type: "int", min: 0, max: 12, apply: "now" },
@@ -146,6 +154,7 @@ const MOCK_DEFAULTS = {
   "propresenter.enabled": true, "display.size": "large", "display.lines": 2, "display.colors": "white_on_black",
   "display.network": false, "display.show_hidden": false, "display.remote": false,
   "ui.show_latency": false, "ui.show_counts": false,
+  "voice.enabled": false, "voice.en.enabled": true, "voice.speed": 1.25, "voice.speed_max": 1.5, "voice.port": 8767,
 };
 // model_lock.py items: each profile includes the ones before it
 const MOCK_MODELS = [
@@ -479,6 +488,9 @@ export async function mockApi(method, path, body = {}) {
       return live({ [path === "pause" ? "paused" : "held"]: body.on });
     case "POST blank": case "POST clear": case "POST reconnect": case "POST layout": return live();
     case "POST remote/pin": return live({ remote: B.remote(true) });
+    case "POST voice/test":
+      if (body.lang !== "ro" && body.lang !== "en") return status(400, { error: "bad_request", detail: "lang must be ro or en" });
+      return status(200, { ok: stateNow().voice.state !== "off" && stateNow().voice.state !== "stopped" });
     case "POST retract":
       return stateNow().screen ? live() : nothing("there is no caption to remove");
     case "POST correct":
