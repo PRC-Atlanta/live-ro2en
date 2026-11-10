@@ -351,9 +351,10 @@ def test_words_waiting_are_spoken_when_the_voice_is_silent_even_while_the_speake
         return [s["why"] for s in _events(live, "sentence")]
     quiet = {"langs": {"ro": {"queue_n": 0, "playing_sid": None}}}
     busy = {"langs": {"ro": {"queue_n": 1, "playing_sid": 7}}}
-    assert run(busy, 0.9) == []                               # past flush_s, before 3 × flush_s
-    assert run({}, 0.9) == []                                 # no voice process answering: as before
-    assert run(quiet, 0.9) == ["flush"]
+    assert run(busy, 1.0) == []                               # past 1.5 × flush_s, before 3 × flush_s
+    assert run({}, 1.0) == []                                 # no voice process answering: as before
+    assert run(quiet, 0.45) == []                             # the voice is silent, but only flush_s has passed
+    assert run(quiet, 1.0) == ["flush"]
 
 
 def test_hide_blank_and_song_discard_the_open_sentence(tmp_path):

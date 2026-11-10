@@ -22,6 +22,8 @@ from captions import _KEEP_CAP, _LOWER
 
 DEFAULTS = {"pause_s": 0.6, "max_words": 30, "cap_words": 45, "comma_lo_s": 0.3, "flush_s": 4.0}
 KEEP = 10                       # published sentences an operator's correction can still reach
+QUIET_FLUSH = 1.5               # × flush_s: an open sentence is published when the voice has been silent this long
+                                # (M6: at 1 × it split 12 sentences of the eulogy and raised the median delay; §9)
 NO_NEXT = 99.0                  # "nothing follows": a gap longer than any pause
 # capitalised wherever they stand (clean_sermon.ALWAYS_CAP in the simulation)
 ALWAYS_CAP_RO = {"Dumnezeu", "Dumnezeul", "Dumnezeului", "Domnul", "Domnului", "Isus", "Hristos", "Duhul",
@@ -496,7 +498,7 @@ class SpeechMixin:
     def _speech_flush_tick(self):
         """A speaker who trails off must not hold a sentence back for ever: `flush_s` after the last
         chunk with nothing on its way, the open sentence is published; after 3 × flush_s whatever
-        the engine hears (§2.2). Also after `flush_s` when the voice has nothing to say in that
+        the engine hears (§2.2). Also after 1.5 × `flush_s` when the voice has nothing to say in that
         language: words are waiting and the listeners hear silence, so the words are spoken, and what
         the speaker says next becomes a new sentence (Built M6, §9)."""
         with self._speech_lock:
@@ -514,7 +516,7 @@ class SpeechMixin:
                 for lang in list(self._speech_builders):
                     self._speech_flush(lang, "flush")
             else:
-                if waited >= flush_s:
+                if waited >= QUIET_FLUSH * flush_s:
                     for lang, b in list(self._speech_builders.items()):
                         if b.parts and self._speech_voice_quiet(lang):
                             self._speech_flush(lang, "flush")
