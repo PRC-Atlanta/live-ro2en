@@ -53,7 +53,7 @@ struct LaunchConfig {
                 // Live Voice: its own process on the same interpreter, with only its own packages
                 if fm.fileExists(atPath: s("voice")) {
                     env["LIVE_VOICE_PYTHON"] = py.path
-                    env["LIVE_VOICE_PYTHONPATH"] = s("voice")
+                    env["LIVE_VOICE_PYTHONPATH"] = [s("voice"), s("common")].joined(separator: ":")
                 }
                 env["LIVE_HOME"] = AppPaths.support.path
                 env["LIVE_LOG_DIR"] = AppPaths.logs.path

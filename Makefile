@@ -18,7 +18,7 @@ APP       := $(DIST)/Live RO2EN.app
 VERSION   := $(shell /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' macos/Info.plist)
 DMG       := $(DIST)/LiveRO2EN-$(VERSION).dmg
 STAMP     := $(RUNTIME)/.stamp
-RUNTIME_INPUTS := requirements/nemo.txt requirements/mt.txt packaging/build_runtime.sh \
+RUNTIME_INPUTS := requirements/nemo.txt requirements/mt.txt requirements/voice.txt packaging/build_runtime.sh \
                   packaging/prune.txt packaging/audit_macho.sh
 
 .PHONY: all dist runtime app dmg verify notarize clean

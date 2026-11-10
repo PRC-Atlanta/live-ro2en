@@ -1,22 +1,20 @@
 # Progress
 
-## WHERE I AM (Live Voice, branch `live-voice`; update before every long step)
-Task: `docs/live_voice_plan.md` M0–M7 + Haiku AI/Local knob + ideas 12/13 + main-screen layout (the user's
-brief of 2026-11-10). Worktree `.claude/worktrees/live-voice` (venvs, models, logs, work, .env are symlinks
-to the main checkout; `.venv-voice` is new).
-- Done: branch = plan commits + PR #6 (`fix/2026-11-08-evening`) + `claude/cool-bohr-d46fbc` merged (no
-  conflicts); baseline 719 tests. **M0–M4 committed** (873+ tests): model pin, sentence step
-  (`src/live/speech.py`), voice process (`src/voice/`), link (`src/live/voicelink.py`), pacing, summaries
-  (`src/live/summarize.py`), `bench.py run --voice`, `scripts/voice_report.py`. M0, M1 reviewed and fixed;
-  M2–M4 reviews were running when this was written (fix what they confirm, then a fix review).
-- Next: AI/Local engine (Haiku 5.5, hot spare, fallback, Keychain, netaudit host), ideas 12/13, M5 UI in
-  both apps + main-screen layout, M6 benches in both modes, security review, M7 `make dist`, R1–R3 checklists.
-- Each milestone: commit, then an Opus subagent code review, fix, fix review.
+## WHERE I AM (live-voice branch, 2026-11-10 ~14:00) — stopped by the usage limit
 
-Resume: open this folder in Claude Code and say "resume from PROGRESS.md".
-Repo: https://github.com/PRC-Atlanta/live-ro2en (private). Audio, models, .env, correction data and transcripts are not tracked (see .gitignore).
-Venvs (uv, Python 3.12): `.venv` (core/scoring/Google), `.venv-nemo` (Jackrabbit/SpeD/Canary, live engine),
-`.venv-mlx` (Parakeet/Whisper), `.venv-moondream` (Parakeet Redux), `.venv-mt` (NLLB, MLX LLMs, live orchestrator).
+- **Done and committed:** M0–M5 (last: db93c98), idea 12, the AI / Local engine. 971 tests passed at db93c98.
+- **Running in the background when I stopped (shell jobs, they finish by themselves):** the ten M6 replays
+  `logs/bench/runs/lv6-{eulogy,alex}-{off,local,ai,ai-off}` and `lv6-nelu-{local,ai}` (queue script in the
+  session scratchpad), then `pr6-luigi-local` (x3) and `pr6-luigi-ai` (x2) with `bench.py ref`.
+- **In the commit after db93c98, NOT yet tested or built:** `site/voice` packaging (build_runtime.sh,
+  app_files.py, assemble_app.sh, verify.sh, Makefile, LaunchConfig), R1–R3 checklists in the plan §10,
+  `voice_soak.py --listen`.
+- **Next:** 1. read the M5 Opus review (was still running) and fix; fix review. 2. M6: for each lv6 run
+  `scripts/voice_report.py <run> --gate eulogy|sermon --baseline <off run> --mix`, record numbers in plan §9,
+  list the mp3s. 3. luigi-mitoi chrF++ Local must be 62.62; the evening 39-errors bench is blocked (the
+  2026-11-08 recording and error list are not on this Mac): write `scripts/` check that runs where they exist.
+  4. Opus security review of the whole branch vs main, fix review. 5. M7 `make dist` to VERIFY PASS.
+  6. full test suite, TODO.md, final report.
 
 ## Iteration 1 — DONE (2026-10-21, 22:05)
 - Phase 0: src/google_stt.py (+ mocked tests). Bible set transcribed by chirp_2 (europe-west4) and chirp_3 (us). 68.1/600 Google minutes used. Chirp 3 = silver reference.

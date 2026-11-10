@@ -8,7 +8,7 @@
 # Layout (docs/app_contract.md "Bundle layout", what LaunchConfig.resolve() looks for):
 #   Contents/MacOS/Live RO2EN                 the Swift shell (macos/build.sh)
 #   Contents/Resources/runtime/bin/python3.12 python-build-standalone (from RUNTIME)
-#   Contents/Resources/site/{common,mt,nemo}  packages (from RUNTIME)
+#   Contents/Resources/site/{common,mt,nemo,voice}  packages (from RUNTIME)
 #   Contents/Resources/app/                   the code root (paths.REPO = app/):
 #       src/live/…, the src/*.py modules it imports, defaults.yaml, glossary.csv,
 #       keywords_en.txt, terms.txt, requirements/models.lock.txt   (packaging/app_files.py)
@@ -34,7 +34,7 @@ say() { printf '\n== %s\n' "$*"; }
 die() { echo "assemble_app: $*" >&2; exit 1; }
 
 [ -x "$RUNTIME/runtime/bin/python3.12" ] || die "no runtime at $RUNTIME (run: make runtime)"
-for s in common mt nemo; do [ -d "$RUNTIME/site/$s" ] || die "missing $RUNTIME/site/$s"; done
+for s in common mt nemo voice; do [ -d "$RUNTIME/site/$s" ] || die "missing $RUNTIME/site/$s"; done
 RUNTIME="$(cd "$RUNTIME" && pwd)"
 PY="$RUNTIME/runtime/bin/python3.12"
 mkdir -p "$(dirname "$APP")"; APP="$(cd "$(dirname "$APP")" && pwd)/$(basename "$APP")"

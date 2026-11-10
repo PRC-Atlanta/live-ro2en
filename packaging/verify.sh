@@ -119,6 +119,12 @@ else bad "engine side (site/nemo):"; tail -15 "$T/imports.log" | sed 's/^/      
 if imp "$IH" "$RES/site/common:$RES/site/mt" app model_setup preflight report translate ctranslate2 mlx_lm transformers; then
   ok "orchestrator side (site/mt)"
 else bad "orchestrator side (site/mt):"; tail -15 "$T/imports.log" | sed 's/^/        /'; fi
+# Live Voice's process (src/voice/voice.py): its own packages first, then the shared ones, as LaunchConfig sets
+mkdir -p "$IH/caches/voice-home"
+if [ -f "$RES/app/src/voice/voice.py" ] && imp "$IH/caches/voice-home" "$RES/site/voice:$RES/site/common" \
+       voice.pacing voice.speakable voice.stream voice.synth voice.model supertonic onnxruntime lameenc soundfile numpy netaudit; then
+  ok "voice side (site/voice)"
+else bad "voice side (site/voice):"; tail -15 "$T/imports.log" | sed 's/^/        /'; fi
 left=$(ls -A "$IH" | grep -vE '^(numba|caches)$' || true)
 [ -z "$left" ] && ok "nothing written to the user's HOME (engine writes stay in its own)" ||
   bad "written to the user's HOME: $(printf '%s' "$left" | tr '\n' ' ')"
@@ -134,6 +140,7 @@ S="$RES/site"
   exec env -i HOME="$U/home" USER="${USER:-}" PATH=/usr/bin:/bin:/usr/sbin:/sbin TMPDIR="${TMPDIR:-/tmp}" \
     LANG="${LANG:-en_US.UTF-8}" PYTHONUNBUFFERED=1 \
     PYTHONPATH="$S/common:$S/mt" LIVE_ENGINE_PYTHON="$PY" LIVE_ENGINE_PYTHONPATH="$S/common:$S/nemo" \
+    LIVE_VOICE_PYTHON="$PY" LIVE_VOICE_PYTHONPATH="$S/voice:$S/common" \
     LIVE_HOME="$U/support" LIVE_LOG_DIR="$U/logs" LIVE_CACHE_DIR="$U/caches" HF_HOME="$U/support/hf" \
     PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1 NUMBA_CACHE_DIR="$U/caches/numba" \
     /usr/bin/perl -e 'setpgrp(0, 0); exec @ARGV or die' -- \

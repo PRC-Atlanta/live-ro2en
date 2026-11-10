@@ -3,7 +3,12 @@ Starts the voice process with a synth that needs no model (the real play clocks,
 speaks a sentence every few seconds, and reports per client the bytes received against the stream's rate,
 how many fell behind (were moved to the live edge), and the voice process's CPU share of one core.
 
-  .venv-voice/bin/python scripts/voice_soak.py --clients 100 --minutes 10"""
+  .venv-voice/bin/python scripts/voice_soak.py --clients 100 --minutes 10
+
+With --listen HOST:PORT it starts nothing: the clients listen to a Live Voice that is already running (the
+church Mac, from a laptop on the church Wi-Fi: the R3 load test), and only the clients' side is reported.
+
+  python3 scripts/voice_soak.py --listen 192.168.1.20:8767 --clients 10 --minutes 30"""
 from __future__ import annotations
 
 import argparse
@@ -25,8 +30,8 @@ def cpu_seconds(pid: int) -> float:
     return sum(p * 60 ** i for i, p in enumerate(reversed(parts)))
 
 
-async def client(port: int, lang: str, until: float, got: list):
-    r, w = await asyncio.open_connection("127.0.0.1", port)
+async def client(port: int, lang: str, until: float, got: list, host: str = "127.0.0.1"):
+    r, w = await asyncio.open_connection(host, port)
     w.write(f"GET /listen/{lang} HTTP/1.1\r\nHost: x\r\n\r\n".encode())
     await r.readuntil(b"\r\n\r\n")
     n = 0
@@ -46,7 +51,22 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--clients", type=int, default=100)
     ap.add_argument("--minutes", type=float, default=10.0)
+    ap.add_argument("--listen", metavar="HOST:PORT", help="listen to a running Live Voice instead of starting one")
     a = ap.parse_args()
+    if a.listen:
+        host, _, port = a.listen.rpartition(":")
+        until, got, t0 = time.time() + a.minutes * 60, [], time.time()
+
+        async def remote():
+            await asyncio.gather(*(client(int(port), "ro" if i % 2 else "en", until, got, host) for i in range(a.clients)),
+                                 return_exceptions=True)
+        asyncio.run(remote())
+        want = 8000 * (time.time() - t0)
+        print(json.dumps({"clients": a.clients, "minutes": round((time.time() - t0) / 60, 2), "connected": len(got),
+                          "bytes_min_pct": round(100 * min(got) / want, 1) if got else None,
+                          "bytes_max_pct": round(100 * max(got) / want, 1) if got else None,
+                          "ended_early": sum(1 for n in got if n < 0.9 * want)}))
+        return
     log = pathlib.Path(tempfile.mkdtemp()) / "voice.jsonl"
     p = subprocess.Popen([sys.executable, str(ROOT / "tests" / "fake_voice_synth.py"), "--cfg",
                           json.dumps({"port": 0, "host": "127.0.0.1"}), "--log", str(log)],

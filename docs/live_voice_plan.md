@@ -793,6 +793,56 @@ easy to follow, too late, or whether summaries were noticed):
 (volunteers' phones, plus laptops each running 10 clients). Watch stalls per client and the access
 points' load. Only then go to about 100 listeners.
 
+### Rehearsal checklists (not run yet: M8–M10 need the church, the Mac Studio and real phones)
+
+Tick each line on the day and write the number next to it. "Report" = `scripts/voice_report.py
+<service log>` after the run; the After screen shows the same numbers.
+
+**R1 checklist: a recorded service at church (M8)**
+
+Before:
+- [ ] The packaged app (the DMG of this branch) is installed on the Mac Studio; Setup has downloaded the voice model (Settings → Live Voice shows no "model missing").
+- [ ] The Studio has a fixed address (DHCP reservation on the church router) and is on wired Ethernet.
+- [ ] Settings → Live Voice is on; the QR card is printed from there and shows `http://<address>:8767/`.
+- [ ] `pgrep -fl "audiobook.py (render|repair)|llama-tts-server"` is empty on the Studio.
+- [ ] 3–5 phones on the church Wi-Fi: at least two iPhones (one stays locked for the whole run) and one Android.
+- [ ] M0 on the Studio: `scripts/voice_m0.py` RTF alone and under a Quality replay, 4 and 2 threads (the dev Mac measured 0.19 / 0.21–0.22; gate ≤ 0.35). Write the Studio's numbers into §6.
+
+During (Rehearsal plays an English recording through the full chain, 30 minutes or more):
+- [ ] Each phone: seconds from tapping "Ascultă în română" to sound.
+- [ ] Each phone: stalls and reconnects (count), and whether the locked iPhone plays for 30 minutes.
+- [ ] One phone walks out of Wi-Fi range and back: it reconnects by itself, at the live position.
+- [ ] Phone buffer: `buffer_s` from the page's `POST /stats` lines in the voice log (rehearsal only), per phone, median and max.
+- [ ] One check of that number against the room: a phone and the Mac's speaker side by side, "Test voice" chime, delay by ear or by a recording.
+- [ ] "Listen in English" on one phone during a Romanian part of the recording, if it has one.
+- [ ] The VOICE light: listeners per language match the phones in the room.
+
+After:
+- [ ] Report: median delay, share within 10 s, summaries spoken and refused, sentences cut. Compare with §9 (eulogy ≤ 4.0 s / ≥ 94%, continuous sermon ≤ 7.0 s / ≥ 72%).
+- [ ] Captions as usual: the gate and `e2e.py --strict`; first-word delay against a voice-off rehearsal of the same recording (+0.2 s median, +0.5 s p90, −2 points within 6 s at most).
+- [ ] Decide the phone-buffer question (§4.4): is the phone's own buffer small enough to leave alone?
+- [ ] The user has listened to the recording of `/listen` in full, summaries included.
+
+**R2 checklist: a live service with a few phones (M9)**
+
+- [ ] 2–5 trusted listeners, told beforehand what to listen for.
+- [ ] Everything measured in R1 "During", on a real speaker.
+- [ ] Operator: Hide, Blank and Song each silence the voice at once (within about 0.3 s by ear); Show brings it back at the live position, not the backlog.
+- [ ] Operator: Remove last and Fix last are not spoken after the fact (a removed sentence that was not yet spoken is never heard).
+- [ ] Operator: the VOICE light goes amber only when the voice is more than 10 s behind, and the banner says so; captions carry on either way.
+- [ ] AI / Local, if AI is used that day: the knob's light, any amber period (when, how long), and "Translated by" on the After screen.
+- [ ] After: each listener says whether it was easy to follow, too late, too fast, and whether they noticed the summaries.
+- [ ] Report and the service report: no caption regression against the last voice-off services (first-word delay, skipped phrases).
+- [ ] A Scripture reading was heard in full (never summarised, never skipped).
+
+**R3 checklist: before announcing it to the church (M10)**
+
+- [ ] 20–30 real devices on the church Wi-Fi (volunteers' phones, plus laptops each running 10 clients: `python3 scripts/voice_soak.py --listen <address>:8767 --clients 10 --minutes 30`).
+- [ ] 30 minutes: stalls per client, clients moved to the live edge (the dev Mac's soak had 0 of 100), bytes received against bytes sent.
+- [ ] The access points' load and the Studio's uplink (6.4 Mbit/s at 100 listeners, §6).
+- [ ] The voice process's CPU (the dev Mac: 10.6% of one core at 100 listeners, against a 10% target) and the captions' first-word delay during the test.
+- [ ] Only then: about 100 listeners. Print the QR card, and say in the announcement to bring headphones.
+
 ---
 
 ## 11. Milestones (build order)
