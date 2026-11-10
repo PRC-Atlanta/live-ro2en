@@ -496,7 +496,9 @@ class SpeechMixin:
     def _speech_flush_tick(self):
         """A speaker who trails off must not hold a sentence back for ever: `flush_s` after the last
         chunk with nothing on its way, the open sentence is published; after 3 × flush_s whatever
-        the engine hears (§2.2)."""
+        the engine hears (§2.2). Also after `flush_s` when the voice has nothing to say in that
+        language: words are waiting and the listeners hear silence, so the words are spoken, and what
+        the speaker says next becomes a new sentence (Built M6, §9)."""
         with self._speech_lock:
             self._speech_flush_timer = None
             if self._speech_q:                          # still deciding a chunk: look again
@@ -512,7 +514,21 @@ class SpeechMixin:
                 for lang in list(self._speech_builders):
                     self._speech_flush(lang, "flush")
             else:
-                self._speech_arm_flush()
+                if waited >= flush_s:
+                    for lang, b in list(self._speech_builders.items()):
+                        if b.parts and self._speech_voice_quiet(lang):
+                            self._speech_flush(lang, "flush")
+                if any(b.parts for b in self._speech_builders.values()):
+                    self._speech_arm_flush()
+
+    def _speech_voice_quiet(self, lang: str) -> bool:
+        """The voice process said, within the last 2.5 s, that it is neither speaking nor has anything
+        queued in `lang`. Unknown (no voice, an old status) = not quiet."""
+        st, at = getattr(self, "_voice_status", None) or {}, getattr(self, "_voice_status_t", 0.0)
+        mine = (st.get("langs") or {}).get(lang)
+        if not mine or time.time() - at > 2.5:
+            return False
+        return not mine.get("queue_n") and mine.get("playing_sid") is None
 
     def _speech_dropped(self, ev: dict):
         """A phrase that was not captioned (pipeline._log_failure): see SentenceBuilder.close_if_ended."""

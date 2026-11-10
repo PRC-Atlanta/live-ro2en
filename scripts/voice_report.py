@@ -121,7 +121,7 @@ def voice_stats(recs: list[dict], vlog: list[dict], lang: str) -> dict | None:
         "speed_median": statistics.median(speeds) if speeds else None,
         "speed_largest_step": round(max((abs(b - a) for a, b in zip(speeds, speeds[1:])), default=0.0), 3),
         "voice_audio_s": round(voiced, 1), "silence_between_median_s": round(pct(gaps, 50), 2) if gaps else None,
-        "rtf": round(gen / aud, 3) if items else None,
+        "rtf": round(gen / aud, 3) if items else None, "gen_total_s": round(gen, 2),
         "rtf_recent_max": max((float(r["rtf_recent"]) for r in status), default=None),
         "stages_median_s": {k: round(pct(v, 50), 2) for k, v in stages.items() if v},
         "summary_texts": [{"sids": i.get("sids"), "text": i.get("text")} for i in summ],
@@ -205,7 +205,12 @@ def main():
     if a.baseline:
         _, blog = find(a.baseline)
         base = captions(load(blog))
-        rtf = max((st.get("rtf") or 0 for st in out["voice"].values()), default=None)
+        # Supertonic under load, over the whole run: seconds generating / seconds of speech, both streams
+        # together (a single short sentence's own ratio says nothing: the English stream of the sermon
+        # replay is one 1.6 s sentence)
+        gen = sum(st.get("gen_total_s") or 0 for st in out["voice"].values())
+        aud = sum(st.get("voice_audio_s") or 0 for st in out["voice"].values())
+        rtf = round(gen / aud, 3) if aud else None
         out["baseline"] = {"run": a.baseline, "captions": base}
         out["captions_impact"] = impact(out["captions"], base, rtf)
     if a.mix and rdir:
@@ -238,8 +243,9 @@ def main():
         i, b = out["captions_impact"], out["baseline"]["captions"]
         print(f"\nCaptions with the voice off ({a.baseline}): first word median {b['first_word_median_s']} s, "
               f"p90 {b['first_word_p90_s']} s, within 6 s {b['within_6s']}")
-        print(f"CAPTIONS GATE: median +{i['first_word_median_s']} s (<= 0.2), p90 +{i['first_word_p90_s']} s (<= 0.5), "
-              f"within 6 s -{i['within_6s_points']} points (<= 2), RTF {i['rtf']} (<= 0.35) -> {'PASS' if i['pass'] else 'FAIL'}")
+        print(f"CAPTIONS GATE (voice on - voice off): median {i['first_word_median_s']:+.2f} s (<= +0.2), "
+              f"p90 {i['first_word_p90_s']:+.2f} s (<= +0.5), within 6 s {-i['within_6s_points']:+.1f} points (>= -2), "
+              f"RTF over the run {i['rtf']} (<= 0.35) -> {'PASS' if i['pass'] else 'FAIL'}")
     for lang, m in (out.get("mix") or {}).items():
         print(f"mix ({lang}): {m}")
 

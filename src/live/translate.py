@@ -770,9 +770,9 @@ _META_SRC = re.compile(r"\b(?:tradu\w*|versiun\w*|tâlcui\w*|tălmăc\w*|transl\
 _META_STRONG = re.compile(
     r"\b(?:(?:the|this) (?:input|piece|source|transcript|transcription)\b|more context|garbled|unintelligible|"
     r"(?:appears|seems) (?:to be )?(?:incomplete|cut off|empty|unclear)|please provide|could you (?:provide|clarify|share)|"
-    r"speech[- ]recognition|per the (?:rules|glossary|instructions)|as instructed)", re.IGNORECASE)
+    r"speech[- ]recognition|per the (?:rules|glossary|instructions)|as instructed|make out|what was said)", re.IGNORECASE)
 _META_SRC_STRONG = re.compile(r"\b(?:incomplet\w*|input\w*|neclar\w*|neînțeles\w*|unclear|garbled|unintelligible|"
-                              r"cut off|context\w*|transcri\w*)\b", re.IGNORECASE)
+                              r"cut off)\b", re.IGNORECASE)
 
 
 def is_meta_comment(reply: str, piece: str) -> bool:
@@ -892,7 +892,6 @@ class HybridTranslator(ClaudeTranslator):
         self.engines_used: set[str] = set()           # of the phrase in hand: {"ai"}, {"local"} or both
         self.last_reason: str | None = None           # why the last local answer was needed
         self._local_cut = False                       # the local answer hit its own length limit
-        self._phrase_calls = 0
         self._phrase_t0 = time.time()
 
     def begin_phrase(self):
@@ -900,7 +899,6 @@ class HybridTranslator(ClaudeTranslator):
         guards and the repeat check may add (`ai.phrase_s`), start now."""
         self.engines_used.clear()
         self._phrase_t0 = time.time()
-        self._phrase_calls = 0
 
     def _budget(self) -> float:
         """Seconds this call may take: the per-call budget, and no more than what is left of the phrase's."""
@@ -928,10 +926,10 @@ class HybridTranslator(ClaudeTranslator):
             try:
                 # a call cut short by what is left of the phrase's budget says nothing about the API:
                 # its timeout must not take the engine down for the next phrases
-                # (only a phrase's later calls: its first call has the whole budget, whatever ai.timeout_s
-                # is set to, and a hung API must show as the amber light)
-                short = self._phrase_calls > 0 and budget < float(self.engine.cfg.get("timeout_s", 2.5)) - 0.01
-                self._phrase_calls += 1
+                # ("short" against the smaller of the two budgets: with ai.timeout_s set above ai.phrase_s
+                # a phrase's first call is still a full one, and a hung API shows as the amber light)
+                cfg = self.engine.cfg
+                short = budget < min(float(cfg.get("timeout_s", 2.5)), float(cfg.get("phrase_s", 4.0))) - 0.05
                 out, self._stop = self.engine.call(piece[0]["content"], list(piece[1:]), self.max_tokens,
                                                    timeout=budget, soft=short)
                 self.engines_used.add("ai")

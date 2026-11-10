@@ -335,6 +335,27 @@ def test_a_speaker_who_trails_off_is_flushed(tmp_path):
     assert [s["why"] for s in _events(live, "sentence")] == ["flush"]
 
 
+def test_words_waiting_are_spoken_when_the_voice_is_silent_even_while_the_speaker_goes_on(tmp_path):
+    """The open sentence's next words can take 10 s (a long phrase): with the voice silent the words in
+    hand are published after flush_s; with the voice busy they wait (up to 3 × flush_s)."""
+    def run(status, wait_s):
+        d = tmp_path / str(len(list(tmp_path.iterdir())))     # a log of its own for each run
+        d.mkdir()
+        live = _live(d, flush_s=0.4)
+        live._speech_idle = lambda: False                     # the speaker is still talking
+        live._voice_status, live._voice_status_t = status, time.time() + 60    # a fresh status for the whole test
+        t = time.time() - 30
+        live._level_hist.extend(_hist(t + 3, [1] * 10))
+        _say(live, 1, t, t + 3, "This is the first part of what I say")
+        time.sleep(wait_s)
+        return [s["why"] for s in _events(live, "sentence")]
+    quiet = {"langs": {"ro": {"queue_n": 0, "playing_sid": None}}}
+    busy = {"langs": {"ro": {"queue_n": 1, "playing_sid": 7}}}
+    assert run(busy, 0.9) == []                               # past flush_s, before 3 × flush_s
+    assert run({}, 0.9) == []                                 # no voice process answering: as before
+    assert run(quiet, 0.9) == ["flush"]
+
+
 def test_hide_blank_and_song_discard_the_open_sentence(tmp_path):
     for act in (lambda l: l.pause(True), lambda l: l.blank(), lambda l: l.song(True)):
         d = tmp_path / str(time.time_ns())

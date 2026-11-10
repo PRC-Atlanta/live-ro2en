@@ -359,7 +359,7 @@ kbd { font: 600 12px var(--num); color: var(--cyan-hi); background: #050b0e; bor
   main:has(.banner.show) .lvl .hist, main:has(.banner.show) .earlier,
   main:has(.ppstrip:not([hidden])) .lvl .hist, main:has(.ppstrip:not([hidden])) .earlier { display: none; }
   main:has(.banner.show) .mirror, main:has(.ppstrip:not([hidden])) .mirror { padding-bottom: 8px; }
-  main:has(.banner.show):has(.ppstrip:not([hidden])) .deck { zoom: .9; }
+  main:has(.banner.show):has(.ppstrip:not([hidden])) .deck { zoom: .86; }
 }
 /* small window beside ProPresenter (600×500): keep the dial above the fold */
 @media (max-height: 600px) {
@@ -378,12 +378,19 @@ kbd { font: 600 12px var(--num); color: var(--cyan-hi); background: #050b0e; bor
   .deck { zoom: .66; margin-top: 14px; } .foot { display: none; }
 }
 /* a narrow window (the app allows 600 px): the one-row deck needs about 920 px, so it is drawn
-   smaller, in steps, and stays one row with every control in view. After the height rules above: the
-   narrower of the two sizes wins. */
+   smaller, in steps, and stays one row with every control in view. After the height rules above: these
+   width steps, with the two lines under them, so that the smaller of the two sizes is the one used. */
 @media (max-width: 960px) and (min-width: 861px) { .deck { zoom: .86; } }
 @media (max-width: 860px) and (min-width: 761px) { .deck { zoom: .8; } }
 @media (max-width: 760px) and (min-width: 661px) { .deck { zoom: .68; } }
 @media (max-width: 660px) and (min-width: 561px) { .deck { zoom: .58; } }
+@media (max-height: 600px) and (min-width: 661px) { .deck { zoom: .66; } }                 /* the short window's own size */
+@media (max-width: 860px) and (min-width: 761px) and (max-height: 900px) and (min-height: 781px) {
+  main:has(.banner.show):has(.ppstrip:not([hidden])) .deck { zoom: .8; } }
+@media (max-width: 760px) and (min-width: 661px) and (max-height: 900px) and (min-height: 781px) {
+  main:has(.banner.show):has(.ppstrip:not([hidden])) .deck { zoom: .68; } }
+@media (max-width: 660px) and (min-width: 561px) and (max-height: 900px) and (min-height: 781px) {
+  main:has(.banner.show):has(.ppstrip:not([hidden])) .deck { zoom: .58; } }
 @media (prefers-reduced-motion: reduce) {
   .unit *, .toast { transition: none !important; }
   .big.holding .hold { animation-duration: .6s; }
