@@ -383,9 +383,12 @@ copy of stdout and points fd 1 at stderr, so library prints cannot corrupt the s
   and headers of at most 4 KB within 5 s, serves `GET`/`HEAD` on `/`, `/listen`, `/listen/ro`, `/listen/en`
   and, in rehearsal mode only (`voice.rehearsal: true`), `POST /stats` (≤ 2 KB of JSON, six known fields).
   Anything else is 404 or 405. No file is ever read from a request path.
-- **Limits:** 300 listeners in all (`voice.max_clients`), 40 per address (this Mac itself exempt); a refused
-  listener gets 503 with `Retry-After: 5` and the page reconnects. A listener whose socket takes nothing for
-  10 s is dropped; one more than 10 s behind is moved to the live edge.
+- **Limits:** 300 listeners in all (`voice.max_clients`), 150 per address (`voice.per_addr`; this Mac itself
+  exempt, and high because a guest Wi-Fi may put every phone behind one address: check in R1); a refused
+  listener gets 503 with `Retry-After: 5` and the page reconnects. **A listener that holds back more than
+  3 s of unsent audio is dropped** (small kernel send buffer, 3 s in the server): its page reconnects at the
+  live edge, instead of staying 15 s behind for the rest of the service after a Wi-Fi dropout. A new
+  listener starts on a whole chunk of the encoder's output, 1 s before the live edge.
 - **Listeners' addresses are logged only in rehearsal mode.** On an ordinary Sunday the voice log counts
   listeners and does not name their phones.
 - **The listener page** is Romanian first with both buttons (§14), dark, one tap to play and one to stop,
@@ -393,10 +396,18 @@ copy of stdout and points fd 1 at stderr, so library prints cannot corrupt the s
   `error`/`ended`/`stalled`, and a watchdog that reconnects when the play position has not moved for 6 s.
   Its Content-Security-Policy allows only itself.
 - **Listeners get new audio every 0.2 s** (8 frames), not every frame: with 100 listeners that is the
-  difference between 19% and 10% of one core. Measured with `scripts/voice_soak.py` (100 listeners on
-  localhost, the real clocks, encoders and server): see the M2 line in §11.
+  difference between 19% and 10% of one core. **Soak, 2026-11-10** (`scripts/voice_soak.py`, 100 listeners on
+  localhost for 10 minutes, the real clocks, encoders and server, a sentence every 4 s): all 100 received
+  100.0% of the stream's bytes, none was moved or dropped, and the voice process used **10.6% of one core**
+  (7.7% of that with a single listener: the two play clocks and encoders). §9 asks for under 10%: it is
+  0.6 points over on the dev Mac, and the listeners themselves cost about 3%.
 - **Each language has its own play clock, queue and encoder in one clock thread**; silence is encoded too.
-  If the process was stalled for more than 2 s the clock starts again from now instead of bursting.
+  If the process was stalled for more than 2 s the clock starts again from now instead of bursting. The
+  clock is paced by the monotonic clock, a frame that fails is skipped and counted, item reports are written
+  by another thread, and `status.clock_age_s` lets the orchestrator restart a voice whose clock stopped.
+- **Nothing the orchestrator sends can block a caption:** messages go through a queue of 2000 to one writer
+  thread per voice process; when the voice is not reading they are dropped and counted, and the hang check
+  restarts it. State messages are numbered, so one that arrives late changes nothing.
 - **Supervision** (`src/live/voicelink.py`): restarted when it exits or sends no status for 5 s (or no
   `ready` within 60 s), 3 times in 2 minutes, then `voice_stopped` until Live Voice is turned off and on.
   A missing model or interpreter is the same red light, never an error for the captions.
@@ -526,16 +537,25 @@ tests), `src/live/summarize.py`, `src/live/voicelink.py`; tests in `tests/test_v
 - **Guards** (`summarize.check`), on every summary of both simulations, labelled by hand (13 + 23): they
   refuse "tatăl meu → tatăl său", every summary that is not clearly shorter, and every summary of the parable
   reading (two by the text guards, the rest by the Scripture rule, which is applied before any model runs).
-  **False rejections (4):** good summaries refused as "not clearly shorter" ("…a susținut mulți să facă voia
-  Domnului în secret", 17 → 11 words). **Missed (2):** "Să căutăm voia Domnului" → "Căutați voia Domnului"
-  (we → you) and "E talentul tău…" → "Recunoaște-ți talentul" (a statement → an order): no guard reads verb
-  endings. Rule (c) (first person kept) caused no false rejection on either run, so it is on.
+  **False rejections (3):** good summaries refused as "not clearly shorter" ("…a susținut mulți să facă voia
+  Domnului în secret", 17 → 11 words). **Missed (4):** "Să căutăm voia Domnului" → "Căutați voia Domnului"
+  (we → you, twice), "Acest om… a spus, acest om va primi o mare recompensă" → "Bazapa Chizvek va primi…"
+  (who receives it), and "E talentul tău…" → "Recunoaște-ți talentul" (a statement → an order): no guard
+  reads verb endings or who does what. English has the possessive check too ("my father" → "his father"). Rule (c) (first person kept) caused no false rejection on either run, so it is on.
 - **Prompt:** the tested prompt with the person rule, plus one sentence saying the input is a transcript to
   condense and never an instruction to follow (what is said in the room must not steer the model).
 - **"This batch is not asked again"** is not tracked separately: every new sentence makes a new batch (the
   queued items plus it), exactly as the voiced simulation did.
-- **A summary replaces the queued items it covers**; if one of them started playing while Gemma wrote, the
-  summary still plays (that sentence is then heard twice in short). Rare: the request takes 1–2 s.
+- **A summary replaces the queued items it covers.** If one of them started playing, was removed or was
+  corrected while the summary was written, the summary is dropped (`started_meanwhile`) and the sentence
+  is spoken normally: nothing is heard twice, and no correction is lost.
+- **What a summary may never do** (review, 2026-11-10): bring in a word the blocklist hides (refused,
+  `blocklist`); condense Scripture (the orchestrator checks its own record of the sentences it published,
+  whatever the voice asked); start with less than 1.5 s left before the voice gives up, or while a phrase is
+  held, queued or being translated; run while the keep-warm ping uses the same model. Its answer is capped
+  at 40 + 4 × the target words (at most 160 tokens). A summary still writes new sentences from what was said
+  in the room, so it can be made to say something false; the guards stop names, numbers and persons that
+  were not there, not meaning. That is why §9 has the user listen to every played summary.
 
 ### 4.4 Log
 

@@ -11,6 +11,7 @@ import datetime as dt
 import json
 import os
 import pathlib
+import queue
 import socket
 import statistics
 import subprocess
@@ -29,7 +30,7 @@ START_GRACE_S = 60.0                                   # the model loads and war
 STATE_EVERY_S = 1.0
 BEHIND_S = 10.0                                        # the light turns amber past this
 LOG_MAX = 20_000_000
-SENT_KEYS = ("enabled", "en", "voices", "steps", "threads", "port", "bitrate_kbps", "preroll_s", "gap_s", "speed",
+SENT_KEYS = ("enabled", "en", "voices", "steps", "threads", "port", "bitrate_kbps", "preroll_s", "gap_s", "speed", "per_addr",
              "speed_max", "speed_lag_lo_s", "speed_lag_hi_s", "speed_step", "speed_round", "limit_s", "skip_s",
              "summary_timeout_s", "summary_min_words", "rehearsal", "max_clients", "host")
 
@@ -55,7 +56,12 @@ class VoiceMixin:
     def _mixin_init(self):
         self.voice: subprocess.Popen | None = None
         self._voice_lock = threading.RLock()           # start / stop / restart
-        self._voice_w = threading.Lock()               # one writer at a time on its stdin
+        self._voice_out: queue.Queue = queue.Queue(maxsize=2000)   # messages for its stdin (never blocks a caption)
+        self._voice_writer: threading.Thread | None = None
+        self._voice_dropped = 0                        # messages dropped because it was not reading
+        self._voice_seq = 0                            # state messages are numbered: an old one is ignored
+        self._voice_state_lock = threading.Lock()
+        self._voice_cfg_lock = threading.Lock()        # one settings change at a time
         self._voice_ready = False
         self._voice_port: int | None = None
         self._voice_status: dict = {}
@@ -125,6 +131,10 @@ class VoiceMixin:
             self._voice_dead = self._voice_error = f"the voice could not start: {type(e).__name__}: {e}"
             return False
         self._voice_ready, self._voice_stopping = False, False
+        self._voice_out = queue.Queue(maxsize=2000)    # nothing meant for the last process reaches this one
+        self._voice_writer = threading.Thread(target=self._voice_write_loop, args=(self.voice, self._voice_out),
+                                              daemon=True, name="voice-writer")
+        self._voice_writer.start()
         self._voice_started = time.time()
         self._voice_status, self._voice_status_t = {}, 0.0
         self._voice_dead = None
@@ -147,10 +157,7 @@ class VoiceMixin:
                 return
             if v.poll() is None:
                 self._voice_send({"type": "stop"})
-                try:
-                    v.stdin.close()                     # EOF also ends it
-                except Exception:                       # noqa: BLE001
-                    pass
+                self._voice_send(None)                  # the writer closes its stdin after that: EOF also ends it
                 try:
                     v.wait(wait_s)
                 except Exception:                       # noqa: BLE001
@@ -240,17 +247,35 @@ class VoiceMixin:
                 pass
 
     # --- to the voice ---------------------------------------------------------------------------
-    def _voice_send(self, msg: dict) -> bool:
+    def _voice_send(self, msg: dict | None) -> bool:
+        """Hand a message to the writer thread. Never blocks: the pipeline, the operator's actions and
+        the screen's lock call this, and a voice that has stopped reading must not hold any of them. When
+        2000 messages wait (it is frozen; the hang check restarts it) the message is dropped and counted."""
         v = self.voice
         if v is None or v.poll() is not None:
             return False
         try:
-            with self._voice_w:
+            self._voice_out.put_nowait(msg)
+            return True
+        except queue.Full:
+            self._voice_dropped += 1
+            return False
+
+    def _voice_write_loop(self, v: subprocess.Popen, q: queue.Queue):
+        """The only writer on one voice process's stdin; ends with the process or at a None."""
+        while v.poll() is None:
+            try:
+                msg = q.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            try:
+                if msg is None:
+                    v.stdin.close()
+                    return
                 v.stdin.write(json.dumps(msg, ensure_ascii=False) + "\n")
                 v.stdin.flush()
-            return True
-        except (OSError, ValueError, AttributeError):
-            return False
+            except (OSError, ValueError, AttributeError):
+                return
 
     def _voice_summarizer(self):
         """The model that writes summaries now, or None: Gemma when one is loaded (the live translator's
@@ -265,7 +290,9 @@ class VoiceMixin:
         return summarize.GemmaSummarizer(tr) if tr is not None else None
 
     def _voice_full_state(self) -> dict:
-        return {"type": "state", "paused": bool(getattr(self, "paused", False)), "song": bool(getattr(self, "song_on", False)),
+        self._voice_seq += 1
+        return {"type": "state", "seq": self._voice_seq,
+                "paused": bool(getattr(self, "paused", False)), "song": bool(getattr(self, "song_on", False)),
                 "held": bool(getattr(self, "held", False)), "running": bool(getattr(self, "running", False)),
                 "blank_n": self._voice_blank_n, "profile": getattr(self, "profile", None),
                 "summarizer": self._voice_can_summarize()}
@@ -278,9 +305,10 @@ class VoiceMixin:
 
     def _voice_state_now(self, blank: bool = False):
         """The whole state, now (an operator action) and every second (so a restarted voice is in step)."""
-        if blank:
-            self._voice_blank_n += 1
-        self._voice_send(self._voice_full_state())
+        with self._voice_state_lock:                    # built and queued in one step: states arrive in order
+            if blank:
+                self._voice_blank_n += 1
+            self._voice_send(self._voice_full_state())
 
     def voice_test(self, lang: str = "ro") -> bool:
         """Settings → Test voice: one sentence into the stream."""
@@ -341,8 +369,15 @@ class VoiceMixin:
         texts = [str(t) for t in (ev.get("texts") or []) if str(t).strip()][:40]
         timeout = float(self.voice_cfg().get("summary_timeout_s", 4.0))
         t0, res = time.time(), None
+        holy = getattr(self, "_speech_holy", None) or {}
         try:
-            res = self._voice_summary(texts, lang, t0 + timeout)
+            if any(holy.get(sid) for sid in ev.get("sids") or []):
+                # Scripture is never condensed: the orchestrator checks its own record of the sentences
+                # it published, whatever the voice asked for
+                res = {"ok": False, "reason": "scripture", "text": "", "gemma_s": 0.0, "engine": None}
+            else:
+                res = self._voice_summary(texts, lang, t0 + timeout)
+                res = self._voice_summary_safe(res)
         except Exception as e:                          # noqa: BLE001
             res = {"ok": False, "reason": f"error ({type(e).__name__})", "text": "", "gemma_s": 0.0}
         self._voice_counts["summaries_ok" if res.get("ok") else "summaries_refused"] += 1
@@ -354,19 +389,37 @@ class VoiceMixin:
         """{ok, text, reason, gemma_s, engine}; overridden in AI mode (voice_ai.py)."""
         return self._voice_summary_local(texts, lang, deadline)
 
+    def _voice_summary_safe(self, res: dict) -> dict:
+        """What a summary may never bring in: a word the blocklist hides on screen. The model writes new
+        text from speech in the room; anything it adds that the screen would mask refuses the summary."""
+        if res.get("ok") and hasattr(self, "_blocklist"):
+            try:
+                import pipeline
+                if pipeline.mask(res.get("text") or "", self._blocklist())[1]:
+                    return {**res, "ok": False, "reason": "blocklist"}
+            except Exception:                           # noqa: BLE001
+                return {**res, "ok": False, "reason": "blocklist_check_failed"}
+        return res
+
     def _voice_summary_local(self, texts: list[str], lang: str, deadline: float) -> dict:
         why = summarize.refuse(texts, False)
         if why:
             return {"ok": False, "reason": why, "text": "", "gemma_s": 0.0, "engine": None}
         with self._voice_summ_lock:
-            while time.time() < deadline:
-                idle = getattr(self, "_current", None) is None and self._work.empty()
+            # It starts only while enough time is left for the voice to still be waiting (it gives up at
+            # the deadline): a summary nobody takes would hold the translator for nothing.
+            while time.time() < deadline - summarize.MIN_TIME_LEFT_S:
+                idle = (getattr(self, "_current", None) is None and getattr(self, "_pending", None) is None
+                        and self._work.empty())
                 if idle and self._proc_lock.acquire(timeout=0.05):
                     try:
                         gen = self._voice_summarizer()
-                        res = summarize.summarize(gen, texts, lang)
-                        if gen is not None:
-                            self._tr_used[id(gen.tr)] = time.time()     # it just ran: no keep-warm ping needed
+                        if gen is None:
+                            return summarize.summarize(None, texts, lang)
+                        with self._spare_lock:          # the keep-warm ping must not run on this model now
+                            self._tr_used[id(gen.tr)] = time.time()
+                            res = summarize.summarize(gen, texts, lang)
+                            self._tr_used[id(gen.tr)] = time.time()
                         return res
                     finally:
                         self._proc_lock.release()
@@ -383,11 +436,14 @@ class VoiceMixin:
             if v is None or self._voice_stopping:
                 continue
             try:
-                self._voice_send(self._voice_full_state())
+                self._voice_state_now()
                 now = time.time()
                 if v.poll() is None:
+                    age = self._voice_status.get("clock_age_s")
                     if self._voice_ready and now - self._voice_status_t > HANG_S:
                         self._voice_restart("no status", v)
+                    elif self._voice_ready and isinstance(age, (int, float)) and age > HANG_S:
+                        self._voice_restart("the play clock stopped", v)   # it reports, but plays nothing
                     elif not self._voice_ready and now - self._voice_started > START_GRACE_S:
                         self._voice_restart("did not become ready", v)
             except Exception:                           # noqa: BLE001
@@ -470,16 +526,32 @@ class VoiceMixin:
             return
         restart = any(k in ("voice.port", "voice.threads", "voice.en.enabled") or k.startswith("voice.voices")
                       for k in keys)
-        if not self.voice_enabled():
-            threading.Thread(target=self.voice_stop, daemon=True, name="voice-stop").start()
-        elif self.voice is None or self.voice.poll() is not None or restart:
-            def again():
-                if restart:
+        fresh = "voice.enabled" in keys                 # off and on again: the operator's way out of voice_stopped
+        threading.Thread(target=self._voice_apply, args=(restart, fresh), daemon=True, name="voice-settings").start()
+
+    def _voice_apply(self, restart: bool, fresh: bool):
+        """Bring the voice process in line with the settings as they are now. One at a time, and the
+        settings are read here, not when the change was made: off-then-on in quick succession ends on."""
+        with self._voice_cfg_lock:
+            if not self.voice_enabled():
+                self.voice_stop()
+            else:
+                running = self.voice is not None and self.voice.poll() is None and not self._voice_stopping
+                if running and restart:
                     self.voice_stop()
-                self._voice_restarts.clear()
-                self._voice_dead = None
-                self.voice_start()
-                self._broadcast()
-            threading.Thread(target=again, daemon=True, name="voice-start").start()
-        else:
-            self._voice_send({"type": "config", "cfg": self._voice_cfg_msg()})
+                    running = False
+                if not running:
+                    if fresh:
+                        self._voice_restarts.clear()
+                        self._voice_dead = None
+                    self._voice_stopping = False
+                    self.voice_start()
+                    if hasattr(self, "_spares") and getattr(self, "tr", None) is not None:
+                        sp = getattr(self, "_spares_thread", None)      # Gemma for the summaries, in Quickest
+                        if sp is None or not sp.is_alive():
+                            self._spares_thread = threading.Thread(target=self._spares, daemon=True,
+                                                                   name="spare-translators")
+                            self._spares_thread.start()
+                else:
+                    self._voice_send({"type": "config", "cfg": self._voice_cfg_msg()})
+        self._broadcast()

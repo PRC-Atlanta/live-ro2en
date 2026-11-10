@@ -539,6 +539,11 @@ class SpeechMixin:
         if s["why"] == "flush":                         # known only now, not when its last chunk was shown
             s["ready"] = max(s["ready"], round(time.time(), 3))
         self.sentences_n += 1
+        holy = self.__dict__.setdefault("_speech_holy", {})    # sid -> Scripture (a summary request is checked against it)
+        holy[s["sid"]] = bool(s.get("scripture"))
+        if len(holy) > 400:
+            for k in sorted(holy)[:200]:
+                del holy[k]
         self._log_event({"event": "sentence", **s})
         send = getattr(self, "_voice_send", None)
         if send is not None:

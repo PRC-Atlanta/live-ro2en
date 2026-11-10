@@ -217,8 +217,8 @@ class OutputMixin:
                 return False
             if not (self.paused or self.held):
                 self._push()
+            self._voice_op("retract")           # inside the screen's lock: no caption can come in between
         self._note_correction({"event": "correction", "kind": "retract", "removed": before, "screen": text})
-        self._voice_op("retract")
         return True
 
     def correct(self, text: str) -> bool:
@@ -234,13 +234,13 @@ class OutputMixin:
                 return False
             if not (self.paused or self.held):
                 self._push()
+            self._voice_op("correct", text)     # inside the screen's lock, as Remove last
         with self.lock:
             if self.history:
                 self.history = self.history[:-1] + [{**self.history[-1], "translation": text,
                                                      "corrected": True}]
         self._note_correction({"event": "correction", "kind": "correct", "text": text,
                                "replaced": before, "screen": shown})
-        self._voice_op("correct", text)
         return True
 
     def _note_correction(self, rec: dict):

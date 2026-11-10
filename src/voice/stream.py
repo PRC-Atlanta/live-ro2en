@@ -27,7 +27,9 @@ SLOW_S = 10.0                      # a client this far behind is moved to the li
 MAX_HEAD = 4096
 HEAD_TIMEOUT_S = 5.0
 MAX_STATS_BODY = 2048
-WRITE_HIGH = 64 * 1024             # the most we let the kernel + asyncio hold for one client
+LAG_S = 3.0                        # a listener holding back more than this much unsent audio is dropped:
+                                   # its page reconnects at the live edge instead of staying behind
+SNDBUF = 16 * 1024                 # a small kernel send buffer (2 s), so a backlog shows up here
 PAGE = pathlib.Path(__file__).resolve().parent / "page.html"
 CSP = ("Content-Security-Policy: default-src 'none'; media-src 'self'; connect-src 'self'; "
        "style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\r\n"
@@ -72,10 +74,16 @@ class Channel:
                 self.chunks.popleft()
 
     def start_pos(self, preroll_s: float) -> int:
-        """Where a new client starts: the live edge minus the preroll (never before the ring)."""
+        """Where a new client starts: the start of the chunk that holds (the live edge minus the preroll),
+        so it begins on what the encoder returned whole, not in the middle of it."""
         with self.lock:
-            first = self.chunks[0][0] if self.chunks else self.end
-            return max(first, self.end - int(preroll_s * self.byte_rate))
+            want = self.end - int(preroll_s * self.byte_rate)
+            pos = self.end
+            for start, _ in reversed(self.chunks):
+                pos = start
+                if start <= want:
+                    break
+            return pos
 
     def read(self, pos: int, preroll_s: float = 0.0) -> tuple[bytes, int, bool]:
         """(bytes from `pos` to the live edge, the new pos, jumped). A `pos` that fell out of the ring or
@@ -84,7 +92,11 @@ class Channel:
             first = self.chunks[0][0] if self.chunks else self.end
             jumped = False
             if pos < first or self.end - pos > int(SLOW_S * self.byte_rate):
-                pos, jumped = max(first, self.end - int(preroll_s * self.byte_rate)), True
+                pos, jumped = self.end, True
+                for start, _ in reversed(self.chunks):      # a chunk start at or before the preroll point
+                    if start < self.end - int(preroll_s * self.byte_rate):
+                        break
+                    pos = start
             out = []
             for start, data in self.chunks:
                 if start + len(data) <= pos:
@@ -95,7 +107,7 @@ class Channel:
 
 class Server:
     def __init__(self, channels: dict[str, Channel], host: str = "0.0.0.0", port: int = 8767,
-                 preroll_s: float = 1.0, max_clients: int = 300, per_addr: int = 40, rehearsal: bool = False,
+                 preroll_s: float = 1.0, max_clients: int = 300, per_addr: int = 150, rehearsal: bool = False,
                  log=None, page: bytes | None = None):
         self.channels, self.host, self.port = channels, host, int(port)
         self.preroll_s, self.max_clients, self.per_addr = float(preroll_s), int(max_clients), int(per_addr)
@@ -246,7 +258,13 @@ class Server:
         self.log({"event": "client_connect", **self._who(addr), "lang": lang, "listeners": ch.listeners})
         try:
             sock = writer.get_extra_info("socket")
-            writer.transport.set_write_buffer_limits(high=WRITE_HIGH, low=WRITE_HIGH // 4)
+            lag_bytes = int(LAG_S * ch.byte_rate)
+            writer.transport.set_write_buffer_limits(high=lag_bytes, low=lag_bytes // 4)
+            try:
+                import socket as _socket
+                sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_SNDBUF, SNDBUF)
+            except Exception:                              # noqa: BLE001
+                pass
             head = ("HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\nCache-Control: no-store\r\n"
                     "X-Content-Type-Options: nosniff\r\nConnection: close\r\n"
                     + "\r\n")
@@ -257,12 +275,11 @@ class Server:
                 if jumped:
                     stalls += 1
                 if data:
+                    if writer.transport.get_write_buffer_size() > lag_bytes:
+                        stalls += 1                        # it is not taking the audio (off Wi-Fi?): dropped, and
+                        break                              # its page reconnects at the live edge
                     writer.write(data)
                     sent += len(data)
-                    try:                                   # a client that cannot take it within SLOW_S
-                        await asyncio.wait_for(writer.drain(), SLOW_S)   # is gone, not just slow
-                    except asyncio.TimeoutError:
-                        break
                 else:
                     ev.clear()
                     try:

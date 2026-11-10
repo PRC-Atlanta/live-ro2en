@@ -50,7 +50,7 @@
           again: "Reconnecting…", stop: "Stopped. Tap to listen.", tap: "Tap again to listen." }
   };
   var audio = document.getElementById("a"), status = document.getElementById("status");
-  var lang = null, tries = 0, timer = null, watchdog = null, lastTime = -1, lastMove = 0;
+  var lang = null, lastLang = null, tries = 0, timer = null, watchdog = null, lastTime = -1, lastMove = 0;
   var rehearsal = false, t0 = 0, stalls = 0, statsTimer = null;
 
   function say(key, on) { status.textContent = lang ? T[lang][key] : ""; status.className = on ? "on" : ""; }
@@ -61,7 +61,8 @@
     if (!("mediaSession" in navigator) || !lang) return;
     try {
       navigator.mediaSession.metadata = new MediaMetadata({ title: T[lang].title, artist: T[lang].artist });
-      navigator.mediaSession.setActionHandler("play", function () { connect(false); });
+      // the lock screen's play button after its pause: the same language again, at the live edge
+      navigator.mediaSession.setActionHandler("play", function () { if (lang) connect(false); else if (lastLang) choose(lastLang); });
       navigator.mediaSession.setActionHandler("pause", function () { stop(); });
       navigator.mediaSession.setActionHandler("stop", function () { stop(); });
     } catch (e) {}
@@ -69,7 +70,8 @@
   // A new URL every time: the stream is live, and a reused URL may replay what the phone buffered.
   function connect(again) {
     if (!lang) return;
-    clearTimeout(timer);
+    clearTimeout(timer); timer = null;
+    lastMove = Date.now();
     say(again ? "again" : "wait", false);
     audio.src = "/listen/" + lang + "?t=" + Date.now();
     t0 = performance.now();
@@ -77,17 +79,17 @@
     if (p && p.catch) p.catch(function () { if (lang) say("tap", false); });
   }
   function retry() {
-    if (!lang) return;
+    if (!lang || timer) return;                  // one reconnect at a time: a pending one is not pushed back
     stalls += 1;
     tries = Math.min(tries + 1, 6);
-    clearTimeout(timer);
     say("again", false);
-    timer = setTimeout(function () { connect(true); }, Math.min(500 * Math.pow(2, tries - 1), 8000));
+    timer = setTimeout(function () { timer = null; connect(true); }, Math.min(500 * Math.pow(2, tries - 1), 8000));
   }
   function stop() {
     var was = lang;
+    lastLang = lang || lastLang;
     lang = null; tries = 0;
-    clearTimeout(timer);
+    clearTimeout(timer); timer = null;
     audio.pause(); audio.removeAttribute("src"); audio.load();
     mark();
     if (was) { status.textContent = T[was].stop; status.className = ""; }
@@ -106,7 +108,7 @@
   audio.addEventListener("ended", retry);
   // The stream never ends: if the play position stops moving for 6 s, connect again at the live edge.
   watchdog = setInterval(function () {
-    if (!lang || audio.paused) return;
+    if (!lang || audio.paused || timer) return;
     if (audio.currentTime !== lastTime) { lastTime = audio.currentTime; lastMove = Date.now(); return; }
     if (Date.now() - lastMove > 6000) { lastMove = Date.now(); retry(); }
   }, 1000);

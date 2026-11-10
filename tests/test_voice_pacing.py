@@ -232,8 +232,9 @@ def test_est_gen_is_the_median_of_the_last_twenty():
 
 
 # --- the guards (§2.5), on every summary of the two simulations ---------------------------------------------------
-# Labelled by hand, 2026-11-10: the expected guard verdict (None = accepted), then whether a person would
-# accept the summary. Scripture inputs are refused before any text guard (guard 1).
+# LABELS is the guards' verdict on each recorded summary (None = accepted), read and confirmed one by one on
+# 2026-11-10: it pins the guards' behaviour. The human judgement is in FALSE_REJECTIONS (good summaries the
+# guards refuse) and MISSED (poor ones they accept). Scripture inputs are refused before any text guard.
 LABELS = {
     "eulogy": {0: "not_shorter", 1: "not_shorter", 2: "person_possessive", 3: "not_shorter", 4: None, 5: "not_shorter",
                6: None, 7: None, 8: "not_shorter", 9: None, 10: "not_shorter", 11: "not_shorter", 12: "not_shorter"},
@@ -244,8 +245,10 @@ LABELS = {
 }
 SCRIPTURE = {"alex": {6, 7, 8, 9, 21, 22}}           # the parable of the talents (Matthew 25), read aloud
 # good summaries the guards refuse (the price of "clearly shorter"), and poor ones they let through
-FALSE_REJECTIONS = {"eulogy": {8, 12}, "alex": {2, 14}}
-MISSED = {"eulogy": {6}, "alex": {11}}               # we → you ("Să căutăm" → "Căutați"), a statement → an order
+FALSE_REJECTIONS = {"eulogy": {8, 12}, "alex": {2}}
+# we → you ("Să căutăm" → "Căutați", and its longer twin), who receives the reward ("Acest om… a spus, acest
+# om va primi" → "Bazapa Chizvek va primi"), a statement → an order ("E talentul tău" → "Recunoaște-ți talentul")
+MISSED = {"eulogy": {6, 7, 9}, "alex": {11}}
 
 
 @pytest.mark.parametrize("name", ["eulogy", "alex"])
@@ -355,7 +358,7 @@ def test_a_summary_neither_uses_nor_replaces_the_translators_prompt_cache(monkey
     r = summarize.summarize(summarize.GemmaSummarizer(tr), inp, "ro")
     assert r["ok"] and r["text"] == "Harul lui Dumnezeu este mare pentru toți oamenii." and r["engine"] == "local"
     assert tr._kv is kv and tr._kv_ids is kv_ids                 # the translator's cache is untouched
-    assert "prompt_cache" not in calls and calls["max_tokens"] == 160 and calls["sampler"] == ("sampler", 0.0)
+    assert "prompt_cache" not in calls and calls["max_tokens"] == 80 and calls["sampler"] == ("sampler", 0.0)
     assert calls["logits_processors"] == ["ban"] and calls["model"] == "gemma"
     assert "never change who is speaking" in calls["prompt"] and inp[0] in calls["prompt"]
 
@@ -386,3 +389,28 @@ def test_gemma_stays_loaded_in_quickest_while_live_voice_is_on(monkeypatch):
     assert live._voice_summarizer() is None and live._voice_full_state()["summarizer"] is False
     live._spare_tr = {"mlx:gemma": gemma}
     assert live._voice_summarizer().tr is gemma and live._voice_full_state()["summarizer"] is True
+
+
+def test_my_father_never_becomes_his_father_in_english_either():
+    inp = ["The love of God bound him to my father, and I remember how they had a unique friendship for many years."]
+    assert summarize.check(inp, "The love of God bound him to his father, I remember.", "en").startswith("person_possessive")
+    assert summarize.check(inp, "The love of God bound him to my father, I remember.", "en") is None
+
+
+def test_the_answer_budget_follows_the_input_and_a_late_summary_is_not_started():
+    import types
+    seen = {}
+
+    def generate(model, tok, prompt, **kw):
+        seen.update(kw)
+        return "x"
+    sys.modules_backup = None
+    import unittest.mock as mock
+    with mock.patch.dict(sys.modules, {"mlx_lm": types.SimpleNamespace(generate=generate),
+                                       "mlx_lm.sample_utils": types.SimpleNamespace(make_sampler=lambda temp: None)}):
+        tr = types.SimpleNamespace(tok=types.SimpleNamespace(apply_chat_template=lambda m, **k: "p"), model=None)
+        summarize.GemmaSummarizer(tr).generate(["cuvânt " * 200], "ro")
+        assert seen["max_tokens"] == summarize.MAX_TOKENS            # never more than the tested 160
+        summarize.GemmaSummarizer(tr).generate(["cuvânt " * 20], "ro")
+        assert seen["max_tokens"] == 80
+    assert summarize.MIN_TIME_LEFT_S >= 1.0

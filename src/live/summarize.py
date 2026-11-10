@@ -17,6 +17,7 @@ MAX_RATIO = 0.6               # the summary has at most this share of the input'
 MIN_IN_WORDS = 12             # shorter inputs come back unchanged: not sent
 MIN_RO_SCORE = 0.15           # langid.score above this reads as Romanian
 MAX_TOKENS = 160
+MIN_TIME_LEFT_S = 1.5         # a summary is not started with less than this left before the voice gives up
 SYSTEM = {
     "ro": ("You condense a live Romanian translation of a sermon for listeners whose audio fell behind. "
            "Rewrite the Romanian sentences you are given as one or two short, natural Romanian sentences "
@@ -51,6 +52,7 @@ _P = {
         "2": {"you", "your", "yours", "yourself", "yourselves", "thee", "thou", "thy"},
     },
 }
+_POSS_EN = {"my": "1s", "our": "1p", "your": "2", "thy": "2", "his": "3", "her": "3", "their": "3", "its": "3"}
 _POSS_RO = {**{w: "1s" for w in ("meu", "mea", "mei", "mele")},
             **{w: "2" for w in ("tău", "ta", "tăi", "tale", "vostru", "voastră", "voștri", "voastre")},
             **{w: "3" for w in ("său", "sa", "săi", "sale", "lui", "ei", "lor")},
@@ -83,6 +85,15 @@ def poss_pairs(ws: list[str]) -> dict[str, set[str]]:
     return pairs
 
 
+def poss_pairs_en(ws: list[str]) -> dict[str, set[str]]:
+    """English: possessive + noun ("my father") -> {noun: persons}."""
+    pairs: dict[str, set[str]] = {}
+    for w, nxt in zip(ws, ws[1:]):
+        if w in _POSS_EN and len(nxt) >= 3 and nxt not in _POSS_EN:
+            pairs.setdefault(nxt[:5], set()).add(_POSS_EN[w])
+    return pairs
+
+
 def names_numbers(text: str) -> set[str]:
     """Names (a capital not at the start of a sentence) and numbers."""
     found = set()
@@ -105,11 +116,10 @@ def check(inp: list[str], out: str, lang: str = "ro") -> str | None:
     if n_out > MAX_RATIO * n_in:
         return f"not_shorter ({n_out} > {MAX_RATIO} x {n_in} words)"
     wi, wo = toks(src), toks(out)
-    if lang == "ro":
-        pi, po = poss_pairs(wi), poss_pairs(wo)
-        for stem, ps in po.items():
-            if stem in pi and not (ps & pi[stem]):
-                return f"person_possessive ({stem}: {sorted(pi[stem])} -> {sorted(ps)})"
+    pi, po = (poss_pairs(wi), poss_pairs(wo)) if lang == "ro" else (poss_pairs_en(wi), poss_pairs_en(wo))
+    for stem, ps in po.items():                        # "tatăl meu" → "tatăl său", "my father" → "his father"
+        if stem in pi and not (ps & pi[stem]):
+            return f"person_possessive ({stem}: {sorted(pi[stem])} -> {sorted(ps)})"
     new = persons(wo, lang) - persons(wi, lang)
     if lang == "ro" and "voi" in wo and "voi" not in wi and not ({"2", "1s"} & persons(wi, lang)):
         new.add("2/1s(voi)")
@@ -181,7 +191,9 @@ class GemmaSummarizer:
             prompt = tok.apply_chat_template([{"role": "user", "content": msgs[0]["content"] + "\n\n" + msgs[1]["content"]}],
                                              add_generation_prompt=True, tokenize=False)
         kw = {"logits_processors": self.tr._suppress()} if hasattr(self.tr, "_suppress") else {}
-        return generate(model, tok, prompt=prompt, max_tokens=MAX_TOKENS, sampler=make_sampler(temp=0.0),
+        n = sum(len(t.split()) for t in texts)
+        budget = min(MAX_TOKENS, 40 + 4 * max(10, round(n * 0.4)))     # the answer is short: so is the time it may take
+        return generate(model, tok, prompt=prompt, max_tokens=budget, sampler=make_sampler(temp=0.0),
                         verbose=False, **kw)
 
 

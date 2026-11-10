@@ -86,7 +86,9 @@ def test_start_ready_state_every_second_and_what_the_operator_sees(make):
     assert cfg["port"] == 8767 and cfg["voices"] == {"ro": "M2", "en": "M2"} and cfg["limit_s"] == 10.0
     assert "--log" in argv and "/voice/" in argv[argv.index("--log") + 1]
     state = next(m for m in got if m["type"] == "state")
-    assert set(state) == {"type", "paused", "song", "held", "running", "blank_n", "profile", "summarizer"}
+    assert set(state) == {"type", "seq", "paused", "song", "held", "running", "blank_n", "profile", "summarizer"}
+    seqs = [m["seq"] for m in make.got() if m["type"] == "state"]
+    assert seqs == sorted(seqs) and len(set(seqs)) == len(seqs)       # numbered, in order
     assert any(m["type"] == "config" for m in got)           # sent again after ready
     assert live.voice_start()                                # idempotent: still one process
     assert len([m for m in make.got() if m["type"] == "argv"]) == 1
@@ -241,6 +243,73 @@ def test_no_summarizer_is_said_in_advance_and_in_the_reply(make):
     assert reply["ok"] is False and reply["reason"] == "no_summarizer"
 
 
+def test_a_summary_never_brings_in_a_blocklisted_word_and_scripture_is_refused_by_the_orchestrator(make):
+    live = make()
+
+    class Gen:
+        name, tr = "local", object()
+
+        def generate(self, texts, lang):
+            return "Tatăl meu m-a învățat să iubesc porcăria aceea."
+    live._voice_summarizer = lambda: Gen()
+    live.cfg.setdefault("safety", {})["blocklist"] = ["porcăria"]
+    live.voice_start()
+    _until(lambda: live._voice_ready)
+    live.running = True
+    text = ("Tatăl meu m-a învățat de mic copil să citesc din Biblie în fiecare seară, iar eu am păstrat acest "
+            "obicei toată viața mea până astăzi.")
+    live._voice_send({"type": "sentence", "sid": 5, "lang": "ro", "text": "SUMMARIZE " + text})
+    reply = _until(lambda: [m for m in make.got() if m["type"] == "summary"])[0]
+    assert reply["ok"] is False and reply["reason"] == "blocklist"
+    live._speech_holy = {6: True}                                    # the orchestrator published sid 6 as Scripture
+    live._voice_send({"type": "sentence", "sid": 6, "lang": "ro", "text": "SUMMARIZE " + text})
+    reply = _until(lambda: [m for m in make.got() if m["type"] == "summary" and m["req"] == 6])[0]
+    assert reply["ok"] is False and reply["reason"] == "scripture"
+
+
+def test_a_voice_that_stops_reading_never_blocks_the_sender(make):
+    live = make()
+    live.voice_start()
+    _until(lambda: live._voice_ready)
+    import queue as _q
+    live._voice_out = _q.Queue(maxsize=3)                            # as if 2000 messages were already waiting
+    t0 = time.time()
+    sent = [live._voice_send({"type": "sentence", "sid": i, "lang": "ro", "text": "x"}) for i in range(50)]
+    assert time.time() - t0 < 0.5 and sent.count(True) == 3 and live._voice_dropped == 47
+
+
+def test_off_then_on_in_quick_succession_ends_on(make):
+    live = make()
+    live.voice_start()
+    first = _until(lambda: live.voice)
+    _until(lambda: live._voice_ready)
+    live.cfg["voice"]["enabled"] = False
+    live._voice_settings_changed({"voice.enabled": False})
+    live.cfg["voice"]["enabled"] = True
+    live._voice_settings_changed({"voice.enabled": True})
+    assert _until(lambda: live.voice is not None and live.voice is not first and live._voice_ready, 10.0)
+    assert live.state()["voice"]["state"] in ("ready", "speaking") and first.poll() is not None
+    live.cfg["voice"]["speed"] = 1.3                                 # a speed change is only sent, nothing restarts
+    cur = live.voice
+    live._voice_restarts.append(time.monotonic())
+    live._voice_settings_changed({"voice.speed": 1.3})
+    assert _until(lambda: [m for m in make.got() if m["type"] == "config" and m["cfg"].get("speed") == 1.3], 3.0)
+    assert live.voice is cur and len(live._voice_restarts) == 1      # and the restart count is kept
+
+
+def test_a_play_clock_that_stopped_is_a_hang(make, monkeypatch):
+    monkeypatch.setattr(voicelink, "HANG_S", 0.5)
+    live = make()
+    live.voice_start()
+    first = _until(lambda: live.voice)
+    _until(lambda: live._voice_ready and live._voice_status)
+    orig = live._voice_on
+    live._voice_on = lambda ev: orig({**ev, "clock_age_s": 9.0} if ev.get("type") == "status" and live.voice is first else ev)
+    assert _until(lambda: live.voice is not first and live.voice is not None, 6.0)
+    events = [json.loads(l) for l in open(live.log_path)] if live.log_path.exists() else []
+    live.running = False
+
+
 def test_captions_come_first_a_summary_waits_for_the_translator(make):
     live = make(summary_timeout_s=0.5)
     calls = []
@@ -254,8 +323,14 @@ def test_captions_come_first_a_summary_waits_for_the_translator(make):
 
     live._voice_summarizer = lambda: Gen()
     with live._proc_lock:                                    # a phrase is being translated
-        res = live._voice_summary_local(["cuvânt " * 20], "ro", time.time() + 0.4)
+        res = live._voice_summary_local(["cuvânt " * 20], "ro", time.time() + 2.0)
     assert res["ok"] is False and res["reason"] == "busy" and calls == []
+    # with too little time left it is not even started: the voice would have given up before it ended
+    res = live._voice_summary_local(["cuvânt " * 20], "ro", time.time() + 1.0)
+    assert res["reason"] == "busy" and calls == []
+    live._pending = {"id": 1}                                # a held fragment is on its way: captions first
+    res = live._voice_summary_local(["cuvânt " * 20], "ro", time.time() + 1.9)
+    assert res["reason"] == "busy" and calls == []
 
 
 def test_quit_ends_the_voice_process(make):

@@ -498,3 +498,48 @@ def voice_fade():
     src = (ROOT / "src" / "voice" / "voice.py").read_text()
     import re
     return float(re.search(r"^FADE_S = ([\d.]+)", src, re.M).group(1))
+
+
+@needs_voice_env
+def test_two_replaces_in_a_row_the_newest_wins(proc):
+    v = proc(env={"FAKE_GEN_S": "0.08"})
+    v.state()
+    v.sentence(1, " ".join(["lung"] * 24))                   # plays for ~6 s
+    v.sentence(2, "aceasta va fi inlocuita de doua ori")
+    time.sleep(2.5)
+    v.send({"type": "replace", "sid": 2, "text": "prima corectura are sase cuvinte aici"})
+    v.send({"type": "replace", "sid": 2, "text": "a doua corectura"})
+    v.wait("item", 12, n=2)
+    item = v.records("item")[1]
+    assert item["sids"] == [2] and item["text"] == "a doua corectura"
+
+
+@needs_voice_env
+def test_an_old_state_that_arrives_late_changes_nothing(proc):
+    v = proc()
+    v.state(seq=5, blank_n=1)
+    time.sleep(0.2)
+    v.state(seq=4, blank_n=0, paused=True)                   # older: ignored, also its Hide
+    v.state(seq=6, blank_n=1)
+    v.sentence(1, "vorbeste in continuare fara intrerupere")
+    item = v.wait("item", 6)
+    assert item["sids"] == [1] and not item["cut"]
+    assert len(v.records("hush")) == 1                       # the one Blank, once
+    v.state(seq=7, blank_n=0)                                # a counter that went down is not a new Blank
+    v.state(seq=8, blank_n=1)
+    time.sleep(0.3)
+    assert len(v.records("hush")) == 1
+
+
+@needs_voice_env
+def test_blank_while_a_sentence_is_being_generated_drops_it(proc):
+    v = proc(env={"FAKE_GEN_S": "0.15"})
+    v.state()
+    v.sentence(1, " ".join(["cuvant"] * 12))                 # 1.8 s to generate
+    time.sleep(0.6)
+    v.state(blank_n=1)
+    v.sentence(2, "dupa blank")
+    item = v.wait("item", 8)
+    assert item["sids"] == [2]
+    st = v.wait("status", 5, n=len(v.of("status")) + 1)
+    assert "clock_age_s" in st and st["clock_age_s"] < 1.0
