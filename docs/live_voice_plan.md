@@ -24,6 +24,8 @@ This document is the build plan: what to build, where, in what order, and how to
 | Stream | One continuous MP3 at `/listen`, 64 kbps, planned for about 100 listeners, and it must keep playing on a locked iPhone | |
 | Gemma in Fast | **Kept loaded while Live Voice is on**, even in the Fast profile, so summaries always work | User, 2026-11-10 |
 | Far behind, no summary | **Skip ahead**: more than 20 s behind and no summary possible → drop queued sentences that are not Scripture and go on from the newest | User, 2026-11-10 |
+| Pacing | **As close to the speaker as possible**: the voice never adds a pause of its own, and no fixed start delay | User, 2026-11-10 (§4.3) |
+| Speed when behind | **Eases from 1.25 up to 1.5 and back**, at most 0.1 per sentence, before any summary | User, 2026-11-10 (§4.3) |
 | Phone buffer | **Measured in R1, decided then.** Until then the 10 s limit counts to play start on the Mac. | User, 2026-11-10 |
 | Wi-Fi | **The church Wi-Fi reaches the Mac Studio for everyone**: no client isolation to work around | User, 2026-11-10 |
 | Hold | **The voice keeps speaking** (Hold only freezes the screen). Hide, Blank and Song silence it. | User, 2026-11-10 |
@@ -264,7 +266,7 @@ copy of stdout and points fd 1 at stderr, so library prints cannot corrupt the s
 - **One generation thread** works through sentences in order. It starts the next sentence while
   the current one plays (the simulation's `gen_free` / `play_free` model).
 - Supertonic is set up as in `work/tts_bakeoff/src/live_sim/st_worker.py`: `TTS(auto_download=False)`,
-  `get_voice_style("M2")`, `lang="ro"`, `total_steps=8`, `speed=1.25`, quotation marks removed, and
+  `get_voice_style("M2")`, `lang="ro"`, `total_steps=8`, `speed` 1.25 (up to 1.5 when behind, §4.3), quotation marks removed, and
   a warm-up sentence before `ready`. Output is 44.1 kHz mono float.
 - **onnxruntime threads**: a fixed number (`voice.threads`, about 4 to start), chosen by the
   measurement in §6, not by the library's default of all cores.
@@ -304,9 +306,54 @@ copy of stdout and points fd 1 at stderr, so library prints cannot corrupt the s
 - During a rehearsal, every client's connect time, bytes sent, stalls (slow-socket jumps) and
   disconnect go into the voice log.
 
-### 4.3 Scheduling and catch-up (as tested in `live_sim.simulate`)
+### 4.3 Pacing, speed and catch-up (as tested in `live_sim.simulate`)
 
-When the generation thread takes up sentence `s`:
+**Stay as close to the speaker as possible** (user, 2026-11-10). The voice never adds a pause of
+its own:
+- each sentence plays as soon as it is ready and the one before it has ended, with only
+  `voice.gap_s` (0.25 s) in between;
+- it is silent only when the next sentence does not exist yet (the speaker has not said it, or its
+  caption is not out). At that point it is as close to the speaker as it can be.
+- There is no fixed start delay: a 10–20 s buffer that keeps the speaker's rhythm was simulated
+  and rejected (§13).
+
+**Speed up smoothly when behind** (user, 2026-11-10). Each sentence is spoken at one speed, chosen
+when its generation starts:
+
+```
+lag    = est_start − s.spk_end                                      (s behind the speaker)
+target = 1.25 + 0.25 × clamp((lag − 2 s) / (6 s − 2 s), 0, 1)       1.25 at ≤ 2 s behind, 1.5 at ≥ 6 s
+speed  = clamp(target, previous speed − 0.1, previous speed + 0.1)  never more than 0.1 per sentence
+```
+
+So when the voice falls behind, it goes 1.25 → 1.35 → 1.45 → 1.5 over consecutive sentences, stays
+at 1.5 while it is far behind, and eases back the same way (1.5 → 1.4 → 1.3 → 1.25) as it catches
+up.
+
+The speed changes only **between** sentences. Supertonic predicts one length for a whole sentence
+and `speed` divides it, so the model cannot speed up and slow down inside a sentence. If a step of
+0.1 between two sentences turns out to be audible, use the 0.05 step: the simulation gives the same
+delays.
+
+The lag also wobbles by a few tenths from sentence to sentence (1.47 → 1.36 → 1.42 in the
+simulation). The controller ignores a change of the target smaller than 0.05, so the speed holds
+steady.
+
+Simulated on the two runs without summaries (recorded generation times and lengths; the eulogy was
+voiced at 1.05 and scaled):
+
+| | Always 1.25 | Smooth 1.25–1.5, ±0.1 per sentence |
+|---|---|---|
+| Eulogy: median delay after the speaker's end / within 10 s | 4.3 s / 88% | 3.7 s / 94% |
+| Sermon: median / within 10 s | 11.4 s / 38% | 7.1 s / 70% |
+| Sermon: sentences still >10 s late (need a summary) | 35 | 17 |
+
+Jumping straight between 1.25, 1.35 and 1.5 gives the same delays (8.0 s / 68% on the sermon), so
+easing the speed costs nothing. Speeds above 1.25 have **not been listened to yet**. M0 makes sample
+sentences at 1.35 and 1.5 for the user to approve, and `voice.speed_max` drops if 1.5 sounds rushed.
+
+**Catch-up summary**, when the speed is not enough. When the generation thread takes up sentence
+`s`:
 
 ```
 est_start = max(now + est_gen(s), play_free + sum(audio_s of queued items))
@@ -343,7 +390,7 @@ log into the `live_sim` numbers (§9).
 ## 5. Starting and monitoring
 
 - **Settings → Live Voice**: on/off (off by default), the listener address with a QR code to print,
-  speed (1.25), and "Test voice" (speaks one sentence into the stream).
+  speed (1.25, and the most it may speed up to, 1.5), and "Test voice" (speaks one sentence into the stream).
 - **Start**: when Live Voice is on, the orchestrator starts `voice.py` when the app opens, not when
   the operator presses Start. That way phones can connect and hear silence before the service.
   Stop leaves it running, and Quit ends it.
@@ -422,7 +469,11 @@ voice:
   port: 8767
   voice: M2
   steps: 8
-  speed: 1.25
+  speed: 1.25           # normal speed
+  speed_max: 1.5        # most it speeds up to when behind (§4.3)
+  speed_lag_lo_s: 2.0   # behind by this much or less: normal speed
+  speed_lag_hi_s: 6.0   # behind by this much or more: speed_max
+  speed_step: 0.1       # most the speed changes from one sentence to the next
   threads: 4            # set by the M0 measurement
   bitrate_kbps: 64
   preroll_s: 1.0
@@ -454,6 +505,8 @@ voice:
 - **Guards**: every summary in both `summaries.json` files is labelled by hand once (pass/fail).
   The guards must reject "tatăl meu → tatăl său", any summary of a Bible reading, and every
   summary that is not shorter. False rejections are reported.
+- **Speed**: from the same recorded timings, the speed never changes by more than `speed_step`
+  between sentences, returns to 1.25 once caught up, and reproduces the §4.3 table within 0.2 s.
 - **Scheduler**: a fake voice with the recorded `gen_s` / `audio_s` from the two runs reproduces
   the `timeline_live_hold0_catchup.csv` numbers (median, p90, share within 10 s) within 0.1 s.
 - **Stream**: the byte rate stays at 64 kbps through silence. A client that connects late starts
@@ -534,11 +587,11 @@ points' load. Only then go to about 100 listeners.
 
 | # | Milestone | Done when |
 |---|---|---|
-| M0 | **Groundwork** | Supertonic 3 copied to the church repo and pinned in `models.lock.txt`. `.venv-voice` (dev) set up. RTF measured on the Mac Studio, alone and during a Quality bench replay, for the three thread options (§6). Digits and references in Romanian checked. macOS 14 wheels for onnxruntime and lameenc confirmed. Memory with Gemma kept as a spare in Fast checked. |
+| M0 | **Groundwork** | Supertonic 3 copied to the church repo and pinned in `models.lock.txt`. `.venv-voice` (dev) set up. RTF measured on the Mac Studio, alone and during a Quality bench replay, for the three thread options (§6). Digits and references in Romanian checked. Sample sentences at 1.35 and 1.5 approved by ear (sets `speed_max`). macOS 14 wheels for onnxruntime and lameenc confirmed. Memory with Gemma kept as a spare in Fast checked. |
 | M1 | **Sentence step** (`speech.py`), logging only | Unit tests pass; live-mode boundaries ≥95% of the simulation on both runs; `sentence` events in the service log |
 | M2 | **Voice process**: protocol, generation, play clock, MP3 stream, listener page; started and supervised by the orchestrator | A bench replay produces `voice.mp3`; stream tests (100 clients) pass; the offline test passes |
 | M3 | **Corrections and state** (§2.4) | Correction tests pass; Hide/Blank/Song are silent within 0.3 s on a replay |
-| M4 | **Catch-up** with Gemma (kept loaded in Fast too), separate KV cache, guards, and skip-ahead | Guard tests pass; the scheduler test reproduces the simulation; a skip test (no summarizer, 25 s behind) skips everything but Scripture and the newest |
+| M4 | **Pacing and catch-up**: smooth speed-up, Gemma (kept loaded in Fast too), separate KV cache, guards, and skip-ahead | Guard tests pass; the scheduler test reproduces the simulation; a skip test (no summarizer, 25 s behind) skips everything but Scripture and the newest |
 | M5 | **Monitoring and UI**: VOICE light, alerts, settings, After numbers, Live Remote field, `contract.json` | Contract test passes; every new screen checked against the real backend |
 | M6 | **Bench gates** (§9) on both runs, including the captions-impact gate | All gates pass; the user has listened to both runs |
 | M7 | **Packaging**: `site/voice` in the runtime build, Mach-O audit, signed and notarized DMG | `make dist` VERIFY PASS with the voice in it |
@@ -575,6 +628,10 @@ Still to decide after R1: whether the 10 s limit counts the phone's buffer.
   Live RO2EN.
 - **Voice code inside the orchestrator process.** Rejected: a crash or stall would take the
   captions with it, and its packages would join `site/mt`.
+- **A fixed start delay of 10–20 s** that keeps the speaker's rhythm, each sentence starting a set time
+  after the speaker began it. Simulated 2026-11-10: it shortens the gaps that slow captions cause, but
+  it waits on purpose. On the continuous sermon it still fell up to 26 s behind with a 20 s delay.
+  The user chose to stay as close to the speaker as possible instead (§4.3).
 - **HLS / AAC instead of a continuous MP3.** It would add 6–10 s of segment delay. It stays the
   fallback if R1 shows locked iPhones will not play the MP3 stream.
 - **A safety hold before speaking.** No English→Romanian caption has ever been retracted or
