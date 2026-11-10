@@ -250,6 +250,13 @@ def _clause(i, t0, t1, **kw):
             "stt_s": 0.1, "audio_s": t1 - t0, **kw}
 
 
+def _chunk_in(live, ev, tgt, text, src, verse=None, redo=False, outcome="ok"):
+    """What the pipeline does for one shown chunk: mark it on screen, then hand it to the sentence step."""
+    mark = live._speech_mark(ev, tgt, outcome, redo=redo)
+    live._speech_chunk(ev, tgt, text, src, outcome, time.time(), verse=verse, mark=mark)
+    return mark
+
+
 def _events(live, name=None):
     recs = [json.loads(l) for l in open(live.log_path)] if live.log_path.exists() else []
     return [r for r in recs if (r.get("event") == name if name else "event" in r)]
@@ -379,17 +386,6 @@ def test_remove_last_and_fix_last_reach_the_voice(tmp_path):
     assert len(_events(live, "sentence")) == 1
 
 
-def test_scripture_window_restarts_at_every_verse_match(tmp_path):
-    live = _live(tmp_path)
-    ev = {"id": 0, "t_start": 0.0, "t_end": 1.0}
-    for i in range(1, 12):
-        live._speech_chunk({**ev, "id": i, "t_start": i - 0.3, "t_end": float(i)}, "ro", f"Text {i}.", "plain words", "ok", time.time(),
-                           verse=[{"ref": "Matthew 25:25"}] if i in (2, 6) else [])
-    live._speech_stop()
-    marks = {c: s["scripture"] for s in _events(live, "sentence") for c in s["chunks"]}
-    assert [marks[i] for i in range(1, 12)] == [False] + [True] * 10        # 2..8 by the first match, 6..12 by the second
-
-
 def test_speech_that_was_not_captioned_counts_as_the_pause(tmp_path):
     """A sentence had ended, the speaker went on at once, but that phrase came out empty: the sentence
     is closed there (the simulation never saw such a phrase, so its next chunk came after a pause)."""
@@ -470,45 +466,71 @@ def test_a_language_switch_closes_the_sentence_also_when_the_english_stream_is_o
     assert s["lang"] == "ro" and s["why"] == "flush" and s["ready"] >= s["shown_last"]
 
 
-def test_a_late_verse_replaces_the_previous_chunks_last_part(tmp_path):
-    live = _live(tmp_path)
-    ev = {"t_start": 0.0, "t_end": 1.0}
-    now = time.time()
-    live._speech_chunk({**ev, "id": 1, "t_start": 10.0, "t_end": 12.0}, "ro", "El a zis. Chiar dacă nu.",
-                       "He said. Even if not.", "ok", now)
-    live._speech_chunk({**ev, "id": 2, "t_start": 12.1, "t_end": 14.0}, "ro",
-                       "Și chiar de nu ne va scoate, să știi, împărate.", "and even if he does not", "ok", now,
-                       verse=[{"ref": "Daniel 3:18"}], redo_prev="El a zis.")
-    live._speech_stop()
-    (s,) = _events(live, "sentence")
-    assert s["text"] == "El a zis, și chiar de nu ne va scoate, să știi, împărate."
-    assert s["chunks"] == [1, 2] and s["scripture"] and s["ref"] == "Daniel 3:18"
-    # the previous chunk already published: the voice is told
-    live2 = _live(tmp_path / "b") if (tmp_path / "b").mkdir() is None else None
-    live2._speech_chunk({**ev, "id": 1, "t_start": 10.0, "t_end": 12.0}, "ro", "El a zis. Chiar dacă nu.", "x", "ok", now)
-    live2._speech_chunk({**ev, "id": 2, "t_start": 13.0, "t_end": 14.0}, "ro", "Și chiar de nu.", "y", "ok", now,
-                        verse=[{"ref": "Daniel 3:18"}], redo_prev="El a zis.")
-    assert live2.sent[1] == {"type": "replace", "sid": 1, "lang": "ro", "text": "El a zis."}
-    # nothing left of the previous chunk: it is taken back
-    live3 = _live(tmp_path / "c") if (tmp_path / "c").mkdir() is None else None
-    live3._speech_chunk({**ev, "id": 1, "t_start": 10.0, "t_end": 12.0}, "ro", "Chiar dacă nu.", "x", "ok", now)
-    live3._speech_chunk({**ev, "id": 2, "t_start": 13.0, "t_end": 14.0}, "ro", "Și chiar de nu.", "y", "ok", now,
-                        verse=[{"ref": "Daniel 3:18"}], redo_prev="")
-    assert live3.sent[1] == {"type": "retract", "sid": 1, "lang": "ro"}
-
-
-def test_a_chunk_translated_while_hide_came_on_is_not_voiced(tmp_path):
-    live = _live(tmp_path)
-    live.paused = True                                   # Hide arrived after _show said "ok"
-    live._speech_chunk({"id": 1, "t_start": 1.0, "t_end": 2.0}, "ro", "Bună dimineața.", "Good morning.", "ok", time.time())
-    live.paused = False
-    live._speech_stop()
-    assert _events(live, "sentence") == []
-
-
 def test_a_new_service_starts_with_nothing_left_over(tmp_path):
     live = _live(tmp_path)
-    live._speech_chunk({"id": 1, "t_start": 1.0, "t_end": 2.0}, "ro", "Bună dimineața", "Good morning", "ok", time.time())
+    _chunk_in(live, {"id": 1, "t_start": 1.0, "t_end": 2.0}, "ro", "Bună dimineața", "Good morning")
     live._speech_reset()
     live._speech_stop()
     assert _events(live, "sentence") == [] and not live._speech_shown
+
+
+def test_scripture_window_restarts_at_every_verse_match(tmp_path):
+    live = _live(tmp_path)
+    for i in range(1, 12):
+        _chunk_in(live, {"id": i, "t_start": i - 0.3, "t_end": float(i)}, "ro", f"Text {i}.", "plain words",
+                  verse=[{"ref": "Matthew 25:25"}] if i in (2, 6) else [])
+    live._speech_stop()
+    marks = {c: s["scripture"] for s in _events(live, "sentence") for c in s["chunks"]}
+    assert [marks[i] for i in range(1, 12)] == [False] + [True] * 10        # 2..8 by the first match, 6..12 by the second
+
+
+def test_a_late_verse_takes_the_previous_caption_back_as_on_screen(tmp_path):
+    """On screen a late verse removes the previous caption and shows one combined caption. The voice
+    does the same: the previous chunk leaves its sentence, the new chunk carries the combined text."""
+    live = _live(tmp_path)
+    _chunk_in(live, {"id": 1, "t_start": 10.0, "t_end": 12.0}, "ro", "El a zis. Chiar dacă nu.", "He said. Even if not.")
+    _chunk_in(live, {"id": 2, "t_start": 12.1, "t_end": 14.0}, "ro", "El a zis. Și chiar de nu ne va scoate, să știi.",
+              "and even if he does not", verse=[{"ref": "Daniel 3:18"}], redo=True)
+    live._speech_stop()
+    (s,) = _events(live, "sentence")
+    assert s["text"] == "El a zis. Și chiar de nu ne va scoate, să știi." and s["chunks"] == [2]
+    assert s["scripture"] and s["ref"] == "Daniel 3:18"
+    assert list(live._speech_shown) == [(2, "ro")]
+    # the previous chunk was already published: the voice is told to take it back
+    (tmp_path / "b").mkdir()
+    live2 = _live(tmp_path / "b")
+    _chunk_in(live2, {"id": 1, "t_start": 10.0, "t_end": 12.0}, "ro", "Chiar dacă nu.", "x")
+    live2._speech_pump(force=True)
+    assert live2.sent[0]["type"] == "sentence"
+    _chunk_in(live2, {"id": 2, "t_start": 13.0, "t_end": 14.0}, "ro", "Și chiar de nu.", "y",
+              verse=[{"ref": "Daniel 3:18"}], redo=True)
+    assert live2.sent[1] == {"type": "retract", "sid": 1, "lang": "ro"}
+    # Remove last after a late verse takes the combined caption, then the one before it
+    (tmp_path / "c").mkdir()
+    live3 = _live(tmp_path / "c")
+    for i, text in ((0, "Prima frază."), (1, "A doua frază."), (2, "El a zis.")):
+        _chunk_in(live3, {"id": i, "t_start": i * 5.0, "t_end": i * 5.0 + 2}, "ro", text, "x")
+    _chunk_in(live3, {"id": 3, "t_start": 12.1, "t_end": 14.0}, "ro", "El a zis. Și chiar de nu.", "y", redo=True)
+    live3._speech_retract()
+    live3._speech_retract()
+    live3._speech_stop()
+    gone = {e["sid"] for e in _events(live3, "sentence_retract")}
+    assert [s["chunks"] for s in _events(live3, "sentence") if s["sid"] not in gone] == [[0]]
+
+
+def test_operator_actions_between_the_screen_and_the_sentence_step(tmp_path):
+    ev = {"id": 1, "t_start": 1.0, "t_end": 2.0}
+    for i, act in enumerate((lambda l: l._speech_discard("blank"),          # Blank
+                             lambda l: l._speech_retract(),                  # Remove last
+                             lambda l: (l._speech_discard("hide"), l._speech_discard("show")))):
+        (tmp_path / str(i)).mkdir()
+        live = _live(tmp_path / str(i))
+        _chunk_in(live, {"id": 0, "t_start": 0.0, "t_end": 0.5}, "ro", "Înainte.", "Before.")
+        live._speech_pump(force=True)
+        n = len(live.sent)
+        mark = live._speech_mark(ev, "ro", "ok")                             # on screen…
+        act(live)                                                            # …the operator acts…
+        live._speech_chunk(ev, "ro", "Bună dimineața.", "Good morning.", "ok", time.time(), mark=mark)
+        live._speech_stop()                                                  # …and the chunk is not voiced
+        assert [s["chunks"] for s in _events(live, "sentence")] == [[0]], i
+        assert live.sent[n:] == [], i                                        # nor is the one before taken back

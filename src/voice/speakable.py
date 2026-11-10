@@ -59,7 +59,7 @@ def _patterns(lang: str):
     # is left alone: it is as often a clock time.
     ref = re.compile(rf"\b({alt})(\s+)({v}):({v})"
                      rf"(?:\s*[-–]\s*({v}):({v})|\s*[-–]\s*({v})|((?:,\s?{v})+){end}(?!,\s?\d))?"
-                     rf"(?!\d|:\d|\s*[-–]\s*\d)")
+                     rf"(?!\d|:\d|,\d|\s*[-–]\s*\d)")
     num = None
     if numbered:
         nb = "|".join(map(re.escape, numbered))

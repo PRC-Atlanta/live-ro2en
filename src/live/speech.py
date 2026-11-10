@@ -287,6 +287,7 @@ class SpeechMixin:
         self._speech_since_verse = 10 ** 9
         self._speech_off: float | None = None          # bench replay: the recording's clock -> now
         self._speech_shown: collections.deque = collections.deque(maxlen=40)   # (chunk id, voice language or None)
+        self._speech_gen = 0                           # Hide / Show / Blank / Song since a chunk was shown
         self._speech_names_cache: tuple = (0.0, {})    # (when, {lang: names})
         self.sentences_n = 0
 
@@ -362,29 +363,49 @@ class SpeechMixin:
                 self._speech_off = off
 
     # --- from the pipeline --------------------------------------------------------------------
+    def _speech_mark(self, ev: dict, tgt: str, outcome: str, redo: bool = False):
+        """The chunk is on screen now (called by the pipeline inside `_out_lock`, right after `_show`):
+        it takes its place in the list of shown chunks, so an operator action that comes before
+        `_speech_chunk` (Remove last, Blank, Hide) acts on the right one. A late verse (`redo`) took the
+        previous caption off the screen: that chunk leaves the list here and its sentence there.
+        Returns a token for `_speech_chunk`, or None when the chunk is not on screen."""
+        if not self.voice_enabled() or outcome not in ("ok", "held"):
+            return None
+        with self._speech_lock:
+            prev = self._speech_shown.pop() if redo and self._speech_shown else None
+            lang = tgt if self.voice_lang_enabled(tgt) else None
+            self._speech_shown.append((ev.get("id"), lang))
+            return {"gen": self._speech_gen, "id": ev.get("id"), "lang": lang, "prev": prev}
+
     def _speech_chunk(self, ev: dict, tgt: str, text: str, src: str, outcome: str, t_display: float,
-                      verse=None, redo_prev: str | None = None):
-        """A chunk went through the pipeline (called from _handle_locked after _show). `text` is the
-        translation before tidy_clause; `redo_prev` (a late verse) is what is left of the previous
-        chunk's text, "" when nothing is."""
+                      verse=None, mark: dict | None = None):
+        """A chunk went through the pipeline (called from _handle_locked after the log record). `text` is
+        the caption's translation before tidy_clause (after the safety filter: what the screen shows);
+        `mark` is what `_speech_mark` returned when the chunk was put on screen."""
         if not self.voice_enabled():
             return
         with self._speech_lock:
             ref = self._speech_reading.update(src or "")
             self._speech_since_verse = 0 if verse else self._speech_since_verse + 1
             holy = ref is not None or self._speech_since_verse <= scripture.CHUNKS
-            if outcome not in ("ok", "held"):
+            if mark is None:
                 return
-            if getattr(self, "paused", False) or getattr(self, "song_on", False):
-                return                                  # Hide or Song came while it was translated
-            prev = self._speech_shown[-1] if self._speech_shown else None
-            voiced = self.voice_lang_enabled(tgt)
-            self._speech_shown.append((ev.get("id"), tgt if voiced else None))
             other = "en" if tgt == "ro" else "ro"
             self._speech_pump(force=True, only=other)   # the speaker switched language: decide what waits,
             self._speech_flush(other, "flush")          # then close the other language's sentence
-            if not voiced:
-                return
+            prev = mark.get("prev")
+            if prev is not None and prev[1]:            # a late verse: the caption before it left the screen
+                waiting = [c for c in self._speech_q if c["id"] == prev[0] and c["lang"] == prev[1]]
+                if waiting:                             # not decided yet: it simply never joins a sentence
+                    self._speech_q.remove(waiting[0])
+                else:
+                    b = self._speech_builders.get(prev[1])
+                    if b is not None:
+                        self._speech_tell(*b.retract(prev[0]), why="late_verse")
+            if mark["gen"] != self._speech_gen or (mark["id"], mark["lang"]) not in self._speech_shown:
+                return                                  # Hide, Blank, Song or Remove last came meanwhile
+            if mark["lang"] is None:
+                return                                  # this language is not voiced
             v = verse[0] if isinstance(verse, list) and verse else verse
             self._speech_q.append({
                 "id": ev.get("id"), "lang": tgt, "text": text, "src": src,
@@ -392,9 +413,6 @@ class SpeechMixin:
                 "shown_wall": t_display, "wall": time.time(), "scripture": holy,
                 "ref": (v or {}).get("ref") if isinstance(v, dict) else (ref.name(tgt) if ref is not None else None),
                 "caught_up": ev.get("caught_up", 1)})
-            if redo_prev is not None and prev is not None and prev[1] == tgt:
-                self._speech_pump(force=True, keep=1)   # the previous chunk is decided, knowing this one follows
-                self._speech_tell(*self._speech_builder(tgt).set_text(prev[0], redo_prev), why="late_verse")
             self._speech_pump()
 
     def _speech_gap(self, c: dict, nxt: dict | None) -> float | None:
@@ -571,6 +589,7 @@ class SpeechMixin:
             n = len(self._speech_q) + sum(b.discard() for b in self._speech_builders.values())
             self._speech_q.clear()
             self._speech_shown.clear()
+            self._speech_gen += 1
             self._speech_reading.reset()
             self._speech_since_verse = 10 ** 9
             if n and self.voice_enabled():

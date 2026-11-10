@@ -823,6 +823,12 @@ class PipelineMixin:
                 self.caps.retract()                     # the previous caption goes; this replaces it
             shown, ok, outcome = self._show(screen_text, close="." if prev_open and not continues and not redo else "",
                                             audio_s=ev.get("audio_s"))
+            voice_mark = None
+            if hasattr(self, "_speech_mark"):           # Live Voice: this chunk's place among the shown ones
+                try:
+                    voice_mark = self._speech_mark(ev, tgt, outcome, redo=redo)
+                except Exception:                       # noqa: BLE001  the voice never stops a caption
+                    self._state_failed(self._speech_mark)
         if shown:                                       # in the caption box: a late verse may replace it
             self._last_out = [translation] if redo else [o for o in out if o]
             self._last_src = f"{last_src} {src_text}" if redo else src_text
@@ -857,13 +863,8 @@ class PipelineMixin:
                 self.counts["pp_error"] += 1
         self._write_log(rec)
         if hasattr(self, "_speech_chunk"):              # Live Voice: the sentence step (speech.py)
-            said, prev_left = translation, None
-            if redo:                                    # a late verse: the previous chunk keeps its first parts
-                prev_left = " ".join(last_out[:-1])
-                said = translation[len(prev_left):].strip() if prev_left and translation.startswith(prev_left) \
-                    else translation
             try:
-                self._speech_chunk(ev, tgt, said, src_text, outcome, t_disp, verse=verse, redo_prev=prev_left)
+                self._speech_chunk(ev, tgt, translation, src_text, outcome, t_disp, verse=verse, mark=voice_mark)
             except Exception:                           # noqa: BLE001  the voice never stops a caption
                 self._state_failed(self._speech_chunk)
 
