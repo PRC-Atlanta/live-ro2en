@@ -406,3 +406,109 @@ def test_speech_that_was_not_captioned_counts_as_the_pause(tmp_path):
     _say(live, 3, t + 10, t + 13, "This is the first part of what I say")
     live._log_failure(_clause(4, t + 13.1, t + 15), "empty_stt", lang="en")
     assert len(_events(live, "sentence")) == 1
+
+
+# --- M1 review: timers, Remove last twice, the English stream off, a late verse ------------------------
+def _wait_for(fn, s=6.0):
+    end = time.time() + s
+    while not fn() and time.time() < end:
+        time.sleep(0.05)
+    return fn()
+
+
+def test_level_readings_that_arrive_late_still_decide_the_chunk(tmp_path):
+    live = _live(tmp_path)
+    t = time.time() - 3.2
+    _say(live, 1, t, t + 3, "Good morning everyone and welcome here.")     # no readings yet: it waits
+    assert _events(live, "sentence") == []
+    time.sleep(0.5)                                                         # several timer rounds later
+    live._level_hist.extend(_hist(t + 3, [1, 0, 0, 0, 0, 0, 0, 0]))
+    assert _wait_for(lambda: _events(live, "sentence"), 2.0)
+    assert _events(live, "sentence")[0]["why"] == "pause"
+
+
+def test_with_no_level_readings_at_all_the_chunk_is_decided_as_a_pause(tmp_path):
+    live = _live(tmp_path)
+    t = time.time() - 3.2
+    _say(live, 1, t, t + 3, "Good morning everyone and welcome here.")
+    assert _wait_for(lambda: _events(live, "sentence"), 5.0)                # pause_s + 1.5 s, by the timer alone
+
+
+def test_remove_last_twice_takes_two_chunks(tmp_path):
+    live = _live(tmp_path)
+    t = time.time() - 60
+    for i, t0 in ((1, 0), (2, 4), (3, 8)):
+        live._level_hist.extend(_hist(t + t0 + 3, [1, 0, 0, 0, 0, 0, 0, 0]))
+        _say(live, i, t + t0, t + t0 + 3, f"This is sentence number {i} for the test.")
+    assert [s["sid"] for s in _events(live, "sentence")] == [1, 2, 3]
+    assert live.retract() and live.retract()
+    assert [m for m in live.sent if m["type"] == "retract"] == [
+        {"type": "retract", "sid": 3, "lang": "ro"}, {"type": "retract", "sid": 2, "lang": "ro"}]
+    assert live.correct("Prima propoziție.")
+    assert live.sent[-1] == {"type": "replace", "sid": 1, "lang": "ro", "text": "Prima propoziție."}
+
+
+def test_remove_last_on_an_unvoiced_caption_leaves_the_voiced_ones(tmp_path):
+    live = _live(tmp_path, en={"enabled": False})
+    t = time.time() - 60
+    live._level_hist.extend(_hist(t + 3, [1, 0, 0, 0, 0, 0, 0, 0]))
+    _say(live, 1, t, t + 3, "Good morning everyone and welcome here.")
+    _say(live, 2, t + 5, t + 8, "Acum vorbesc în limba română cu voi toți", lang="ro")   # not voiced
+    n = len(live.sent)
+    assert live.retract() and len(live.sent) == n                           # the English caption went: no message
+    assert live.retract() and live.sent[-1] == {"type": "retract", "sid": 1, "lang": "ro"}
+
+
+def test_a_language_switch_closes_the_sentence_also_when_the_english_stream_is_off(tmp_path):
+    live = _live(tmp_path, en={"enabled": False})
+    t = time.time() - 60
+    live._level_hist.extend(_hist(t + 3, [1] * 10))
+    _say(live, 1, t, t + 3, "This is the first part of what I say")
+    live._level_hist.extend(_hist(t + 8, [1] * 10))
+    _say(live, 2, t + 5, t + 8, "Acum vorbesc în limba română cu voi toți", lang="ro")
+    (s,) = _events(live, "sentence")
+    assert s["lang"] == "ro" and s["why"] == "flush" and s["ready"] >= s["shown_last"]
+
+
+def test_a_late_verse_replaces_the_previous_chunks_last_part(tmp_path):
+    live = _live(tmp_path)
+    ev = {"t_start": 0.0, "t_end": 1.0}
+    now = time.time()
+    live._speech_chunk({**ev, "id": 1, "t_start": 10.0, "t_end": 12.0}, "ro", "El a zis. Chiar dacă nu.",
+                       "He said. Even if not.", "ok", now)
+    live._speech_chunk({**ev, "id": 2, "t_start": 12.1, "t_end": 14.0}, "ro",
+                       "Și chiar de nu ne va scoate, să știi, împărate.", "and even if he does not", "ok", now,
+                       verse=[{"ref": "Daniel 3:18"}], redo_prev="El a zis.")
+    live._speech_stop()
+    (s,) = _events(live, "sentence")
+    assert s["text"] == "El a zis, și chiar de nu ne va scoate, să știi, împărate."
+    assert s["chunks"] == [1, 2] and s["scripture"] and s["ref"] == "Daniel 3:18"
+    # the previous chunk already published: the voice is told
+    live2 = _live(tmp_path / "b") if (tmp_path / "b").mkdir() is None else None
+    live2._speech_chunk({**ev, "id": 1, "t_start": 10.0, "t_end": 12.0}, "ro", "El a zis. Chiar dacă nu.", "x", "ok", now)
+    live2._speech_chunk({**ev, "id": 2, "t_start": 13.0, "t_end": 14.0}, "ro", "Și chiar de nu.", "y", "ok", now,
+                        verse=[{"ref": "Daniel 3:18"}], redo_prev="El a zis.")
+    assert live2.sent[1] == {"type": "replace", "sid": 1, "lang": "ro", "text": "El a zis."}
+    # nothing left of the previous chunk: it is taken back
+    live3 = _live(tmp_path / "c") if (tmp_path / "c").mkdir() is None else None
+    live3._speech_chunk({**ev, "id": 1, "t_start": 10.0, "t_end": 12.0}, "ro", "Chiar dacă nu.", "x", "ok", now)
+    live3._speech_chunk({**ev, "id": 2, "t_start": 13.0, "t_end": 14.0}, "ro", "Și chiar de nu.", "y", "ok", now,
+                        verse=[{"ref": "Daniel 3:18"}], redo_prev="")
+    assert live3.sent[1] == {"type": "retract", "sid": 1, "lang": "ro"}
+
+
+def test_a_chunk_translated_while_hide_came_on_is_not_voiced(tmp_path):
+    live = _live(tmp_path)
+    live.paused = True                                   # Hide arrived after _show said "ok"
+    live._speech_chunk({"id": 1, "t_start": 1.0, "t_end": 2.0}, "ro", "Bună dimineața.", "Good morning.", "ok", time.time())
+    live.paused = False
+    live._speech_stop()
+    assert _events(live, "sentence") == []
+
+
+def test_a_new_service_starts_with_nothing_left_over(tmp_path):
+    live = _live(tmp_path)
+    live._speech_chunk({"id": 1, "t_start": 1.0, "t_end": 2.0}, "ro", "Bună dimineața", "Good morning", "ok", time.time())
+    live._speech_reset()
+    live._speech_stop()
+    assert _events(live, "sentence") == [] and not live._speech_shown

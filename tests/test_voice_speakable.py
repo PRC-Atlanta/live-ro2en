@@ -77,9 +77,10 @@ def test_model_dir_and_verify(tmp_path, monkeypatch):
     ("en", "at Job 9:00 tomorrow", "at Job 9:00 tomorrow"),
     # ranges and lists are rewritten whole
     ("ro", "Ioan 3:16-4:2", "Ioan 3, versetul 16 până la capitolul 4, versetul 2"),
-    ("ro", "Ioan 3:16 și 4:5", "Ioan 3, versetul 16 și capitolul 4, versetul 5"),
+    ("ro", "Ioan 3:16 și 10:30 ne vedem", "Ioan 3, versetul 16 și 10:30 ne vedem"),
     ("ro", "Ioan 3:16,17", "Ioan 3, versetele 16 și 17"),
-    ("en", "John 3:16 and 4:5, 2,500 dollars", "John 3, verse 16 and chapter 4, verse 5, 2,500 dollars"),
+    ("en", "John 3:16,17,18 people", "John 3, verse 16,17,18 people"),
+    ("en", "Romans 8:28, 29 and 30 men", "Romans 8, verse 28, 29 and 30 men"),
     ("en", "1 John 1:9 and Psalm 90:1-2", "First John 1, verse 9 and Psalm 90, verses 1 to 2"),
 ])
 def test_speakable_review_cases(lang, text, want):

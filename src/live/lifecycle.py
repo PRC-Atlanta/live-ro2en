@@ -343,6 +343,8 @@ class LifecycleMixin:
             path = logdir / f"{stem}_{n}.jsonl"           # sorts after the first one
         self.log_path = path
         self.warnings, self.counts = list(self._engine_warnings), collections.Counter()
+        if hasattr(self, "_speech_reset"):
+            self._speech_reset()                       # Live Voice: no sentence of the last service is left
         self.behind_s = self.stt_behind = None
         self.eof.clear()
         self._stopping = False
@@ -488,7 +490,10 @@ class LifecycleMixin:
             self._flush()                    # a held fragment is shown before the service ends
             self._drain()                    # nothing from this run may land in the next one
             if hasattr(self, "_speech_stop"):
-                self._speech_stop()          # Live Voice: the open sentence is spoken (speech.py)
+                try:
+                    self._speech_stop()      # Live Voice: the open sentence is spoken (speech.py)
+                except Exception:            # noqa: BLE001  the voice never keeps a service from stopping
+                    self._state_failed(self._speech_stop)
             self.running = False
             self.phase_hint = None
             if warm:

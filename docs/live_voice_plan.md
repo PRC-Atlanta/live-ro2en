@@ -189,9 +189,10 @@ trails off would hold a sentence back for ever.
 ```
 
 All times use the orchestrator's `time.time()`, which the voice process shares. In a bench replay,
-the engine stamps phrases on the recording's clock. The orchestrator then shifts them by
-`arrival − t_emit` of each clause, so a replay and a service look the same to the voice. This is
-the same offset `live_sim.load_run` estimates from `vad_wait_s`.
+the engine stamps phrases on the recording's clock. The orchestrator then shifts them by the
+smallest (arrival − capture time) seen over the engine's level readings (**Built:** not `arrival − t_emit`,
+because `t_emit` is already on the wall clock), so a replay and a service look the same to the voice.
+This is the same offset `live_sim.load_run` estimates from `vad_wait_s`.
 
 Each sentence is also written to the service log as `{"event": "sentence", …}`, so After, the bench
 and `voice_report.py` can read it.

@@ -246,7 +246,8 @@ class SentenceBuilder:
         d, i = self._find(chunk_id)
         if i is None:
             return "none", None
-        (self.parts if d is None else d["parts"])[i]["text"] = text
+        part = (self.parts if d is None else d["parts"])[i]
+        part["text"] = part["raw"] = text
         return self._changed(d)
 
 
@@ -285,7 +286,19 @@ class SpeechMixin:
         self._speech_reading = scripture.Reading()     # §2.1: replayed over every shown chunk
         self._speech_since_verse = 10 ** 9
         self._speech_off: float | None = None          # bench replay: the recording's clock -> now
+        self._speech_shown: collections.deque = collections.deque(maxlen=40)   # (chunk id, voice language or None)
+        self._speech_names_cache: tuple = (0.0, {})    # (when, {lang: names})
         self.sentences_n = 0
+
+    def _speech_reset(self):
+        """A new service (lifecycle._new_run): nothing of the last one is left."""
+        with self._speech_lock:
+            self._speech_q.clear()
+            self._speech_builders.clear()
+            self._speech_shown.clear()
+            self._speech_reading.reset()
+            self._speech_since_verse = 10 ** 9
+            self._speech_off = None
 
     # --- settings -----------------------------------------------------------------------
     def voice_cfg(self) -> dict:
@@ -312,21 +325,22 @@ class SpeechMixin:
         return b
 
     def _speech_names(self, lang: str) -> set[str]:
-        """Names known before they are heard: the glossary's and today's names, keywords_en.txt."""
+        """Names known before they are heard: the names kept as written (the glossary's and today's)
+        and the names & words lists. Read at most every 5 s: the lists are files."""
+        when, cache = self._speech_names_cache
+        if time.time() - when < 5.0 and lang in cache:
+            return cache[lang]
         out = set()
         gloss = getattr(self, "gloss", None)
         for n in list(getattr(gloss, "names", None) or []):
             out.update(w for w in str(n).split() if w[:1].isupper())
-        for r in list(getattr(gloss, "rows", None) or []):
-            v = str(r.get(lang) or "")
-            if v[:1].isupper() and " " not in v:
-                out.add(v)
         for fn in ("_session_words", "user_keywords", "_bundled_keywords"):
             try:
                 for w in getattr(self, fn)() if hasattr(self, fn) else []:
                     out.update(x for x in str(w).split() if x[:1].isupper())
             except Exception:                           # noqa: BLE001  a missing list is no reason to stop
                 pass
+        self._speech_names_cache = (time.time(), {"ro": out, "en": out})
         return out
 
     # --- clocks ---------------------------------------------------------------------------
@@ -359,20 +373,28 @@ class SpeechMixin:
             ref = self._speech_reading.update(src or "")
             self._speech_since_verse = 0 if verse else self._speech_since_verse + 1
             holy = ref is not None or self._speech_since_verse <= scripture.CHUNKS
-            if outcome not in ("ok", "held") or not self.voice_lang_enabled(tgt):
+            if outcome not in ("ok", "held"):
                 return
+            if getattr(self, "paused", False) or getattr(self, "song_on", False):
+                return                                  # Hide or Song came while it was translated
+            prev = self._speech_shown[-1] if self._speech_shown else None
+            voiced = self.voice_lang_enabled(tgt)
+            self._speech_shown.append((ev.get("id"), tgt if voiced else None))
             other = "en" if tgt == "ro" else "ro"
             self._speech_pump(force=True, only=other)   # the speaker switched language: decide what waits,
             self._speech_flush(other, "flush")          # then close the other language's sentence
-            if redo_prev is not None:
-                self._speech_redo(tgt, redo_prev)
+            if not voiced:
+                return
             v = verse[0] if isinstance(verse, list) and verse else verse
             self._speech_q.append({
                 "id": ev.get("id"), "lang": tgt, "text": text, "src": src,
                 "t_speech": ev.get("t_speech", ev.get("t_start")), "t_end": ev.get("t_end"),
-                "shown": t_display - self._speech_offset(), "wall": time.time(), "scripture": holy,
+                "shown_wall": t_display, "wall": time.time(), "scripture": holy,
                 "ref": (v or {}).get("ref") if isinstance(v, dict) else (ref.name(tgt) if ref is not None else None),
                 "caught_up": ev.get("caught_up", 1)})
+            if redo_prev is not None and prev is not None and prev[1] == tgt:
+                self._speech_pump(force=True, keep=1)   # the previous chunk is decided, knowing this one follows
+                self._speech_tell(*self._speech_builder(tgt).set_text(prev[0], redo_prev), why="late_verse")
             self._speech_pump()
 
     def _speech_gap(self, c: dict, nxt: dict | None) -> float | None:
@@ -398,10 +420,11 @@ class SpeechMixin:
             return NO_NEXT                              # no level readings (no engine): a pause
         return gap
 
-    def _speech_pump(self, force: bool = False, only: str | None = None):
-        """Decide the waiting chunks in order. `force`: do not wait for the level readings."""
+    def _speech_pump(self, force: bool = False, only: str | None = None, keep: int = 0):
+        """Decide the waiting chunks in order. `force`: do not wait for the level readings; `keep`: leave
+        the newest that many undecided."""
         with self._speech_lock:
-            while self._speech_q:
+            while len(self._speech_q) > keep:
                 c = self._speech_q[0]
                 if only is not None and c["lang"] != only:
                     break
@@ -413,6 +436,7 @@ class SpeechMixin:
                         break
                     gap = NO_NEXT
                 self._speech_q.pop(0)
+                c["shown"] = c["shown_wall"] - self._speech_offset()    # the engine's clock, as t_end
                 b = self._speech_builder(c["lang"])
                 for s in b.add(c, gap):
                     self._speech_publish(s)
@@ -420,17 +444,20 @@ class SpeechMixin:
             if any(b.parts for b in self._speech_builders.values()):
                 self._speech_arm_flush()
 
+    def _speech_tick(self):
+        with self._speech_lock:
+            self._speech_timer = None                   # this timer is done: the pump may arm the next
+        self._speech_pump()
+
     def _speech_arm(self, after_s: float):
-        t = self._speech_timer
-        if t is not None and t.is_alive():
+        if self._speech_timer is not None:
             return
-        self._speech_timer = threading.Timer(after_s, self._speech_pump)
+        self._speech_timer = threading.Timer(after_s, self._speech_tick)
         self._speech_timer.daemon = True
         self._speech_timer.start()
 
     def _speech_arm_flush(self):
-        t = self._speech_flush_timer
-        if t is not None and t.is_alive():
+        if self._speech_flush_timer is not None:
             return
         self._speech_flush_timer = threading.Timer(0.5, self._speech_flush_tick)
         self._speech_flush_timer.daemon = True
@@ -454,7 +481,12 @@ class SpeechMixin:
         the engine hears (§2.2)."""
         with self._speech_lock:
             self._speech_flush_timer = None
-            if self._speech_q or not any(b.parts for b in self._speech_builders.values()):
+            if self._speech_q:                          # still deciding a chunk: look again
+                self._speech_pump()
+                if self._speech_q:
+                    self._speech_arm_flush()
+                    return
+            if not any(b.parts for b in self._speech_builders.values()):
                 return
             flush_s = float(self.voice_cfg().get("flush_s", DEFAULTS["flush_s"]))
             waited = time.time() - self._speech_last_add
@@ -486,6 +518,8 @@ class SpeechMixin:
     def _speech_publish(self, s: dict):
         off = self._speech_offset()
         s = {**s, **{k: round(s[k] + off, 3) for k in ("spk_start", "spk_end", "shown_last", "ready")}}
+        if s["why"] == "flush":                         # known only now, not when its last chunk was shown
+            s["ready"] = max(s["ready"], round(time.time(), 3))
         self.sentences_n += 1
         self._log_event({"event": "sentence", **s})
         send = getattr(self, "_voice_send", None)
@@ -503,25 +537,18 @@ class SpeechMixin:
         if send is not None:
             send(msg)
 
-    def _speech_last(self) -> tuple[SentenceBuilder | None, object]:
-        """The builder and id of the chunk shown last (waiting chunks are decided first)."""
-        self._speech_pump(force=True)
-        best = None
-        for b in self._speech_builders.values():
-            if b.last_id is not None:
-                d, i = b._find(b.last_id)
-                if i is not None:
-                    p = (b.parts if d is None else d["parts"])[i]
-                    if best is None or p.get("wall", 0) > best[2]:
-                        best = (b, b.last_id, p.get("wall", 0))
-        return (best[0], best[1]) if best else (None, None)
-
     def _speech_retract(self):
-        """Remove last (Backspace, Live Remote): the chunk shown last leaves its sentence."""
+        """Remove last (Backspace, Live Remote): the chunk shown last leaves its sentence. Each press
+        takes the one before, as on screen; a chunk that was not voiced (the English stream off) only
+        loses its place."""
         if not self.voice_enabled():
             return
         with self._speech_lock:
-            b, cid = self._speech_last()
+            self._speech_pump(force=True)
+            if not self._speech_shown:
+                return
+            cid, lang = self._speech_shown.pop()
+            b = self._speech_builders.get(lang) if lang else None
             if b is not None:
                 self._speech_tell(*b.retract(cid), why="retract")
 
@@ -530,22 +557,20 @@ class SpeechMixin:
         if not self.voice_enabled():
             return
         with self._speech_lock:
-            b, cid = self._speech_last()
+            self._speech_pump(force=True)
+            if not self._speech_shown:
+                return
+            cid, lang = self._speech_shown[-1]
+            b = self._speech_builders.get(lang) if lang else None
             if b is not None:
                 self._speech_tell(*b.set_text(cid, text), why="correct")
-
-    def _speech_redo(self, lang: str, prev_text: str):
-        """A late verse: the previous chunk keeps only `prev_text` (its parts before the verse)."""
-        self._speech_pump(force=True)
-        b = self._speech_builders.get(lang)
-        if b is not None and b.last_id is not None:
-            self._speech_tell(*b.set_text(b.last_id, prev_text), why="late_verse")
 
     def _speech_discard(self, why: str):
         """Hide, Blank, Song: the open sentence and the chunks still waiting are dropped."""
         with self._speech_lock:
             n = len(self._speech_q) + sum(b.discard() for b in self._speech_builders.values())
             self._speech_q.clear()
+            self._speech_shown.clear()
             self._speech_reading.reset()
             self._speech_since_verse = 10 ** 9
             if n and self.voice_enabled():

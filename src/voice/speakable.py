@@ -53,12 +53,12 @@ def _patterns(lang: str):
     and_, chapter = WORDS[lang][3], WORDS[lang][4]
     alt = "|".join(map(re.escape, names))
     v = r"[1-9]\d{0,2}"
-    end = rf"(?=\s*(?:[,.;:!?)]|$|{and_}\b))"
-    # Book N:M, then at most one of  -N2:M2 | -K | ,K[,K…]  and then at most one " și/and N2:M2".
-    # Never half a reference: what follows may not be more digits, a colon-digit or another range.
+    end = r"(?=\s*(?:[.;:!?)]|$))"
+    # Book N:M, then at most one of  -N2:M2 | -K | ,K[,K…] . Never half a reference: what follows may
+    # not be more digits, a colon-digit, another range or another list item. A following "și/and N:M"
+    # is left alone: it is as often a clock time.
     ref = re.compile(rf"\b({alt})(\s+)({v}):({v})"
-                     rf"(?:\s*[-–]\s*({v}):({v})|\s*[-–]\s*({v})|((?:,\s?{v}{end})+))?"
-                     rf"(?:(\s+{and_}\s+)({v}):({v}))?"
+                     rf"(?:\s*[-–]\s*({v}):({v})|\s*[-–]\s*({v})|((?:,\s?{v})+){end}(?!,\s?\d))?"
                      rf"(?!\d|:\d|\s*[-–]\s*\d)")
     num = None
     if numbered:
@@ -89,7 +89,7 @@ def references(text: str, lang: str) -> str:
     one, many, to, and_, chapter, _ = WORDS[lang]
 
     def sub(m):
-        tail = m[5] or m[7] or m[8] or m[10]
+        tail = m[5] or m[7] or m[8]
         if lang == "en" and not tail and _CLOCK_EN.match(m.string, m.end()):
             return m[0]                            # "Mark 10:30 am": a clock time ("am" is a Romanian verb)
         out = f"{m[1]}{m[2]}{m[3]}, "
@@ -102,8 +102,6 @@ def references(text: str, lang: str) -> str:
             out += f"{many} {', '.join(vs[:-1])} {and_} {vs[-1]}"
         else:
             out += f"{one} {m[4]}"
-        if m[10]:                                  # "… și 4:5" of the same book
-            out += f"{m[9]}{chapter} {m[10]}, {one} {m[11]}"
         return out
     return _patterns(lang)[0].sub(sub, text)
 
