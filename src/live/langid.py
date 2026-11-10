@@ -74,6 +74,11 @@ class LangTracker:
             self.current = "en"
         self._streak = 0
 
+    def go_home(self) -> None:
+        """The pipeline saw the home language twice in a row while away (idea 12): back now."""
+        if self.mode == "auto":
+            self.current, self._streak = self.home, 0
+
     def update(self, text: str, ro: str | None = None) -> str:
         """`text`: the multilingual transcript (the probe); `ro`: the Romanian recogniser's
         transcript of the same audio, when there is one."""

@@ -89,6 +89,30 @@ def scrap(text: str) -> bool:
         and fold_diacritics(words[0]) not in {fold_diacritics(w) for w in _ALONE_RO}
 
 
+RO_IN_EN_MARGIN = 0.2          # idea 12: the Romanian transcript's real-word share must beat the English one's by this
+RO_IN_EN_MIN_WORDS = 3
+
+
+def romanian_inside_english(en_text: str, ro_text: str, lex: dict, names=frozenset(),
+                            margin: float = RO_IN_EN_MARGIN) -> dict | None:
+    """Idea 12 (2026-11-08 evening): Romanian said while the captions are in English mode. The English
+    recogniser writes it as romanised scraps ("in FSN capitolopatru, versetus shaptashpe", "Voi Parinsi")
+    that are few enough to pass the gate. When the Romanian recogniser's transcript of the same audio
+    has a clearly higher share of real words (by `margin`) and reads as Romanian (lang_score > 0.15),
+    that one is the text: the shares and the score, else None."""
+    ro_text = (ro_text or "").strip()
+    if not ro_text or len(tokens(ro_text)) < RO_IN_EN_MIN_WORDS:
+        return None
+    score = lang_score(ro_text)
+    if score <= 0.15:
+        return None
+    en_share = gate.features(en_text, "en", lex, names)["real_share"]
+    ro_share = gate.features(ro_text, "ro", lex, names)["real_share"]
+    if ro_share - en_share < margin:
+        return None
+    return {"en_share": en_share, "ro_share": ro_share, "ro_score": round(score, 2)}
+
+
 def _whole_phrase(tr, lang: str, tgt: str) -> bool:
     """The translator for this direction takes a whole phrase in one call instead of clause by
     clause (the experimental online Claude translator: each call is a network round trip)."""
@@ -673,6 +697,22 @@ class PipelineMixin:
         if not min_real:
             return src, lang, {}
         names = self._gate_names()
+        if lang == "en" and self.lang.mode == "auto" and self.lang.home == "ro" and self.lc.get("ro_inside_en", True):
+            # idea 12: Romanian said in English mode passes the gate as romanised scraps; the Romanian
+            # recogniser's transcript of the same audio is the text when it is clearly the better one
+            ro_text = apply_spellings(ev.get("ro") or "", self.cfg.get("spellings") or {})
+            better = romanian_inside_english(src, ro_text, gate.lexicon(), names)
+            if better:
+                info = {"gate_switched": src, "ro_inside_en": better}
+                ro_text = self._repair_names(ro_text, "ro", info)
+                with self.lock:
+                    self.counts["ro_inside_en"] += 1
+                self._ro_in_en = getattr(self, "_ro_in_en", 0) + 1
+                if self._ro_in_en >= 2:                 # two in a row: the speaker is back in Romanian
+                    self.lang.go_home()                 # (the way back took a minute on 2026-11-08, 19:17)
+                    self._ro_in_en = 0
+                return ro_text, "ro", info
+            self._ro_in_en = 0
         kept, why, cut = gate.screen(src, lang, gate.lexicon(), names, min_real)
         if kept and not cut:
             return src, lang, {}

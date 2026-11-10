@@ -819,6 +819,12 @@ Still to decide after R1: whether the 10 s limit counts the phone's buffer.
   6–13 s into the Romanian, so what overlaps is the end of the speaker's last English sentence.
   Only an earlier switch signal from Live RO2EN's language detection would shorten it.
 
+**Built (2026-11-10): idea 12** (`docs/translation_ideas.md`), which addresses both. An English-mode phrase is
+captioned (and so voiced, in the English stream) from the Romanian recogniser's transcript when that one is
+clearly the better text, and two such phrases in a row switch the captions back to Romanian. On the eulogy's
+log it catches 4 phrases of 70, all Romanian; on the pure-English sermon 0 of 208. How much of the 47 s of
+overlap goes is measured in the M6 eulogy replay (§9).
+
 ---
 
 ## 13. Considered and not chosen
