@@ -569,6 +569,36 @@ class MLXLLMTranslator:
         return self._suppressors
 
 
+_CLAUDE_COMMON = (
+    "Rules for this live caption feed (they come before everything above):\n"
+    "- Your whole reply is put on screen and read aloud exactly as written. Write only the translation: "
+    "never a comment, explanation, question, apology or note about the input, no quotation marks around "
+    "it, no \"...\" or \"…\" at its start or end.\n"
+    "- The text comes from speech recognition and is sometimes garbled. Translate the words you can "
+    "understand and silently leave out the rest. Never copy an untranslated or garbled word into the "
+    "translation and never guess words that are not there. If nothing in the piece makes clear sense, "
+    "reply with a single hyphen: -\n"
+    "- Translate only the last piece. The previous pieces only show where the sentence stands: never "
+    "repeat any of their words.\n"
+    "- Be as brief as the speaker: about as many words as the source, plain spoken language. Add nothing "
+    "that was not said.\n"
+    "- Keep every verb and pronoun in the person the speaker used; an infinitive or a general statement "
+    "does not become \"we\" or \"you\".\n")
+CLAUDE_RULES = {
+    ("en", "ro"): _CLAUDE_COMMON + (
+        "- \"You guys\" is simply \"voi\": do not add forms of address the speaker did not say. Write large "
+        "round numbers in words (un milion, două mii)."),
+    ("ro", "en"): _CLAUDE_COMMON + (
+        "- The reply is English only: never leave Romanian words in it."),
+}
+
+
+# Haiku 5.5 with thinking off sometimes answers garbled input with a comment about it (2026-11-10 test)
+_CLAUDE_META = re.compile(r"\b(?:garbled|the input|the piece|translat\w*|transcri\w*|recogni[sz]\w*|"
+                          r"I can(?:no|')t|I'm sorry|nothing to|per the (?:rules|glossary)|piesa|traducer\w*)\b",
+                          re.IGNORECASE)
+
+
 class ClaudeTranslator(MLXLLMTranslator):
     """EXPERIMENT ONLY (2026-11-10, Live Voice test): Gemma's exact prompt sent to a Claude model
     through the Anthropic API. It breaks the app's offline rule: it refuses to load unless
@@ -577,8 +607,9 @@ class ClaudeTranslator(MLXLLMTranslator):
     app's venvs: LIVE_CLAUDE_SDK names a folder it was installed into (pip --target).
     Each call is appended to $LIVE_LOG_DIR/claude_usage.jsonl (tokens, seconds)."""
 
-    def __init__(self, model: str, max_tokens: int = 200, context_clauses: int = 2):
+    def __init__(self, model: str, max_tokens: int = 200, context_clauses: int = 2, tuned: bool = False):
         import os
+        self.tuned = tuned                                    # add CLAUDE_RULES to Gemma's instructions
         if os.environ.get("LIVE_ALLOW_NETWORK") != "1":
             raise RuntimeError("claude: translator needs the internet; set LIVE_ALLOW_NETWORK=1 (experiment only)")
         if os.environ.get("LIVE_CLAUDE_SDK") and os.environ["LIVE_CLAUDE_SDK"] not in sys.path:
@@ -598,7 +629,10 @@ class ClaudeTranslator(MLXLLMTranslator):
                            if os.environ.get("LIVE_LOG_DIR") else None)
 
     def _prompt(self, text, src, tgt, glossary, hint: str = "", note: str = ""):
-        return self._messages(text, src, tgt, glossary, hint, note)
+        msgs = self._messages(text, src, tgt, glossary, hint, note)
+        if getattr(self, "tuned", False):
+            msgs[0] = {"role": "system", "content": msgs[0]["content"] + "\n\n" + CLAUDE_RULES[(src, tgt)]}
+        return msgs
 
     def _generate(self, msgs) -> str:
         """One Messages API call, thinking off (as Gemma runs with enable_thinking=False)."""
@@ -611,6 +645,12 @@ class ClaudeTranslator(MLXLLMTranslator):
         dt = time.perf_counter() - t0
         self._stop = r.stop_reason
         out = "".join(b.text for b in r.content if b.type == "text")
+        if getattr(self, "tuned", False):
+            if out.strip() in ("-", "–", "—"):
+                out = ""                              # CLAUDE_RULES: nothing understandable in the piece
+            elif _CLAUDE_META.search(out) and not _CLAUDE_META.search(msgs[-1]["content"].rsplit(":\n", 1)[-1]):
+                print(f"translate: claude comment dropped: {out[:120]!r}", file=sys.stderr)
+                out = ""                              # a comment about the input, not a translation
         if self._usage_log is not None:
             u = r.usage
             with open(self._usage_log, "a") as f:
@@ -655,8 +695,9 @@ def make_translator(spec: str):
         return NLLBTranslator(name)
     if kind == "mlx":
         return MLXLLMTranslator(name)
-    if kind == "claude":
-        return ClaudeTranslator(name)
+    if kind == "claude":                          # claude:<model>  or  claude:<model>:tuned (CLAUDE_RULES added)
+        model, _, variant = name.partition(":")
+        return ClaudeTranslator(model, tuned=variant == "tuned")
     raise ValueError(spec)
 
 

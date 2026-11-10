@@ -57,6 +57,18 @@ def test_sends_gemmas_messages(tmp_path):
     assert '"in": 100' in (tmp_path / "u.jsonl").read_text()
 
 
+def test_tuned_adds_rules_and_drops_comments():
+    c = FakeClient(text="The input is garbled, so I can't translate it.")
+    t = make(c)
+    t.tuned = True
+    assert t.translate("He grigod and celeste.", "en", "ro", None) == ""
+    assert c.calls[0]["system"].startswith(T.SYSTEM[("en", "ro")]) and "single hyphen" in c.calls[0]["system"]
+    c.text = "-"
+    assert t.translate("He grigod and celeste.", "en", "ro", None) == ""
+    c.text = "Traducerea textului."                         # the word is in the source: a translation
+    assert t.translate("The translation of the text.", "en", "ro", None) == "Traducerea textului."
+
+
 def test_truncation_from_stop_reason():
     t = make(FakeClient(stop="max_tokens"))
     t.translate("A long piece.", "en", "ro", None)
