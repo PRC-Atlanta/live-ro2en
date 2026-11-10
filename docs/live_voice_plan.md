@@ -92,7 +92,7 @@ It turns English→Romanian caption chunks into whole sentences that can be spok
 |---|---|
 | `text` | `translation`, the translator's output **before** `tidy_clause`. The screen copy has its punctuation rewritten for the rolling caption box. |
 | `id`, `t_speech`, `t_end`, `t_display` | the clause event and the log record |
-| `scripture` | `verse` is set (a published verse), **or** the translator's `reading.ref` is active (a reading was announced in the last `scripture.CHUNKS` chunks). This needs a small accessor on the translator that returns `reading.ref` after each `translate`. |
+| `scripture` | `verse` is set (a published verse), **or** the translator's `reading.ref` is active. For the voice, **every verse match restarts the reading's window** of `scripture.CHUNKS` (6) chunks, so a long reading stays marked between matches. Found 2026-11-10: with the window counted only from the announcement, a summary condensed Matthew 25:25–26 in the Alex sermon. The window also marks the speaker's own words for a few chunks after a short quote, which is the safe direction: it only blocks summaries there. This needs a small accessor on the translator that returns `reading.ref` (and whether this chunk matched a verse) after each `translate`. |
 | `redo` | the late-verse `replace_prev` case (see 2.4) |
 | `caught_up` | `ev["caught_up"]` (captions merged after falling behind) |
 
@@ -204,7 +204,7 @@ for the Quality profile:
   > Rewrite the Romanian sentences you are given as one or two short, natural Romanian sentences
   > that keep the main point, any names and any Bible references. **Keep the speaker's own words
   > in the first person: never change who is speaking or whose something is (my stays my, our
-  > stays our).** Do not add an introduction such as „Pe scurt”, do not comment, do not use
+  > stays our). Keep every verb in the person it has.** Do not add an introduction such as „Pe scurt”, do not comment, do not use
   > quotation marks. Output only the sentences.
 
   User message: `Sentences ({n} words; answer in at most {round(0.4·n)} words):` followed by one
@@ -221,6 +221,11 @@ for the Quality profile:
      summary may not use a person (eu/noi/tu/voi and their forms) that the input does not have.
      (c) An input with first-person words must keep at least one. Rule (c) is checked on both
      runs' summaries for false rejections before it is switched on.
+     **Second person singular and plural count as one person** (tău/vostru, tu/voi): the English
+     "your/you" does not say which, so the Romanian form is only the translator's guess. Rejecting
+     "talentul tău" → "talentul vostru" protected nothing in the Alex run (2026-11-10).
+     No guard can see lost meaning (the eulogy's "…fără ca nimeni să știe" was dropped by an
+     accepted summary), so the listening checks (§9) include every played summary.
   4. **Nothing invented.** Every name (a capital not at the start of a sentence) and every number
      in the summary must appear in the input, compared without diacritics and on the first 5
      letters, so inflected forms still match.
@@ -331,13 +336,12 @@ at 1.5 while it is far behind, and eases back the same way (1.5 → 1.4 → 1.3 
 up.
 
 The speed changes only **between** sentences. Supertonic predicts one length for a whole sentence
-and `speed` divides it, so the model cannot speed up and slow down inside a sentence. If a step of
-0.1 between two sentences turns out to be audible, use the 0.05 step: the simulation gives the same
-delays.
+and `speed` divides it, so the model cannot speed up and slow down inside a sentence.
 
-The lag also wobbles by a few tenths from sentence to sentence (1.47 → 1.36 → 1.42 in the
-simulation). The controller ignores a change of the target smaller than 0.05, so the speed holds
-steady.
+**The target is rounded to steps of 0.05** (1.25, 1.30 … 1.50) before the ±0.1 limit. The lag
+wobbles by a few tenths from sentence to sentence, and without rounding the speed took odd values
+(1.47) or hovered at 1.30–1.37. (An earlier "ignore changes under 0.05" rule did that: a target
+just below the current speed never moved it.)
 
 Simulated on the two runs without summaries (recorded generation times and lengths; the eulogy was
 voiced at 1.05 and scaled):
@@ -349,8 +353,27 @@ voiced at 1.05 and scaled):
 | Sermon: sentences still >10 s late (need a summary) | 35 | 17 |
 
 Jumping straight between 1.25, 1.35 and 1.5 gives the same delays (8.0 s / 68% on the sermon), so
-easing the speed costs nothing. Speeds above 1.25 have **not been listened to yet**. M0 makes sample
-sentences at 1.35 and 1.5 for the user to approve, and `voice.speed_max` drops if 1.5 sounds rushed.
+easing the speed costs nothing.
+
+**Voiced runs (2026-11-10)**: both recordings were voiced with Supertonic at each sentence's speed,
+with Gemma summaries, the guards above, the whole-reading Scripture window and skip-ahead
+(`work/tts_bakeoff/src/live_sim/live_sim_pace.py`; output in `work/tts_bakeoff/live_sim_alex_pace/`
+and `live_sim_eulogy_pace/`). The user listened to both and kept this version.
+
+| | Sermon: always 1.25, summaries | Sermon: this pacing | Eulogy: 1.05, summaries | Eulogy: this pacing |
+|---|---|---|---|---|
+| Median / p90 / max delay after the speaker's end | 5.1 / 9.7 / 17.4 s | 6.5 / 13.8 / 19.6 s | 4.1 / 10.0 / 14.4 s | 3.5 / 9.0 / 11.5 s |
+| Sentences within 10 s | 90% | 75% | 89% | 96% |
+| Voiced seconds within 10 s | 95% | 74% | 93% | 97% |
+| Summaries played | 9 | 1 | 7 | 1 |
+| Skips | — | 0 | — | 0 |
+| Speed | 1.25 | 1.30–1.50, median 1.50 | 1.05 | 1.25–1.50, median 1.40 |
+
+The sermon is later than with always-summarize because the parable reading (Matthew 25, sentences
+25–41) is Scripture now and can be neither summarized nor skipped: the voice runs at 1.5 and catches
+up after the reading. Most other late items are short sentences stuck behind a long one. The
+eulogy's baseline was voiced at 1.05, which flatters the comparison a little. Measured timings vary
+by about a second from run to run.
 
 **Catch-up summary**, when the speed is not enough. When the generation thread takes up sentence
 `s`:
@@ -474,6 +497,7 @@ voice:
   speed_lag_lo_s: 2.0   # behind by this much or less: normal speed
   speed_lag_hi_s: 6.0   # behind by this much or more: speed_max
   speed_step: 0.1       # most the speed changes from one sentence to the next
+  speed_round: 0.05     # the target speed is rounded to this step
   threads: 4            # set by the M0 measurement
   bitrate_kbps: 64
   preroll_s: 1.0
@@ -505,7 +529,8 @@ voice:
 - **Guards**: every summary in both `summaries.json` files is labelled by hand once (pass/fail).
   The guards must reject "tatăl meu → tatăl său", any summary of a Bible reading, and every
   summary that is not shorter. False rejections are reported.
-- **Speed**: from the same recorded timings, the speed never changes by more than `speed_step`
+- **Speed**: from the same recorded timings, the speed only takes values on the `speed_round` grid,
+  never changes by more than `speed_step`
   between sentences, returns to 1.25 once caught up, and reproduces the §4.3 table within 0.2 s.
 - **Scheduler**: a fake voice with the recorded `gen_s` / `audio_s` from the two runs reproduces
   the `timeline_live_hold0_catchup.csv` numbers (median, p90, share within 10 s) within 0.1 s.
@@ -533,7 +558,8 @@ also turned catch-up merging off (`live.lag_warn_s: 0`, `live.catchup_max_words:
 replay does (`docs/bench.md`).
 
 `voice_report.py` produces, from the real played items, the same numbers as `live_sim`: delay from
-the speaker's end to play start (median, p90, max), share within 10 s, summaries and sentences
+the speaker's end to play start (median, p90, max), share of sentences and of voiced seconds
+within 10 s (a short sentence stuck behind a long one counts as a whole item), summaries and sentences
 condensed, silence between items, and the stage breakdown (recognise+translate, sentence wait,
 summarise, generation queue, generate, stream queue). It also produces the captions-impact
 comparison of §6, and a mix of the English transcript audio with the voice, as `live_sim.mix` does.
@@ -542,12 +568,13 @@ comparison of §6, and a mix of the English transcript audio with the voice, as 
 
 | Run | Median delay | Within 10 s | Other |
 |---|---|---|---|
-| Eulogy | ≤ 4.6 s | ≥ 87% | |
-| Continuous sermon | ≤ 5.6 s | ≥ 88% | |
+| Eulogy | ≤ 4.0 s | ≥ 94% | |
+| Continuous sermon | ≤ 7.0 s | ≥ 72% | |
 | Both | | | No summary covers Scripture. No accepted summary changes person (checked by hand). The §6 captions gate passes. |
 
-The simulation's results (4.1 s / 89% and 5.1 s / 90%) plus 0.5 s / 2 points of slack, because
-generation now shares the CPU.
+The voiced runs of 2026-11-10 (3.5 s / 96% and 6.5 s / 75%, §4.3) plus 0.5 s / 2–3 points of slack,
+because generation now shares the CPU with the captions. The sermon's share is low by design: a
+long Scripture reading is never condensed or skipped.
 
 **Listening checks**: the user listens to both `voice.mp3` files in full, including every summary,
 before the rehearsals.
@@ -587,7 +614,7 @@ points' load. Only then go to about 100 listeners.
 
 | # | Milestone | Done when |
 |---|---|---|
-| M0 | **Groundwork** | Supertonic 3 copied to the church repo and pinned in `models.lock.txt`. `.venv-voice` (dev) set up. RTF measured on the Mac Studio, alone and during a Quality bench replay, for the three thread options (§6). Digits and references in Romanian checked. Sample sentences at 1.35 and 1.5 approved by ear (sets `speed_max`). macOS 14 wheels for onnxruntime and lameenc confirmed. Memory with Gemma kept as a spare in Fast checked. |
+| M0 | **Groundwork** | Supertonic 3 copied to the church repo and pinned in `models.lock.txt`. `.venv-voice` (dev) set up. RTF measured on the Mac Studio, alone and during a Quality bench replay, for the three thread options (§6). Digits and references in Romanian checked. macOS 14 wheels for onnxruntime and lameenc confirmed. Memory with Gemma kept as a spare in Fast checked. |
 | M1 | **Sentence step** (`speech.py`), logging only | Unit tests pass; live-mode boundaries ≥95% of the simulation on both runs; `sentence` events in the service log |
 | M2 | **Voice process**: protocol, generation, play clock, MP3 stream, listener page; started and supervised by the orchestrator | A bench replay produces `voice.mp3`; stream tests (100 clients) pass; the offline test passes |
 | M3 | **Corrections and state** (§2.4) | Correction tests pass; Hide/Blank/Song are silent within 0.3 s on a replay |
@@ -617,6 +644,16 @@ All six questions are answered; the answers are in §0 and in the sections they 
 
 Still to decide after R1: whether the 10 s limit counts the phone's buffer.
 
+**Known limits, outside Live Voice** (found in the voiced eulogy, 2026-11-10):
+- **Romanian said inside an English chunk is captioned as English** ("Dragoș a iubit pe Domnul"
+  became "…ai bătut-o pe pedomnal", 5 times in the eulogy). The voice reads what the captions
+  show. This is the captions' language detection, already listed as idea 12 in
+  `docs/translation_ideas.md`.
+- **The voice keeps talking over the speaker's Romanian at a language switch** (47 s over the
+  eulogy's 9 switches). The voice learns of a switch only when the first Romanian caption is out,
+  6–13 s into the Romanian, so what overlaps is the end of the speaker's last English sentence.
+  Only an earlier switch signal from Live RO2EN's language detection would shorten it.
+
 ---
 
 ## 13. Considered and not chosen
@@ -632,6 +669,12 @@ Still to decide after R1: whether the 10 s limit counts the phone's buffer.
   after the speaker began it. Simulated 2026-11-10: it shortens the gaps that slow captions cause, but
   it waits on purpose. On the continuous sermon it still fell up to 26 s behind with a 20 s delay.
   The user chose to stay as close to the speaker as possible instead (§4.3).
+- **Splitting long sentences for the voice** (at a comma after about 25 words) and **fading the
+  voice out at a switch to Romanian**. Voiced on the eulogy 2026-11-10: the overlap with the
+  speaker's Romanian fell only from 47 s to 40 s (either one) or 38 s (both). Splitting made the
+  delay worse (sermon median 6.5 → 9.0 s, within 10 s 75% → 58%), and the fade cut two key lines,
+  including a summary that was the point of its story. The user chose neither. Both stay as options
+  in `live_sim_pace.py`, off by default.
 - **HLS / AAC instead of a continuous MP3.** It would add 6–10 s of segment delay. It stays the
   fallback if R1 shows locked iPhones will not play the MP3 stream.
 - **A safety hold before speaking.** No English→Romanian caption has ever been retracted or
