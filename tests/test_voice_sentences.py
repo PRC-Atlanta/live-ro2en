@@ -341,7 +341,7 @@ def test_words_waiting_are_spoken_when_the_voice_is_silent_even_while_the_speake
     def run(status, wait_s):
         d = tmp_path / str(len(list(tmp_path.iterdir())))     # a log of its own for each run
         d.mkdir()
-        live = _live(d, flush_s=0.4)
+        live = _live(d, flush_s=0.6)
         live._speech_idle = lambda: False                     # the speaker is still talking
         live._voice_status, live._voice_status_t = status, time.time() + 60    # a fresh status for the whole test
         t = time.time() - 30
@@ -351,10 +351,10 @@ def test_words_waiting_are_spoken_when_the_voice_is_silent_even_while_the_speake
         return [s["why"] for s in _events(live, "sentence")]
     quiet = {"langs": {"ro": {"queue_n": 0, "playing_sid": None}}}
     busy = {"langs": {"ro": {"queue_n": 1, "playing_sid": 7}}}
-    assert run(busy, 1.0) == []                               # past 1.5 × flush_s, before 3 × flush_s
-    assert run({}, 1.0) == []                                 # no voice process answering: as before
-    assert run(quiet, 0.45) == []                             # the voice is silent, but only flush_s has passed
-    assert run(quiet, 1.0) == ["flush"]
+    assert run(busy, 1.3) == []                               # past 1.5 × flush_s, before 3 × flush_s
+    assert run({}, 1.3) == []                                 # no voice process answering: as before
+    assert run(quiet, 0.7) == []                              # the voice is silent, but only flush_s has passed
+    assert run(quiet, 1.3) == ["flush"]
 
 
 def test_hide_blank_and_song_discard_the_open_sentence(tmp_path):
