@@ -16,6 +16,7 @@ This document is the build plan: what to build, where, in what order, and how to
 | Topic | Decision | Source |
 |---|---|---|
 | Voice model | **Supertonic 3, preset voice M2**, 8 steps, speed 1.25, ONNX on the CPU. No voice cloning, so no consent is needed. Licence OpenRAIL-M. | Two blind rounds against Piper, OmniVoice, Higgs Audio v3, ZONOS2, FireRedTTS3 (2026-11-09/10) |
+| English voice | **The same model and voice: Supertonic 3 M2**, `lang="en"`, 8 steps, the same pacing. A second stream at `/listen/en` (§14). | Blind test against Supertonic M1/M5, Kokoro, Piper (user, 2026-11-10) |
 | Model files | **Keep our own copy.** The company may be closing (unconfirmed). Supertonic 3 is about 385 MB (`~/.cache/supertonic3` on the dev Mac, package `supertonic` 1.3.1). | |
 | **Hardware** | **The same Mac Studio as Live RO2EN** (user, 2026-11-10). This replaces the separate M5 Mac mini in the Claude Doc. | This plan, §6 |
 | Safety hold | **None.** In the logs, no English→Romanian caption has ever been retracted or corrected. | Live timing test |
@@ -682,3 +683,72 @@ Still to decide after R1: whether the 10 s limit counts the phone's buffer.
 - **Supertonic on the GPU or Neural Engine (CoreML execution provider).** Gemma and Parakeet already
   use the GPU, and the CPU is the less contended resource. Revisit only if M0's RTF under load
   fails the gate.
+
+---
+
+## 14. English voice (decided 2026-11-10)
+
+The English stream reads the **English translation of a Romanian speaker** for English-only listeners.
+The user chose it in a blind test: "P clearly", which was Supertonic M2.
+
+| | |
+|---|---|
+| Model | **Supertonic 3**, the same files as the Romanian voice (no new download) |
+| Voice | **M2**, the same preset as Romanian |
+| Steps | 8 |
+| Speed | 1.25, easing up to 1.5 when behind: the §4.3 rule with the same settings |
+| Generation speed | Generation time ÷ audio length (RTF) 0.19–0.21 on the M3 Max dev Mac, CPU only, 4 onnxruntime threads, with a Romanian replay running alongside |
+| Licence | OpenRAIL-M (as Romanian) |
+
+**Blind test** (`work/tts_bakeoff/en/blind`, letters P–U): Supertonic M1, M2 and M5, Kokoro v1.0
+`am_michael` and `bm_george` (Apache-2.0, ONNX, RTF 0.23–0.25), and Piper `en_US-ryan-high` (RTF 0.14;
+its voice data is CC BY-NC-SA). All were matched to about 200 words a minute (Supertonic M2 at 1.25 speed),
+on real English translations from services: 15 lines of references, names and numbers, plus a 9-sentence sermon passage.
+Whisper large-v3-turbo found 1.7–3.5% word errors for all six, mostly digits written differently.
+Not tested: Supertonic M4, which dropped most of a sentence, and M3, which speaks at 240 words a minute.
+OmniVoice, Higgs and FireRed were left out because they need a cloned reference voice.
+
+**Pacing on a Romanian sermon** (`logs/bench/runs/tts-live-ro-nelu`: nelu-suciu, 10 minutes, replayed at
+×1; voiced with `work/tts_bakeoff/src/live_sim/live_sim_pace_en.py`, which wraps `live_sim_pace.py`):
+
+| | Median / p90 / max delay after the speaker's end | Within 10 s | Summaries / skips | Speed |
+|---|---|---|---|---|
+| §4.3 rule (1.25 → 1.5) | 5.1 / 9.4 / 12.4 s | 98% | 1 / 0 | median 1.45 |
+| Always 1.25 | 5.5 / 11.0 / 13.7 s | 86% | 2 / 0 | 1.25 |
+| Lag thresholds moved to 4 → 8 s | 5.4 / 10.5 / 13.3 s | 88% | 1 / 0 | median 1.35 |
+
+The rule works for English. The English voice simply runs faster: Romanian-to-English captions arrive
+later (median 2.85 s after the speaker's end, against 1.9 s for English to Romanian), and the Romanian
+speaker's sentences are longer (32 words against 21). So the 2 s threshold is passed before the
+voice is really behind, and it speaks at 1.40–1.50 for most of the sermon. The plan keeps the §4.3
+settings for both languages. If 1.45 sounds too fast for English, the thresholds can be set per
+language (`voice.en.lag_lo_s`), at the cost of fewer sentences within 10 s (88%).
+The user has not yet listened for this: `work/tts_bakeoff/en/pacing/`.
+
+**What changes for the English stream:**
+- **A second stream, `/listen/en`.** `/listen` stays Romanian (alias `/listen/ro`). Each listener picks a
+  language once, and a stream is silent while the other language is being spoken. A single stream that
+  switches language would play Romanian to people who don't understand it. The listener page gets two
+  buttons, **Ascultă în română** and **Listen in English**, each with its own Media Session title.
+- **One voice process, one model, one generation thread.** Sentences already carry `lang` (§2.3), and only
+  one direction is spoken at a time, so the CPU load is the same as with Romanian only. Each language has
+  its own queue, play clock and LAME encoder (an encoder that only sends silence costs almost nothing).
+  At a language switch, the old language's queue finishes in its own stream while the new one starts, so
+  neither waits for the other. Warm up both languages before `ready`.
+- **Pacing state per language**: the speed, `est_gen`, the summary and skip decisions, and `behind_s` in `status`
+  are kept per stream. The settings are shared.
+- **Sentence step (§2.2) for `lang == "ro"` chunks** (the English translation), with English rules:
+  a chunk-initial capital is lowercased only for `captions._LOWER` words and other non-names (names =
+  `captions._KEEP_CAP`, "I", the glossary's English names, and capitals seen mid-sentence);
+  "1/2/3 Corinthians, Thessalonians, Timothy, Peter, John, Kings, Samuel, Chronicles" → "First/Second/Third …".
+  The flush at a language switch now applies in both directions.
+- **Speakable text (English)**: every voice tested read "Second Corinthians 5:7" as "5-7" or "5, 7". After a
+  book name, `N:M` → "N, verse M", and `N:M-K` → "N, verses M to K". A clock time ("at 1:11") is left as it is.
+  Supertonic reads other numbers ("160 dollars", "80 years") correctly.
+- **Summaries in English**: the §2.5 prompt in English, with the same guards using English person words
+  (I/me/my, we/us/our, you/your), a check that rejects output that reads as Romanian
+  (`langid.score > 0.15`), and "In short" in place of „Pe scurt”. The Scripture rule (the `reading.ref` window) is unchanged.
+- **Settings**: `voice.voices: {ro: M2, en: M2}`, and `voice.en.enabled` (on with Live Voice).
+  The operator's **VOICE** light shows listeners per language.
+- **Testing**: M0 adds 20 English sample sentences (references, names, numbers). The M1 sentence-boundary
+  test also runs on `tts-live-ro-nelu`, and the M6 gate is run on a Romanian replay too.
