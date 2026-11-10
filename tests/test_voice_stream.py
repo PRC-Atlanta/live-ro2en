@@ -471,3 +471,30 @@ def test_the_real_encoder_makes_cbr_mp3():
     out = subprocess.run([str(VOICE_PY), "-c", code], capture_output=True, text=True, cwd=ROOT, timeout=30)
     assert out.returncode == 0, out.stderr
     assert 76_000 <= int(out.stdout.strip()) <= 81_000        # 10 s of silence at 64 kbps = 80 000 bytes
+
+
+@needs_voice_env
+@pytest.mark.parametrize("how", ["paused", "song", "blank"])
+def test_hide_song_and_blank_are_silent_within_the_fade(proc, how):
+    """M3: from the operator's action to the last voiced sample is the 0.3 s fade (plus one 26 ms frame)."""
+    v = proc()
+    v.state()
+    v.sentence(1, " ".join(["cuvant"] * 30))
+    time.sleep(1.5)
+    v.state(**({"blank_n": 1} if how == "blank" else {how: True}))
+    v.wait("item", 3)
+    hush = v.records("hush")[0]
+    item = v.records("item")[0]
+    assert item["cut"] and 0.0 <= item["t"] - hush["t"] <= voice_fade() + 0.12, item["t"] - hush["t"]
+    assert item["played_s"] < item["audio_s"] - 2                # it did not play to its end
+    # and the stream goes on: silence is still being encoded
+    c = http.client.HTTPConnection("127.0.0.1", v.port, timeout=5)
+    c.request("GET", "/listen/ro")
+    r = c.getresponse()
+    assert len(r.read(4000)) == 4000
+
+
+def voice_fade():
+    src = (ROOT / "src" / "voice" / "voice.py").read_text()
+    import re
+    return float(re.search(r"^FADE_S = ([\d.]+)", src, re.M).group(1))

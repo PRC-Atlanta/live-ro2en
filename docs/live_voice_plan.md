@@ -219,6 +219,28 @@ Each `state` message holds the whole state (`paused, blank, song, held, running,
 summarizer`), not just what changed, and is sent again every second. A voice process that restarts
 is therefore in step within a second.
 
+**Built (M3, 2026-11-10)**: `src/live/speech.py` (sentence side), `src/voice/voice.py` (`on_change`, `hush`),
+hooks in `src/live/output.py` (`_voice_op`) and `pipeline.py` (`_speech_mark`).
+- **Blank is a counter** (`blank_n`), not a flag: the state is repeated every second, and a one-shot flag
+  would either be missed or fire again. The voice hushes when the counter goes up.
+- **Remove last follows the screen:** every caption that reaches the screen takes its place in one ordered
+  list *inside the screen's lock*, so Remove last (also pressed twice), Blank, Hide and Show that arrive
+  while the sentence step is still working act on the right chunk. A caption that is not voiced (the
+  English stream off) only loses its place.
+- **A late verse follows the screen too:** the screen takes the previous caption back and shows one
+  combined caption, so the voice takes the previous chunk out of its sentence (`retract` or `replace`) and the
+  new chunk carries the combined text *after* the safety filter. If that sentence was already spoken, the
+  first words are heard again with the verse; the plan's "is not repeated" holds only when it had not started.
+- **In the voice:** a sentence still waiting is dropped or its text swapped; one being generated is dropped or
+  generated again; one queued is removed or spoken again in the same place; one playing or played is left
+  alone and logged `too_late`. A sentence inside a summary that already exists is also `too_late`.
+- **Hide / Song / Blank:** the item playing fades over 0.3 s, the queue and the waiting sentences are dropped,
+  and sentences that arrive while hidden are dropped. Measured in `tests/test_voice_stream.py` on the real
+  play clock: from the state message to the end of the item ≤ 0.3 s + one frame; the stream keeps sending
+  (silence). Not measured on a bench replay: a replay is headless and takes no operator actions.
+- **Hold and Stop** change nothing in the voice: it keeps speaking and finishes its queue. Items played after
+  Stop are still written to that service's log.
+
 ### 2.5 Catch-up summaries run on the orchestrator's Gemma
 
 The voice process decides **when** to catch up (§4.3), because only it knows its queue and play
