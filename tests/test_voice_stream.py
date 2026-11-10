@@ -543,3 +543,57 @@ def test_blank_while_a_sentence_is_being_generated_drops_it(proc):
     assert item["sids"] == [2]
     st = v.wait("status", 5, n=len(v.of("status")) + 1)
     assert "clock_age_s" in st and st["clock_age_s"] < 1.0
+
+
+def _behind(v, n=3, words=24):
+    """Sentences that pile up: each plays ~6 s and all were said 3 s ago, so the third would start about
+    15 s after the speaker: past the 10 s limit, under the 20 s skip."""
+    for sid in range(1, n + 1):
+        v.sentence(sid, " ".join([f"cuvant{sid}"] * words), behind=3.0)
+
+
+@needs_voice_env
+def test_a_catch_up_summary_replaces_the_queued_sentences(proc):
+    v = proc(env={"FAKE_GEN_S": "0.02"})
+    v.state(summarizer=True)
+    _behind(v, 3)
+    ask = v.wait("summarize", 10)
+    assert ask["lang"] == "ro" and ask["sids"] == [2, 3] and len(ask["texts"]) == 2
+    v.send({"type": "summary", "req": ask["req"], "ok": True, "text": "pe scurt despre toate", "gemma_s": 0.5})
+    end = time.time() + 20
+    while time.time() < end and not any(i["kind"] == "summary" for i in v.of("item")):
+        time.sleep(0.05)
+    summ = next(i for i in v.of("item") if i["kind"] == "summary")
+    assert summ["sids"] == ask["sids"] and summ["words"] == 4
+    played = [sid for i in v.of("item") for sid in i["sids"]]
+    assert len(played) == len(set(played))                   # nothing was spoken twice
+
+
+@needs_voice_env
+def test_a_refused_or_late_summary_leaves_the_sentences_as_they_were(proc):
+    v = proc(env={"FAKE_GEN_S": "0.02"}, cfg={"summary_timeout_s": 0.6})
+    v.state(summarizer=True)
+    _behind(v, 3)
+    ask = v.wait("summarize", 10)
+    v.send({"type": "summary", "req": ask["req"], "ok": False, "reason": "not_shorter", "text": ""})
+    v.wait("item", 30, n=3)
+    assert sorted(sid for i in v.of("item") for sid in i["sids"])[:3] == [1, 2, 3]
+    assert all(i["kind"] == "sentence" for i in v.of("item"))
+    rec = v.records("summarize")
+    assert rec and rec[0]["accepted"] is False and rec[0]["reason"] == "not_shorter"
+
+
+@needs_voice_env
+def test_remove_last_while_a_summarys_audio_is_generated_keeps_the_queue(proc):
+    v = proc(env={"FAKE_GEN_S": "0.25"})                     # the 4-word summary takes 1 s to generate
+    v.state(summarizer=True)
+    _behind(v, 3)
+    ask = v.wait("summarize", 20)
+    v.send({"type": "summary", "req": ask["req"], "ok": True, "text": "pe scurt despre toate", "gemma_s": 0.1})
+    time.sleep(0.4)                                          # the summary is being generated now
+    v.send({"type": "retract", "sid": ask["sids"][-1]})      # Remove last: the sentence in hand
+    time.sleep(14)
+    kinds = [i["kind"] for i in v.of("item")]
+    assert "summary" not in kinds                            # the summary was given up
+    played = [sid for i in v.of("item") for sid in i["sids"]]
+    assert ask["sids"][-1] not in played and set(ask["sids"][:-1]) <= set(played)   # the others are still heard

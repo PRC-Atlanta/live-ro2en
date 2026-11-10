@@ -366,6 +366,10 @@ class Voice:
                 it.audio_s = len(pcm) / stream.SR
                 it.covers = [{**it.covers[0], "text": text}] if it.covers else it.covers
                 return
+        with self.wake:                                     # corrections kept coming: once more, later
+            with p.lock:
+                if it in p.queue and it.stale is not None:
+                    self.inbox.appendleft(("regen", it))
 
     def ask_summary(self, lang: str, batch: list[dict]) -> dict:
         """Ask the orchestrator to condense `batch`; {ok, text, reason, gemma_s}. Gives up after
@@ -419,18 +423,26 @@ class Voice:
                     pcm, gen_s = self.say(r["text"], lang, d["speed"])
                     pace.generated(gen_s, len(r["text"].split()))
                     self.rtf.append((gen_s, len(pcm) / stream.SR))
-                    with player.lock:
-                        # The summary replaces the items it covers. If one of them started playing while
-                        # the summary was written (up to summary_timeout_s), the summary is dropped: that
-                        # sentence would be heard twice. The simulation cleared the queue at once.
-                        if all(q in player.queue and q.stale is None for q in queued):   # none started, removed or replaced
-                            player.queue = [q for q in player.queue if q not in queued]
-                            item = Item(lang, "summary", r["text"], d["ask"], pcm, gen_s, d["speed"], pause, summarize_s)
+                    # The summary replaces the items it covers, in one step with on_change and hush. If
+                    # meanwhile one of them started playing, was removed or was corrected, or this sentence
+                    # was, or Hide / Song / Blank came, the summary is dropped and the queue left as it is:
+                    # nothing is heard twice, nothing uncorrected is spoken, nothing is lost.
+                    with self.wake:
+                        with player.lock:
+                            if (hush_n == self.hush_n and self.current_stale is None
+                                    and all(q in player.queue and q.stale is None for q in queued)):
+                                player.queue = [q for q in player.queue if q not in queued]
+                                item = Item(lang, "summary", r["text"], d["ask"], pcm, gen_s, d["speed"], pause,
+                                            summarize_s)
+                                item.lag_est, item.target = d["lag"], d["target"]
+                                self.current = None
+                                player.queue.append(item)
                     if item is not None:
                         self.counts["summaries"] += 1
-                    else:
-                        rec.update(accepted=False, reason="started_meanwhile")
-                        self.counts["summaries_late"] += 1
+                        self.log(rec)
+                        return
+                    rec.update(accepted=False, reason="changed_meanwhile")
+                    self.counts["summaries_late"] += 1
                 else:
                     self.counts["summaries_refused"] += 1
             else:
