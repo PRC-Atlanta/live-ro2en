@@ -673,3 +673,34 @@ def test_a_rejected_key_recovers_when_a_new_one_is_saved():
     e.reload_key()
     assert e.up and e.down_reason is None
     e.close()
+
+
+def test_a_call_cut_short_by_the_phrase_budget_does_not_take_the_engine_down():
+    waits = iter([0.25, 0.3, 0.0, 0.0])
+
+    def reply(kw):
+        time.sleep(next(waits))
+        return "Answer."
+    t, c, e = hybrid(reply, local=FakeNLLB(), timeout_s=1.0, phrase_s=0.45)
+    t.begin_phrase()
+    assert t.translate("Prima întrebare a zilei.", "ro", "en", None, use_context=True) == "Answer."
+    out = t.translate("Prima întrebare a zilei.", "ro", "en", None)       # 0.2 s left: too short for this answer
+    assert out.startswith("[") and e.up                                # the local model, and the engine stays up
+    t.begin_phrase()
+    assert t.translate("Altă frază.", "ro", "en", None, use_context=True) == "Answer." and t.engines_used == {"ai"}
+
+
+def test_stuck_calls_never_stand_in_the_way_of_the_next_one():
+    slow = {"s": 1.0}
+
+    def reply(kw):
+        time.sleep(slow["s"])
+        return "ok"
+    e, c, _ = engine(reply, timeout_s=0.15)
+    for _ in range(5):                                               # five calls hang past their budget
+        with pytest.raises(ai.Unavailable):
+            e.call("s", [{"role": "user", "content": "x"}], soft=True)
+    slow["s"] = 0.0
+    assert e.call("s", [{"role": "user", "content": "y"}])[0] == "ok"    # the next one is sent at once and answers
+    assert e.up
+    e.close()

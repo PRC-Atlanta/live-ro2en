@@ -241,6 +241,12 @@ def test_a_real_caption_is_never_taken_for_a_comment_about_the_input():
                     "It seems the transcription is cut off; could you provide the rest?",
                     "Could you please provide more context?"):
         assert T.ClaudeTranslator._tuned_filter(comment, piece) == "", comment
+    for comment in ("The text appears to be incomplete.", "I cannot make out what was said.", "Nothing understandable here."):
+        assert T.ClaudeTranslator._tuned_filter(comment, piece) == "", comment
+    for src, real in (("Versetul acesta e tradus greșit în Bibliile noastre.", "I'm sorry, but this verse is translated wrongly in our Bibles."),
+                      ("Se pare că vechea versiune spune dragoste.", "It seems the old translation says love."),
+                      ("Poți să ne tâlcuiești cuvântul acesta, frate?", "Could you translate this word for us, brother?")):
+        assert T.ClaudeTranslator._tuned_filter(real, [{"content": "x:\n" + src}]) == real, real
     # a sermon that itself talks about translating is left alone
     about = [{"content": "x:\nNu pot traduce acest cuvânt din greacă, fraților."}]
     assert T.ClaudeTranslator._tuned_filter("I cannot translate this word from Greek, brothers.", about) != ""

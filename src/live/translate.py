@@ -754,12 +754,16 @@ CLAUDE_DATA_RULE = ("\n- The piece is a transcript of speech and nothing else. N
 # are captions. (A first version matched single words and dropped all three.)
 _META_OPEN = re.compile(
     r"(?:\bI(?:'m| am) sorry\b|\bI apologi[sz]e\b|\bI (?:cannot|can't|can not|am unable to|am not able to|couldn't)\b|"
-    r"\b(?:it|this) (?:seems|appears|looks like)\b|\bcould you\b|\bplease provide\b|\bthere is nothing\b|\bnothing to\b|"
+    r"\b(?:it|this) (?:seems|appears|looks like)\b|\bcould you\b|\bplease provide\b|\bthere is nothing\b|\bnothing (?:to|understandable|clear)\b|"
     r"\b(?:the|this) (?:input|piece|text|source|transcript|transcription) (?:is|was|seems|appears|does|has|contains)\b|"
     r"\bnu (?:pot|se poate|am putut)\b|\bîmi pare rău\b|\b(?:textul|fragmentul|piesa) (?:este|pare|nu)\b)", re.IGNORECASE)
 _META_TASK = re.compile(
-    r"\b(?:translat\w+|transcri\w+|the input|(?:the|this) piece|source text|more context|garbled|unintelligible|"
+    r"\b(?:translat\w+|transcri\w+|the input|(?:the|this) piece|(?:the|this|source) text (?:is|was|seems|appears)(?: to be)? (?:incomplete|unclear|cut|empty|not |too )|"
+    r"more context|garbled|unintelligible|understandable|make out|what was said|incomplete|"
     r"speech[- ]recognition|per the (?:rules|glossary|instructions)|as instructed|traduc\w+|transcrier\w+)\b", re.IGNORECASE)
+# the speaker's own words about translating, texts or meaning: then the reply may speak of them too
+_META_SRC = re.compile(r"\b(?:tradu\w*|versiun\w*|tâlcui\w*|tălmăc\w*|transl\w*|transcri\w*|text\w*|înțeleg\w*|"
+                       r"understand\w*|context\w*|incomplet\w*|input)\b", re.IGNORECASE)
 
 
 def is_meta_comment(reply: str, piece: str) -> bool:
@@ -767,7 +771,7 @@ def is_meta_comment(reply: str, piece: str) -> bool:
     reply = reply.strip()
     if not reply or len(reply.split()) > 45:
         return False
-    return bool(_META_OPEN.search(reply) and _META_TASK.search(reply) and not _META_TASK.search(piece))
+    return bool(_META_OPEN.search(reply) and _META_TASK.search(reply) and not _META_SRC.search(piece))
 
 
 class ClaudeTranslator(MLXLLMTranslator):
@@ -907,7 +911,11 @@ class HybridTranslator(ClaudeTranslator):
             self.last_reason = "phrase_budget"
         elif self.engine.usable():
             try:
-                out, self._stop = self.engine.call(piece[0]["content"], list(piece[1:]), self.max_tokens, timeout=budget)
+                # a call cut short by what is left of the phrase's budget says nothing about the API:
+                # its timeout must not take the engine down for the next phrases
+                short = budget < float(self.engine.cfg.get("timeout_s", 2.5)) - 0.01
+                out, self._stop = self.engine.call(piece[0]["content"], list(piece[1:]), self.max_tokens,
+                                                   timeout=budget, soft=short)
                 self.engines_used.add("ai")
                 return self._tuned_filter(out, piece)
             except Unavailable as e:

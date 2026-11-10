@@ -37,6 +37,7 @@ KEYCHAIN_SERVICE = "Live RO2EN Anthropic API key"
 KEYCHAIN_ACCOUNT = "live-ro2en"
 SECURITY = "/usr/bin/security"
 PROBE = ("Translate into English: Amin.", 8)       # the smallest real request
+MAX_INFLIGHT = 8
 
 
 class Unavailable(Exception):
@@ -130,7 +131,7 @@ class Engine:
         self._key: str | None = None
         self._key_source: str | None = "test" if client is not None else None
         self._key_checked = client is not None
-        self._pool = None                        # one worker: a call is waited for only as long as its budget
+        self._inflight = 0                       # calls on their way (or stuck)
         self._lock = threading.RLock()
         self.up = True                           # False: falling back to local until a probe succeeds
         self.down_reason: str | None = None
@@ -239,21 +240,46 @@ class Engine:
             if hit is not None:
                 self.counts["cache_hits"] += 1
                 return hit["text"], hit["stop"]
-        import concurrent.futures
         import anthropic
         budget = max(0.05, float(timeout if timeout is not None else self.cfg["timeout_s"]))
         late = self._soft if soft else self._fail          # a soft call's timeout is its own short deadline
         fail = self._fail                                   # everything else is the API or the network
         t0 = time.perf_counter()
-        if self._pool is None:
-            self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="ai-call")
-        fut = self._pool.submit(lambda: client.with_options(timeout=budget, max_retries=0).messages.create(
-            model=self.model, max_tokens=max_tokens, system=system, messages=messages, thinking={"type": "disabled"}))
+        # Its own thread, not a pool: a call stuck in DNS or a dead connection must never stand in the
+        # way of the next one. Stuck threads end when the HTTP client gives up; if many pile up the
+        # network is gone and nothing more is sent until they clear.
+        with self._lock:
+            if self._inflight >= MAX_INFLIGHT:
+                self.counts["not_sent"] += 1
+                busy = True
+            else:
+                self._inflight += 1
+                busy = False
+        if busy:
+            fail("network")
+        box: dict = {}
+        done = threading.Event()
+
+        def work():
+            try:
+                box["r"] = client.with_options(timeout=budget, max_retries=0).messages.create(
+                    model=self.model, max_tokens=max_tokens, system=system, messages=messages,
+                    thinking={"type": "disabled"})
+            except BaseException as e:                      # noqa: BLE001  handed to the caller below
+                box["e"] = e
+            finally:
+                with self._lock:
+                    self._inflight -= 1
+                done.set()
+        threading.Thread(target=work, daemon=True, name="ai-call").start()
         try:
-            r = fut.result(timeout=budget)
-        except concurrent.futures.TimeoutError:
-            fut.cancel()                                    # its answer, if it ever comes, is dropped
-            late("timeout")
+            if not done.wait(budget):
+                late("timeout")                             # its answer, if it ever comes, is dropped
+            if "e" in box:
+                raise box["e"]
+            r = box["r"]
+        except Unavailable:
+            raise
         except anthropic.APITimeoutError:
             late("timeout")
         except anthropic.APIConnectionError:

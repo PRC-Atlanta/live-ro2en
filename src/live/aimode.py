@@ -121,6 +121,8 @@ class AIMixin:
         eng = self.ai()
         has = eng.key_present(wait=False)               # only whether a key exists: no client, no host allowed,
                                                         # and never waiting for the Keychain in the state feed
+        if sel and not has and not eng._key_checked:    # AI chosen and the lookup still running at launch:
+            has = True                                  # not "no key" for that moment
         if not sel:
             state = "local"
         elif not has:
