@@ -188,7 +188,7 @@ and Romanian translations and the voice's summaries: **Local** is the models on 
 network at all; **AI** is Claude Haiku 5.5 and reaches `api.anthropic.com` and nothing else. In
 AI mode the local models stay loaded: any phrase the AI does not answer in time is translated
 locally, the knob turns amber, and it goes back to AI by itself. The API key is typed once in
-**Settings → AI translation** and kept in the macOS Keychain (from the source, `ANTHROPIC_API_KEY`
+**Settings → AI** and kept in the macOS Keychain (from the source, `ANTHROPIC_API_KEY`
 in `.env` also works). Without a key the knob stays on Local and says why.
 
 ## 4b. English speakers (English → Romanian)

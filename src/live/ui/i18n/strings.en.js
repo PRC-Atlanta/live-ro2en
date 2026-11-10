@@ -219,7 +219,7 @@ export const S = {
         "AI is chosen, but the internet or the AI service is not answering, so this Mac is translating by itself. Captions keep coming.",
         "It goes back to AI by itself. To stop trying, press A for Local."]],
       ["The Translator knob will not turn to AI", [
-        "AI needs an Anthropic API key. Add it in Settings → AI translation."]],
+        "AI needs an Anthropic API key. Add it in Settings → AI."]],
       ["People can't hear the voice on their phones", [
         "Look at the VOICE light at the top. Red: open Settings → Live Voice. Captions are not affected.",
         "The phone must be on the church Wi-Fi, the same network as this Mac.",

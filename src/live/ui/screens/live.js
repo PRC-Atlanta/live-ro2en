@@ -40,7 +40,7 @@ const DECK = `
   </div>
 
   <div class="ledrow">
-    <div class="pills" role="status">
+    <div class="pills">
       <span class="pill" data-pill="sound"><i></i><span></span></span>
       <span class="pill" data-pill="pp"><i></i><span></span></span>
       <span class="pill" data-pill="pace"><i></i><span></span></span>
@@ -182,6 +182,10 @@ export function render(el, store) {
     return res;
   }
   async function run(intent) {
+    // no key on this Mac: the Translator knob is disabled, and says why (nothing is sent)
+    if ((intent === "engine_ai" || (intent === "engine" && s.ai?.selected !== "ai")) && s.ai && !s.ai.available) {
+      toast(S.engine.noKey, "info", 4000); say(S.engine.noKey); return;
+    }
     if (intent === "view") return setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]);
     if (intent === "pp_on") {                            // the strip's "Turn on": Settings → ProPresenter on
       const r = await settingsCall("PUT", "settings", { values: { "propresenter.enabled": true } });
@@ -291,6 +295,7 @@ export function render(el, store) {
     ek.dataset.state = s.ai?.state || "local";           // fallback / no_key: amber ring
     ek.classList.toggle("nokey", !!s.ai && !s.ai.available);
     ek.title = s.ai && !s.ai.available ? S.engine.noKey : S.engine.title;
+    ek.setAttribute("aria-disabled", String(!!s.ai && !s.ai.available && s.ai.selected !== "ai"));
 
     const hidden = !!s.paused;
     const hb = q("[data-hide]");
@@ -354,10 +359,6 @@ export function render(el, store) {
       strip.querySelector(".t > span").textContent = ps.msg;
       strip.querySelector("button").textContent = ps.action.label;
     }
-
-    const where = document.querySelector("[data-where]");          // the footer says "offline" only while it is true
-    const whereText = s.ai?.selected === "ai" ? S.app.online : S.app.offline;
-    if (where && where.textContent !== whereText) where.textContent = whereText;
 
     const b = bannerFor(s), bn = q("[data-banner]");
     bn.classList.toggle("show", !!b);

@@ -690,6 +690,31 @@ def test_a_call_cut_short_by_the_phrase_budget_does_not_take_the_engine_down():
     assert t.translate("Altă frază.", "ro", "en", None, use_context=True) == "Answer." and t.engines_used == {"ai"}
 
 
+def test_a_phrases_first_call_takes_the_engine_down_whatever_the_timeout_setting():
+    """ai.timeout_s set above ai.phrase_s (Settings → Advanced allows 6 s): the first call's budget is then
+    always under the timeout, and a hung API must still turn the light amber."""
+    def reply(kw):
+        time.sleep(1.0)
+        return "late"
+    t, c, e = hybrid(reply, local=FakeNLLB(), timeout_s=5.0, phrase_s=0.6)
+    t.begin_phrase()
+    out = t.translate("Prima întrebare a zilei.", "ro", "en", None, use_context=True)
+    assert out.startswith("[") and not e.up and e.down_reason == "timeout"
+
+
+@pytest.mark.parametrize("reply, piece, comment", [
+    ("I'm sorry, the text appears to be incomplete.", "ca să înțelegem textul acesta", True),
+    ("I'm sorry, but this piece is garbled. Could you provide more context?", "do you understand what I mean", True),
+    ("It seems the input is incomplete.", "textul spune că", True),
+    ("It seems the input is incomplete.", "mi se pare că inputul este incomplet", False),     # the speaker says so
+    ("This text is not about translation.", "textul acesta nu e despre traducere", False),
+    ("I cannot understand this translation.", "nu pot înțelege traducerea aceasta", False),
+])
+def test_a_comment_about_the_input_is_not_excused_by_ordinary_sermon_words(reply, piece, comment):
+    import translate
+    assert translate.is_meta_comment(reply, piece) is comment
+
+
 def test_stuck_calls_never_stand_in_the_way_of_the_next_one():
     slow = {"s": 1.0}
 

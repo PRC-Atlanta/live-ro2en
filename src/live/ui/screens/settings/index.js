@@ -271,6 +271,7 @@ export function render(el, store) {
         engMsg.say("Switching…");
         const r = await call("POST", "engine", { engine: e });
         engMsg.say(r.ok ? "" : r.data?.detail || "Couldn't switch.", r.ok ? "" : "warn");
+        if (!r.ok) { lastSel = null; onState(store.get()); }      // the choice goes back to what is true
       };
       const engBox = h("div");
       const now = h("p.fx-note", { "aria-live": "polite" });

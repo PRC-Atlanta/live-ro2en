@@ -80,6 +80,10 @@ export function frame(el, opts = {}) {
         s.pp?.enabled === false ? "off" : !(s.pp ? !s.pp.connected : s.pp_error)));
       const ran = s.elapsed_s != null || Object.keys(s.counts || {}).length > 0;
       tb("after").hidden = !(here === "after" || (ran && !isLive(s)));
+      // the footer says "offline" only while it is true: with AI chosen, speech goes to the API as text
+      const where = el.querySelector("[data-where]");
+      const text = s.ai?.selected === "ai" ? S.app.online : S.app.offline;
+      if (where && where.textContent !== text) where.textContent = text;
     },
   };
   return api;
