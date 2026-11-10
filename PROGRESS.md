@@ -1,20 +1,16 @@
 # Progress
 
-## WHERE I AM (live-voice branch, 2026-11-10 ~14:00) — stopped by the usage limit
+## WHERE I AM (live-voice branch, 2026-11-10 evening)
 
-- **Done and committed:** M0–M5 (last: db93c98), idea 12, the AI / Local engine. 971 tests passed at db93c98.
-- **Running in the background when I stopped (shell jobs, they finish by themselves):** the ten M6 replays
-  `logs/bench/runs/lv6-{eulogy,alex}-{off,local,ai,ai-off}` and `lv6-nelu-{local,ai}` (queue script in the
-  session scratchpad), then `pr6-luigi-local` (x3) and `pr6-luigi-ai` (x2) with `bench.py ref`.
-- **In the commit after db93c98, NOT yet tested or built:** `site/voice` packaging (build_runtime.sh,
-  app_files.py, assemble_app.sh, verify.sh, Makefile, LaunchConfig), R1–R3 checklists in the plan §10,
-  `voice_soak.py --listen`.
-- **Next:** 1. read the M5 Opus review (was still running) and fix; fix review. 2. M6: for each lv6 run
-  `scripts/voice_report.py <run> --gate eulogy|sermon --baseline <off run> --mix`, record numbers in plan §9,
-  list the mp3s. 3. luigi-mitoi chrF++ Local must be 62.62; the evening 39-errors bench is blocked (the
-  2026-11-08 recording and error list are not on this Mac): write `scripts/` check that runs where they exist.
-  4. Opus security review of the whole branch vs main, fix review. 5. M7 `make dist` to VERIFY PASS.
-  6. full test suite, TODO.md, final report.
+- **Built and committed:** M0–M7, idea 12, the AI / Local engine, both apps' UI. Reviews (Opus): one per
+  milestone with fix reviews, and a security review of the whole branch; outcomes in the plan and DECISIONS.
+- **M6:** sermon gate passes in Local and AI; captions gate passes; the eulogy gate is not met on the median
+  (4.1 s Local, 4.6 s AI against 4.0 s) with 100% / 98% within 10 s. Plan §9 has every number and the paths
+  of the recordings to listen to.
+- **Not done, needs the church or other Macs:** M8–M10 (R1–R3 checklists in plan §10); M0 numbers on the Mac
+  Studio; Supertonic 3 copied to the church's Hugging Face repo; the 2026-11-08 evening bench for AI
+  (`scripts/ai_regression.py`); notarization.
+- **Next:** listen to the recordings; R1.
 
 ## Iteration 1 — DONE (2026-10-21, 22:05)
 - Phase 0: src/google_stt.py (+ mocked tests). Bible set transcribed by chirp_2 (europe-west4) and chirp_3 (us). 68.1/600 Google minutes used. Chirp 3 = silver reference.

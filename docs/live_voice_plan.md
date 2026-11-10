@@ -787,6 +787,62 @@ The voiced runs of 2026-11-10 (3.5 s / 96% and 6.5 s / 75%, §4.3) plus 0.5 s / 
 because generation now shares the CPU with the captions. The sermon's share is low by design: a
 long Scripture reading is never condensed or skipped.
 
+**Built (M6, 2026-11-10), measured on the dev Mac (M3 Max), not the Mac Studio.** Replays at `--speed 1`
+with `scripts/bench.py run … --voice`, read with `scripts/voice_report.py <run> --gate … --baseline … --mix`.
+Each voiced run has a voice-off run of the same mode as its baseline. Runs are in `logs/bench/runs/`.
+
+| Run (Romanian voice) | Mode | Median delay | Within 10 s (items) | Worst | Summaries | Gate |
+|---|---|---|---|---|---|---|
+| Sermon `lv6-alex-local` | Local | 5.0 s (≤ 7.0) | 84.2% (≥ 72%) | 13.9 s | 3 | **pass** |
+| Sermon `lv6-alex-ai` | AI | 5.6 s | 87.5% | 16.8 s | 1 | **pass** |
+| Eulogy `lv6b-eulogy-local` | Local | **4.1 s (≤ 4.0)** | 100% (≥ 94%) | 8.9 s | 0 | **median missed by 0.1 s** |
+| Eulogy `lv6b-eulogy-ai` | AI | **4.6 s (≤ 4.0)** | 98.3% | 10.9 s | 0 | **median missed by 0.6 s** |
+| Eulogy, first rule `lv6-eulogy-local` | Local | 3.4 s | **92.5%** | 18.5 s | 2 | share missed |
+| Eulogy, first rule `lv6-eulogy-ai` | AI | 4.0 s | **87.5%** | 16.9 s | 2 | share missed |
+| Eulogy, 1.5 × `lv6c-eulogy-local` / `-ai` | both | 4.6 / 5.7 s | 94.8% / 90.6% | 14.1 / 15.3 s | 1 / 2 | missed |
+
+**The eulogy gate is not met as written, and it was not changed.** With the sentence step as first built, two
+sentences per run waited 12 s for a long next phrase (the 3 × `flush_s` valve) while the listeners heard
+nothing, and the share within 10 s failed. The rule now built (`speech.QUIET_FLUSH`, in `_speech_flush_tick`):
+after `flush_s` (4 s) an open sentence is published when the voice has nothing to say in that language. With
+it nothing waits long (worst 8.9 s, no summary needed), but 12 pieces of sentences are spoken as items of
+their own, each about 7 s after its own last word, and that moves the median from 3.4 to 4.1 s (the words
+are not heard later than before: they were counted inside the next sentence, whose clock started later).
+1.5 × `flush_s` was tried and is worse on both numbers. Sentences that end normally are unchanged
+(median 3.3–3.8 s in all six runs). The choice between "median 3.4 s, 92.5%, worst 18.5 s" and
+"median 4.1 s, 100%, worst 8.9 s" was made for the second; set `QUIET_FLUSH` very high to get the first
+back. The sermon and the Romanian replay were measured with the first rule (they pass; not re-run).
+Run-to-run spread on this shared Mac is about ±0.5 s on a median.
+
+| Captions gate (voice on − voice off) | First word median | p90 | Within 6 s | RTF over the run | |
+|---|---|---|---|---|---|
+| Limit | ≤ +0.2 s | ≤ +0.5 s | ≥ −2 points | ≤ 0.35 | |
+| `lv6b-eulogy-local` | −0.13 s | +0.18 s | +2.0 | 0.19 | pass |
+| `lv6b-eulogy-ai` | −0.19 s | −0.34 s | +2.6 | 0.19 | pass |
+| `lv6-alex-local` | −0.08 s | −0.03 s | +1.9 | 0.18 | pass |
+| `lv6-alex-ai` | +0.03 s | −0.49 s | 0.0 | 0.18 | pass |
+
+RTF is generation seconds over speech seconds for the whole run, both streams (the report first took the
+larger of the two streams' ratios, and the sermon's English stream is a single 1.6 s sentence at 0.41: that
+is not "Supertonic under load"). One of the three eulogy Local runs (`lv6c`) showed p90 +0.70 s against the
+same baseline: the spread between two runs, not the voice.
+
+**English voice on the Romanian replay** (`lv6-nelu-local`, `lv6-nelu-ai`, the first 10 minutes of
+nelu-suciu; no gate set): Local median 5.2 s, 98.6% within 10 s, 1 summary; AI median 4.7 s, 89.2%, no summary.
+
+**Summaries, read by hand** (10 spoken in the first eight voiced runs): none over Scripture, none changes person.
+One is wrong in meaning (`lv6-eulogy-local`): «Piese pentru a face acest lucru. Este adevărat sau nu este
+adevărat? El a făcut asta.» became «El a făcut piese pentru a face acest lucru»; the speaker had said he
+would not build them. A guard on word order was tried against it and dropped: it also refuses the recorded
+summaries that were listened to and approved (they move words too). One turns a statement into an order
+(«E talentul tău…» → «Recunoaște-ți talentul…»), the kind already listed as missed in `tests/test_voice_pacing.py`.
+
+**Recordings to listen to** (voice alone, and mixed over the quieter original; under `logs/bench/runs/`):
+`lv6b-eulogy-local/voice.mp3`, `voice_en.mp3`, `voice_mix.mp3`, `voice_mix_en.mp3`; the same four in
+`lv6b-eulogy-ai/`; `lv6-alex-local/voice.mp3` and `voice_mix.mp3`; `lv6-alex-ai/voice.mp3` and
+`voice_mix.mp3`; `lv6-nelu-local/voice_en.mp3` and `voice_mix_en.mp3`; `lv6-nelu-ai/voice_en.mp3` and
+`voice_mix_en.mp3`. The first-rule eulogy runs (`lv6-eulogy-local`, `lv6-eulogy-ai`) have the summaries.
+
 **Listening checks**: the user listens to both `voice.mp3` files in full, including every summary,
 before the rehearsals.
 
@@ -1048,6 +1104,7 @@ early (one run of one sample; `work/tts_bakeoff/live_sim_*_haiku*`).
 | The key | The macOS **Keychain** first (what Settings shows and changes), then environment `ANTHROPIC_API_KEY`; set from Settings (`POST /api/ai/key`, this Mac only) through `/usr/bin/security -i` with the key on stdin; in a dev checkout `.env`. Never printed, logged, put in state, the Live Remote feed, settings, diagnostics or the DMG. With no key the knob is disabled and says why (`409 no_key`). |
 | The offline rule | **Local: unchanged**, zero outbound connections (network audit + sandbox profile). **AI: one host**, `api.anthropic.com`: `netaudit.allow()` lets that name and the addresses it resolves to through and still writes down everything else. `ai.py` is the only module that may open a connection (tested). Model downloads stay off in both modes. A sandbox profile cannot name a host, so AI mode is proven by the audit alone. |
 | Default for a new install | **Local.** The app's promise is that it works with the Wi-Fi off; AI sends what is said in the room to a third party, which is the church's decision to make, not a default; and a new install has no key. |
+| Benches (2026-11-10, dev Mac) | **luigi-mitoi, Best profile, whole sermon:** Local chrF++ 62.60 / BLEU 35.42 (PR #6: 62.62 / 35.36; two Local runs of the first 10 minutes give identical scores, so the 0.02 is this branch's changes, not noise: idea 12 and the merges); **AI chrF++ 66.15 / BLEU 40.42**, all 431 phrases answered by the API, median translation time 0.76 s. **Marked errors of 2026-10-24** (21 in the eulogy stretch, `logs/bench/errors_2026-10-24.json`): Local 2 still wrong, AI 1. **Evening clips of 2026-11-08 (39 marked errors): not run.** The recording and the error list are not on the dev Mac; `scripts/ai_regression.py` runs both modes against them and fails if AI leaves more wrong than Local. **Fallback seen:** the sermon replays in AI mode had one timeout each; 3 and 10 phrases were translated locally and AI came back by itself. M6 gates in both modes: §9. |
 | Cost | About 940 input and 30 output tokens per phrase: roughly $0.0001 per caption at Haiku 5.5's prices, a few cents per service. `LIVE_AI_CACHE=<file>` makes bench re-runs reuse answers by input. Each call's tokens and seconds go to `<logs>/claude_usage.jsonl` (no text). |
 
 **Every fix of PR #6 reaches the AI path** (`tests/test_ai_learnings.py`): the glossary and idiom rows
