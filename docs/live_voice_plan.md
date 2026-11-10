@@ -22,6 +22,12 @@ This document is the build plan: what to build, where, in what order, and how to
 | Sentence end | Detecting it adds no delay: a caption already arrives at least 1.2 s after the speaker stops, which is longer than the 0.6 s pause rule. | Live timing test |
 | Falling behind | **Catch-up summary**: when a sentence would start more than 10 s after the speaker finished it, Gemma condenses it together with everything queued before it. | Live timing test: median 5.1 s, 90% within 10 s on a continuous sermon at speed 1.25 (without catch-up it fell 60 s behind) |
 | Stream | One continuous MP3 at `/listen`, 64 kbps, planned for about 100 listeners, and it must keep playing on a locked iPhone | |
+| Gemma in Fast | **Kept loaded while Live Voice is on**, even in the Fast profile, so summaries always work | User, 2026-11-10 |
+| Far behind, no summary | **Skip ahead**: more than 20 s behind and no summary possible → drop queued sentences that are not Scripture and go on from the newest | User, 2026-11-10 |
+| Phone buffer | **Measured in R1, decided then.** Until then the 10 s limit counts to play start on the Mac. | User, 2026-11-10 |
+| Wi-Fi | **The church Wi-Fi reaches the Mac Studio for everyone**: no client isolation to work around | User, 2026-11-10 |
+| Hold | **The voice keeps speaking** (Hold only freezes the screen). Hide, Blank and Song silence it. | User, 2026-11-10 |
+| Listening | **Open to anyone on the church Wi-Fi**: no PIN or code on the listener page | User, 2026-11-10 |
 | Offline | The rules of Live RO2EN apply: `LIVE_ALLOW_NETWORK`, netaudit, local only | README §4b, DECISIONS 2026-10-22 |
 
 Measured so far (M3 Max, CPU only, nothing else running): Supertonic generates speech about 6× faster
@@ -168,7 +174,7 @@ an operator action on a chunk can be applied to the sentence that holds it.
 | **Show** (`pause(False)`) | Start clean | `state {paused: false}` | Speak again from the next sentence |
 | **Blank** (Esc, one-shot) | Discard the open sentence | `state {blank: true}` | Fade out, drop the queue, carry on with the next sentence |
 | **Song** on/off (key or detector) | Discard / start clean | `state {song: …}` | Same as Hide/Show |
-| **Hold** | Nothing | `state {held: …}` | Keeps speaking (Hold only freezes the screen). See open question 5. |
+| **Hold** | Nothing | `state {held: …}` | Keeps speaking (Hold only freezes the screen; decided 2026-11-10) |
 | **Stop** | Publish the open sentence (`flush`) | `state {running: false}` | Finish the queue, then silence. Listeners stay connected. |
 | Speaker switches to Romanian | Publish the open sentence | none | Romanian speech is not voiced: those listeners understand it directly |
 
@@ -219,9 +225,13 @@ for the Quality profile:
   5. **Clean form.** At most 2 sentences. No quotation marks, no „Pe scurt”, no "vorbitorul /
      predicatorul / pastorul spune" (reported speech changes the person). Romanian by
      `langid.score`.
-- **Gemma is not loaded** (the Fast profile uses NLLB): the reply is
-  `{"ok": false, "reason": "no_summarizer"}`, and `state.summarizer` tells the voice so in advance.
-  See open question 1.
+- **Gemma in the Fast profile** (decided 2026-11-10): while Live Voice is on, Gemma stays loaded
+  even when Fast translates with NLLB. The pipeline already keeps a spare translator
+  (`_keep_both_translators`, `_spare_tr`), and the voice adds a reason to keep Gemma as that spare.
+  It is used only for summaries, and it gets the same idle keepalive so the first summary is not
+  slow. If Gemma is still loading or failed to load, the reply is
+  `{"ok": false, "reason": "no_summarizer"}`, and `state.summarizer` tells the voice in advance.
+  M0 checks the extra memory against the Mac Studio's RAM.
 
 ---
 
@@ -286,7 +296,7 @@ copy of stdout and points fd 1 at stderr, so library prints cannot corrupt the s
   - a status line ("Se aude", "Se reconectează…")
   - after `stalled` or `error`, it reconnects with backoff and jumps to the live edge
 
-  No PIN: listening is open to anyone on the church Wi-Fi. See open question 6.
+  No PIN: listening is open to anyone on the church Wi-Fi (decided 2026-11-10).
 - **Port** `voice.port` 8767, on `0.0.0.0`. Only these routes exist: `/`, `/listen`, and, during
   rehearsals, `POST /stats` (§10). There is no control route: everything the operator does goes
   through Live RO2EN. The server answers only clients with private, link-local or loopback
@@ -312,10 +322,14 @@ if est_start − s.spk_end > voice.limit_s (10 s)
 - `est_gen(s)` = words × the recent seconds per word (the median of the last 20 sentences).
 - The item playing now is never cut for a summary. Only Hide, Song and Blank cut it (with a fade).
 - `voice.limit_s` is measured from the speaker's end to the start of play on the Mac. Whether the
-  phone's own buffer should count is open question 3.
-- **If summaries are not possible** (Fast profile, refused, or Scripture), the voice can fall
-  behind, as the "no catch-up" run did (60 s on a continuous sermon). Open question 2 decides
-  whether to skip ahead.
+  phone's own buffer should count is decided after R1 measures it (§10).
+- **Skip ahead** (decided 2026-11-10). Without it the voice falls behind when no summary is
+  possible (Gemma not ready, a refused summary, or Scripture), as the "no catch-up" run did (60 s
+  behind on a continuous sermon). Rule: when the generation thread takes up a sentence whose
+  projected start is more than `voice.skip_s` (20 s) after the speaker finished it, and no summary
+  can be had, it drops every queued sentence that is not Scripture and has not started, keeping
+  the newest. Scripture is never skipped. A skip leaves a 0.6 s pause (no chime), and each skipped
+  sentence is logged as `skipped`. `voice_report.py` counts skips; they also show in After.
 
 ### 4.4 Log
 
@@ -414,6 +428,7 @@ voice:
   preroll_s: 1.0
   gap_s: 0.25
   limit_s: 10.0         # catch-up when a sentence would start later than this after the speaker finished
+  skip_s: 20.0          # no summary possible and this far behind: skip queued non-Scripture sentences
   summary_timeout_s: 4.0
   summary_min_words: 12
   pause_s: 0.6          # sentence step (§2.2)
@@ -498,8 +513,9 @@ and 3–5 phones (at least two iPhones, one locked for the whole run, and one An
   position playing on the phone, via `audio.currentTime`) every 10 s to `POST /stats`. Check this
   once against a recording: a phone and the Mac's speaker side by side, with a test chime from
   "Test voice".
-- **Wi-Fi**: which network the phones join, whether it can reach the Studio (guest networks often
-  isolate clients), and the address for the QR code.
+- **Address**: the church Wi-Fi reaches the Studio for everyone. Before R1, give the Studio a
+  fixed address (a DHCP reservation on the church router) and print it as the QR code:
+  `http://<address>:8767/`. A `.local` name does not work reliably on Android.
 - The full voice log and `voice_report.py` output. Captions are checked as usual (gate,
   `e2e.py --strict`).
 
@@ -518,15 +534,15 @@ points' load. Only then go to about 100 listeners.
 
 | # | Milestone | Done when |
 |---|---|---|
-| M0 | **Groundwork** | Supertonic 3 copied to the church repo and pinned in `models.lock.txt`. `.venv-voice` (dev) set up. RTF measured on the Mac Studio, alone and during a Quality bench replay, for the three thread options (§6). Digits and references in Romanian checked. macOS 14 wheels for onnxruntime and lameenc confirmed. |
+| M0 | **Groundwork** | Supertonic 3 copied to the church repo and pinned in `models.lock.txt`. `.venv-voice` (dev) set up. RTF measured on the Mac Studio, alone and during a Quality bench replay, for the three thread options (§6). Digits and references in Romanian checked. macOS 14 wheels for onnxruntime and lameenc confirmed. Memory with Gemma kept as a spare in Fast checked. |
 | M1 | **Sentence step** (`speech.py`), logging only | Unit tests pass; live-mode boundaries ≥95% of the simulation on both runs; `sentence` events in the service log |
 | M2 | **Voice process**: protocol, generation, play clock, MP3 stream, listener page; started and supervised by the orchestrator | A bench replay produces `voice.mp3`; stream tests (100 clients) pass; the offline test passes |
 | M3 | **Corrections and state** (§2.4) | Correction tests pass; Hide/Blank/Song are silent within 0.3 s on a replay |
-| M4 | **Catch-up** with Gemma, separate KV cache and guards | Guard tests pass; the scheduler test reproduces the simulation |
+| M4 | **Catch-up** with Gemma (kept loaded in Fast too), separate KV cache, guards, and skip-ahead | Guard tests pass; the scheduler test reproduces the simulation; a skip test (no summarizer, 25 s behind) skips everything but Scripture and the newest |
 | M5 | **Monitoring and UI**: VOICE light, alerts, settings, After numbers, Live Remote field, `contract.json` | Contract test passes; every new screen checked against the real backend |
 | M6 | **Bench gates** (§9) on both runs, including the captions-impact gate | All gates pass; the user has listened to both runs |
 | M7 | **Packaging**: `site/voice` in the runtime build, Mach-O audit, signed and notarized DMG | `make dist` VERIFY PASS with the voice in it |
-| M8 | **R1** (recorded service at church) | §10 numbers recorded; open question 3 answered |
+| M8 | **R1** (recorded service at church) | §10 numbers recorded; the phone-buffer question decided |
 | M9 | **R2** (live service, a few phones) | Listener feedback; no caption regression in the service report |
 | M10 | **R3**, then announce | Load test clean; QR card printed |
 | Later | English audio (the English translation of Romanian speakers) with a Supertonic English voice | The protocol already carries `lang` |
@@ -535,23 +551,18 @@ M1 and M2 can be built in parallel: M2 can use the simulation's sentences until 
 
 ---
 
-## 12. Open questions for the user
+## 12. Questions answered (2026-11-10)
 
-1. **The Fast profile has no Gemma, so there are no summaries.** Options: (a) keep Gemma loaded
-   while Live Voice is on, even in Fast (Gemma 4 12B 4-bit takes several GB more memory);
-   (b) Live Voice requires Quality; (c) allow the voice to fall behind. **Recommendation: (a).**
-2. **When a summary is refused or impossible and the voice is more than 20 s behind:** skip queued
-   sentences that are not Scripture and go on from the newest, or keep playing everything late?
-   **Recommendation: skip** (listeners can follow a gap better than a 60 s delay).
-3. **Should the phone's buffer count towards the 10 s limit?** If iPhones buffer 3 s, counting it
-   makes summaries more frequent. **Recommendation:** measure it in R1, then decide.
-4. **Which Wi-Fi will listeners join, and can it reach the Mac Studio?** Guest networks often block
-   phones from reaching local machines. The Studio also needs a fixed address (a DHCP reservation)
-   for the printed QR code: a `.local` name does not work reliably on Android.
-5. **Hold:** should the voice keep speaking while the screen is held? **Recommendation: yes**,
-   because Hold is a screen-layout tool. Hide, Blank and Song silence the voice.
-6. **Listener access:** open to anyone on the church Wi-Fi (recommended), or behind a simple code
-   on the listener page?
+All six questions are answered; the answers are in §0 and in the sections they change.
+
+1. **Gemma in Fast:** kept loaded while Live Voice is on (§2.5).
+2. **Far behind with no summary:** skip ahead, never over Scripture (§4.3).
+3. **Phone buffer:** measured in R1, decided then (§10).
+4. **Wi-Fi:** reachable by everyone; the Studio still gets a fixed address for the QR code (§10).
+5. **Hold:** the voice keeps speaking (§2.4).
+6. **Listening:** open to anyone on the church Wi-Fi (§4.2).
+
+Still to decide after R1: whether the 10 s limit counts the phone's buffer.
 
 ---
 
