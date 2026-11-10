@@ -72,7 +72,9 @@ def test_idioms_only_when_said(tr, gloss):
     assert "domnule = sir" in p
     assert "Doamne" not in tr._prompt("Doamne, ajută-ne", "ro", "en", gloss).split("Translate")[0]
     assert gloss.idioms("cu cale", "en") == []
-    assert "only for God" in T.SYSTEM[("ro", "en")] and "your father" in T.SYSTEM[("ro", "en")]
+    assert "speaks of or to God" in T.SYSTEM[("ro", "en")] and "your father" in T.SYSTEM[("ro", "en")]
+    # idea 11 (2026-11-08 evening): the pastor's own "I" came out "He" / "you"
+    assert "Keep the speaker's person" in T.SYSTEM[("ro", "en")]
 
 
 # --- ideas 6 and 14: names stay names ----------------------------------------------------
@@ -212,3 +214,31 @@ def test_prompt_stays_short(tr, gloss):
     p = T.SYSTEM[("ro", "en")] + tr._prompt("mama noastră, au crescut toți cei 14 copii, te rugăm frumos.",
                                             "ro", "en", gloss, S.Reading().hint(S.find("Evrei 13:7"), "ro", "en"))
     assert len(p) < 2500
+
+
+# idea 4 (2026-11-08 evening): Gemma gave its previous caption again and dropped the new words
+def test_a_repeat_of_the_previous_caption_is_translated_again_without_context(monkeypatch, tr, gloss):
+    answers = iter(["a living sign before You and before", "of Your people, perhaps even in our church"])
+    seen = []
+
+    def gen(model, tok, prompt, **k):
+        seen.append(prompt)
+        return next(answers)
+    monkeypatch.setitem(sys.modules, "mlx_lm", types.SimpleNamespace(generate=gen))
+    tr.context = [("să fim un semn viu înaintea Ta și înaintea", "a living sign before You and before", "ro")]
+    out = tr.translate("poporului tău, poate chiar în biserica noastră", "ro", "en", gloss, use_context=True)
+    assert out == "of Your people, perhaps even in our church"
+    assert "semn viu" in seen[0] and "semn viu" not in seen[1]     # the retry has no context
+    assert tr.context[-1][1] == out
+
+
+# idea 9 (2026-11-08 evening): rows for words and idioms read literally
+@pytest.mark.parametrize("text, want", [
+    ("acum este între gratii", "behind bars"), ("noi ca și părinți", "as parents"),
+    ("mi-am pironit ochii", "fix one's eyes"), ("Biserica are viitor", "has a future"),
+    ("până la liman", "safe harbour"), ("Dumnezeu ne-a rânduit astăzi", "ordained"),
+    ("robii logicii umane", "slaves"), ("trimitere, însoțită de făgăduință", "commission"),
+    ("să aducem cauzele", "prayer requests"),
+])
+def test_evening_rows_reach_the_prompt(tr, gloss, text, want):
+    assert want in tr._prompt(text, "ro", "en", gloss)

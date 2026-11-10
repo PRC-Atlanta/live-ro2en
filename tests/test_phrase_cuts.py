@@ -56,6 +56,14 @@ def test_a_phrase_that_stops_on_a_preposition_or_conjunction_is_dangling():
         assert not dangling(t), t
 
 
+# idea 35 (2026-11-08 evening): «că nu.» | «mai recunoaștem» → "where we do not" | "we again recognize"
+def test_a_phrase_that_stops_on_a_negation_is_dangling():
+    for t in ("în ceața aceea că nu.", "noi nu mai.", "și nici.", "dar n-"):
+        assert dangling(t), t
+    for t in ("Nu mai recunoaștem.", "și mai bine.", "Doamne, ajută-ne mai mult."):
+        assert not dangling(t), t
+
+
 def test_dangling_pieces_of_a_slow_speaker_wait_and_merge_past_max_chunk(tmp_path):
     live = _live(tmp_path)
     live.lang.set_mode("ro-en")

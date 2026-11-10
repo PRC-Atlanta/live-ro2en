@@ -152,6 +152,54 @@ def persons(text: str, glossary) -> list[str]:
     return out
 
 
+_FILLER = {"the", "and", "that", "this", "who", "what", "with", "for", "are", "was", "were", "you",
+           "your", "his", "her", "they", "them", "not", "but", "about", "from", "into", "she", "him", "our", "all", "have", "has",
+           "căci", "care", "este", "sunt", "pentru", "lui", "cei", "cel", "cea", "nu", "și", "să", "din",
+           "pe", "la", "cu", "în", "ce", "de", "ei", "ea", "el", "voi", "noi", "mai", "dar", "iar"}
+
+
+def _gist(text: str) -> set[str]:
+    return {fold_diacritics(fix_cedilla(w.lower()))[:5] for w in re.findall(r"[^\W\d_]{3,}", text)
+            if w.lower() not in _FILLER}
+
+
+def around_verse(around: str, caption: str) -> str:
+    """The speaker's words next to a captioned verse, translated, unless they say the verse again:
+    on 2026-11-08 "Do not be anxious about anything, In nothing be anxious" (Phil 4:6), "we were
+    hoping, But we were hoping" (Luke 24:21), «păcatele ei, De aceea îți spun: Păcatele ei» (Luke
+    7:47): the paraphrase and the published verse both on screen. Dropped when 40 % or more of its
+    words are in the verse, and a lone 1-word fragment ("He") is dropped too."""
+    words = _gist(around)
+    if not words:
+        return "" if len(around.split()) <= 1 else around
+    if len(around.split()) <= 1:
+        return ""
+    return "" if len(words & _gist(caption)) >= 0.4 * len(words) else around
+
+
+def _wordlist(text: str) -> list[str]:
+    return [fold_diacritics(fix_cedilla(w.lower())) for w in re.findall(r"[^\W\d_]+(?:'[^\W\d_]+)?", text)]
+
+
+def echoes_previous(src: str, out: str, prev: tuple) -> bool:
+    """The translation is (at least 80 % of its words) the previous piece's translation while the
+    source is a different piece: the model repeated itself instead of translating (idea 4)."""
+    p_src, p_out = prev[0], prev[1]
+    o, po = _wordlist(out), _wordlist(p_out)
+    if len(o) < 3 or not po:
+        return False
+    s, ps = set(_wordlist(src)), set(_wordlist(p_src))
+    if s and len(s & ps) >= 0.6 * len(s):
+        return False                                    # the speaker said it again: so may the caption
+    pool = list(po)
+    hit = 0
+    for w in o:
+        if w in pool:
+            pool.remove(w)
+            hit += 1
+    return hit >= 0.8 * len(o)
+
+
 def tiny(text: str) -> bool:
     """A 1-2 character fragment ("T."): with context, Gemma translated the context instead."""
     return sum(c.isalnum() for c in text) <= 2
@@ -327,15 +375,98 @@ class NLLBTranslator:
 
     def translate(self, text: str, src: str = "ro", tgt: str = "en", glossary=None) -> str:
         self.tok.src_lang = NLLB_CODES[src]
-        pieces = self.tok.convert_ids_to_tokens(self.tok.encode(text))
-        res = self.tr.translate_batch([pieces], target_prefix=[[NLLB_CODES[tgt]]],
+        if src == "en":
+            text = prep_en(text)
+            if not text:
+                return ""
+        # one sentence per item, in one batch: NLLB skipped whole sentences of a multi-sentence
+        # piece ("I'm not talking about continuous abuse. You need to seek help" lost the caveat,
+        # 2026-11-08; idea 32)
+        sents = split_sentences(text) if src == "en" else [text]
+        batch = [self.tok.convert_ids_to_tokens(self.tok.encode(t)) for t in sents]
+        res = self.tr.translate_batch(batch, target_prefix=[[NLLB_CODES[tgt]]] * len(batch),
                                       beam_size=self.beam, max_decoding_length=256)
-        self.last_truncated = len(res[0].hypotheses[0]) >= 256
-        out = res[0].hypotheses[0][1:]
-        out = self.tok.decode(self.tok.convert_tokens_to_ids(out), skip_special_tokens=True).strip()
+        self.last_truncated = any(len(r.hypotheses[0]) >= 256 for r in res)
+        outs = [self.tok.decode(self.tok.convert_tokens_to_ids(r.hypotheses[0][1:]), skip_special_tokens=True).strip()
+                for r in res]
+        if tgt == "ro":
+            outs = [nllb_ro_fix(t, o) for t, o in zip(sents, outs)]
+        out = " ".join(o for o in outs if o)
         if tgt == "ro" and _AMEN_EN.search(text):
             out = _AMEN_RO_WRONG.sub("Amin", out)
         return postedit(out, tgt)
+
+
+_FILLERS_EN = re.compile(r"(?:^|(?<=[\s,.;:!?]))(?:um+|uh+|uhm+|erm+|hmm+)\b[,.]?\s*", re.I)
+_STUTTER = re.compile(r"\b(\w+(?:'\w+)?)(?:[\s,]+\1\b)+", re.I)
+_PREFIX_STUTTER = re.compile(r"\b(the|a|an|my|our|your|his|her|their)\s+(\w{3,})\s+\1\s+(\2\w+)", re.I)
+
+
+def prep_en(text: str) -> str:
+    """English for NLLB without the speaker's fillers and stutters, which it translated: "Um" kept,
+    "And I and I booked" → «Și eu și cu mine», "The blue the blueprint" → «Albastrul, planul»
+    (2026-11-08)."""
+    t = _FILLERS_EN.sub("", text)
+    t = _PREFIX_STUTTER.sub(lambda m: f"{m.group(1)} {m.group(3)}", t)
+    for _ in range(2):
+        t = _STUTTER.sub(lambda m: m.group(0) if m.group(1).lower() in ("that", "had", "is") else m.group(1), t)
+        t = re.sub(r"\b(\w+ \w+)(?:[\s,]+\1\b)+", r"\1", t, flags=re.I)   # "and I and I"
+    t = re.sub(r"\s{2,}", " ", t).strip()
+    return t[:1].upper() + t[1:] if t and text[:1].isupper() else t
+
+
+_SENT_END = re.compile(r"(?<=[.!?])\s+(?=[\"'“‘(]?[A-Z0-9])")
+
+
+def split_sentences(text: str) -> list[str]:
+    """Sentences of an English piece; very short ones ("Pride.") stay their own sentence, but
+    "Mr. Smith" and "St. Paul" don't split."""
+    out = []
+    for part in _SENT_END.split(text):
+        if out and re.search(r"\b(?:Mr|Mrs|Ms|Dr|St|Jr|vs|v)\.$", out[-1]):
+            out[-1] += " " + part
+        elif part.strip():
+            out.append(part.strip())
+    return out or [text]
+
+
+# a man preaching made feminine by NLLB: «fii atentă», «nu te lăsa copleșită», «eram mândră de el»
+# (2026-11-08), «sinceră», «ascultătoare», «frustrată», «uimită» (2026-11-06)
+_FEM_TO_MASC = {"atentă": "atent", "copleșită": "copleșit", "mândră": "mândru", "sinceră": "sincer",
+                "ascultătoare": "ascultător", "frustrată": "frustrat", "uimită": "uimit",
+                "pregătită": "pregătit", "obosită": "obosit", "convinsă": "convins", "sigură": "sigur",
+                "fericită": "fericit", "recunoscătoare": "recunoscător", "binecuvântată": "binecuvântat",
+                "supărată": "supărat", "speriată": "speriat", "îngrijorată": "îngrijorat", "rănită": "rănit",
+                "liniștită": "liniștit", "smerită": "smerit", "mulțumită": "mulțumit", "dezamăgită": "dezamăgit"}
+_FEM_RE = re.compile(r"\b(sunt|eram|am fost|fii|fi|să fiu|aș fi|voi fi|mă simt|mă simțeam|m-am simțit|te simți|"
+                     r"te lăsa|devin|deveneam|rămân)((?:\s+(?:foarte|atât de|așa de|prea|mai|mereu|încă))?)\s+("
+                     + "|".join(_FEM_TO_MASC) + r")\b", re.I)
+_SHE_EN = re.compile(r"\b(she|her|herself|woman|wife|mother|sister|daughter|girl|lady)\b", re.I)
+# NLLB sometimes writes plain ASCII Romanian (2026-11-08: «si am spus», «ierti», «vorbesti»)
+_ASCII_RO = {"si": "și", "ierti": "ierți", "vorbesti": "vorbești", "esti": "ești", "stii": "știi",
+             "inteles": "înțeles", "fractiune": "fracțiune", "lipsiti": "lipsiți", "sa": "să", "ca sa": "ca să"}
+_ASCII_RE = re.compile(r"\b(" + "|".join(sorted(map(re.escape, _ASCII_RO), key=len, reverse=True)) + r")\b")
+
+
+def nllb_ro_fix(src: str, out: str) -> str:
+    """NLLB's English → Romanian, fixed where it reads like film subtitles (idea 34): a leading
+    dash and a second speaker nobody heard ("why?" → «- De ce nu?», "that?" → «- Asta? - Da.»);
+    a man made feminine; ASCII without diacritics."""
+    o = out.strip()
+    if re.match(r"^[-–—]\s*", o):
+        o = re.sub(r"^[-–—]\s*", "", o)
+        o = re.split(r"\s+[-–—]\s+", o)[0].strip()      # «Asta? - Da.»: the invented reply goes
+    n_src = len(re.findall(r"[.!?]+(?:\s|$)", src.strip() + " ")) or 1
+    sents = re.findall(r"[^.!?]+[.!?]*", o)
+    if len(src.split()) <= 3 and len(sents) > n_src:
+        o = "".join(sents[:n_src]).strip()               # «De ce? Ce faci?» for "why?"
+    if len(src.split()) <= 2 and re.fullmatch(r"(?i)why\s*\??", src.strip()):
+        o = "De ce?"                                     # «De ce nu?» reversed the question
+    if not _SHE_EN.search(src):
+        o = _FEM_RE.sub(lambda m: f"{m.group(1)}{m.group(2)} {_FEM_TO_MASC[m.group(3).lower()]}", o)
+    if "ș" not in o and "ț" not in o and "ă" not in o:
+        o = _ASCII_RE.sub(lambda m: _ASCII_RO[m.group(1)], o)
+    return o
 
 
 _PIECES = ("The speech comes in short pieces, often cut mid-sentence: if the previous piece ended "
@@ -347,7 +478,9 @@ SYSTEM = {
                    + _PIECES +
                    "For Bible quotations use NKJV-style wording. Never use archaic English: no thee, "
                    "thou, thy, ye, hath, doth, unto, or -eth/-est endings. Capitalise You/Your/He/His/Him "
-                   "only for God; for people use lower case (his footsteps, your father). Bible figures "
+                   "only when this sentence speaks of or to God; for people use lower case (his footsteps, "
+                   "your father, you have changed nothing). Keep the speaker's person: I stays I, we stays we, "
+                   "you stays you; never turn the speaker's I into you or He. Bible figures "
                    "keep their English Bible names; other people's names stay exactly as written, also when "
                    "they are a Bible name with a surname (fratele Ilie Puha = brother Ilie Puha). "
                    "Output only the English translation, nothing else."),
@@ -509,10 +642,15 @@ class MLXLLMTranslator:
             if glossary is not None:
                 text = namelist.map_back(text, glossary.names, gate.lexicon()["en"])   # Dragosh → Dragoș, Souchava → Suceava
         reading = getattr(self, "reading", None)
+        if use_context and getattr(self, "verses", None) is not None:
+            text = self.verses.take_tail(text, src)     # the verse's last words, already captioned
+            if not text.strip():
+                self.last_verse = None
+                return ""
         hint = ""
         if use_context and reading is not None:
             hint = reading.hint(reading.update(text), src, tgt)
-        verse = self.verses.match(text, src, tgt, reading.ref) \
+        verse = self.verses.match(text, src, tgt, reading.ref, reading.announced) \
             if use_context and reading is not None and getattr(self, "verses", None) is not None else None
         if verse is not None:
             return self._verse(verse, text, src, tgt, glossary)
@@ -529,6 +667,16 @@ class MLXLLMTranslator:
         if small and len(out.split()) > 3:
             out = ""                              # "T." -> two sentences: not a translation of it
         out = postedit(out, tgt)
+        if not small and ctx and echoes_previous(text, out, ctx[-1]):
+            # its own previous caption again, the new words dropped: «poporului tău, poate chiar în
+            # biserica noastră» → "a living sign before You and before" (2026-11-08 evening, idea 4)
+            self.context = []
+            try:
+                again = postedit(clean_output(self._generate(self._prompt(text, src, tgt, glossary, hint, note))), tgt)
+            finally:
+                self.context = ctx
+            if again.strip():
+                out = again
         if use_context and not small:
             self.context = (self.context + [(text, out, src)])[-max(self.context_clauses, 1):]
         return out
@@ -539,6 +687,7 @@ class MLXLLMTranslator:
         ctx = self.context
         around = [guards.check(self, t, self.translate(t, src, tgt, glossary), src, tgt, glossary)[0] if t else ""
                   for t in (verse.before, verse.after)]   # the words around a verse are checked too
+        around = [around_verse(a, verse.caption) for a in around]
         out = " ".join(x for x in (around[0], verse.caption, around[1]) if x)
         self.context = (ctx + [(text, out, src)])[-max(self.context_clauses, 1):]
         self.last_truncated, self.last_verse = False, verse.log()
@@ -690,13 +839,18 @@ class ByDirection:
             text = guards.to_digits(text, "en")
             if glossary is not None:
                 text = namelist.map_back(text, glossary.names, gate.lexicon()["en"])
+        text = self.verses.take_tail(text, src)         # the verse's last words, already captioned
+        if not text.strip():
+            self.last_verse = None
+            return ""
         self.reading.update(text)
-        verse = self.verses.match(text, src, tgt, self.reading.ref)
+        verse = self.verses.match(text, src, tgt, self.reading.ref, self.reading.announced)
         if verse is None:
             self.last_verse = None
             return tr.translate(text, src, tgt, glossary)
         around = [tr.translate(t, src, tgt, glossary) if t else "" for t in (verse.before, verse.after)]
         self.last_verse = verse.log()
+        around = [around_verse(a, verse.caption) for a in around]
         return " ".join(x for x in (around[0], verse.caption, around[1]) if x)
 
     def reset_context(self):

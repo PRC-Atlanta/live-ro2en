@@ -51,9 +51,42 @@ DANGLING = frozenset("din de la în cu pe pentru și că care dar iar sau ca să
                      "of to in on for and but that which the a an".split())
 
 
+# a Romanian phrase that stops on a negation lost it at the cut: «în ceața aceea că nu.» |
+# «mai recunoaștem» came out "where we do not" | "we again recognize" (2026-11-08 evening, idea 35)
+NEGATION_END = frozenset({"nu", "nici", "n"})
+
+
 def dangling(text: str) -> bool:
     words = tokens(text)
-    return bool(words) and words[-1] in DANGLING
+    if not words:
+        return False
+    if words[-1] in DANGLING or words[-1] in NEGATION_END:
+        return True
+    return words[-1] == "mai" and len(words) > 1 and words[-2] in NEGATION_END     # «nu mai.»
+
+
+# a Romanian piece of 1-2 words that is not a sentence: clitics and small words alone («să-l.» →
+# "call out.", 2026-11-08 evening) or a scrap of a word («rom.»). Words a whole utterance can be:
+_FUNCTION_RO = frozenset("să l il îl o i îi le se ne vă te mă și n a al ale de la cu pe în din că "
+                         "care ca dar iar sau mai prin spre".split())
+_ALONE_RO = frozenset("da nu bun bine așa ok hai aha mda păi eu tu el ea noi voi ei ele ce cum cât cine "
+                      "oh vai uite iată amin gata sigur".split())
+
+
+def scrap(text: str) -> bool:
+    """A Romanian piece too small to mean anything on its own (idea 17): ≤ 2 words, all of them
+    small function words, or a single word of ≤ 3 letters that is not an utterance by itself.
+    Questions and exclamations stay."""
+    t = text.strip()
+    if not t or t.endswith(("?", "!")):
+        return False
+    words = [w.lower() for w in re.findall(r"[^\W\d_]+", t)]
+    if not words or len(words) > 2 or re.search(r"\d", t):
+        return False
+    if all(w in _FUNCTION_RO for w in words):
+        return True
+    return len(words) == 1 and len(words[0]) <= 3 and words[0] not in _ALONE_RO \
+        and fold_diacritics(words[0]) not in {fold_diacritics(w) for w in _ALONE_RO}
 
 
 def pack_parts(parts: list[str], max_words: int) -> list[str]:
@@ -559,7 +592,8 @@ class PipelineMixin:
         'familia Pha' → 'familia Puha', 'Drago' → 'Dragoș'; logged as `names_fixed`."""
         if lang != "ro" or getattr(self, "gloss", None) is None:
             return text
-        text, fixed = namelist.repair_ro(text, namelist.ro_names(self.gloss), gate.lexicon()["ro"])
+        text, fixed = namelist.repair_ro(text, namelist.ro_names(self.gloss), gate.lexicon()["ro"],
+                                           gate.lexicon()["names"])
         if fixed:
             info["names_fixed"] = [list(f) for f in fixed]
         return text
@@ -593,6 +627,9 @@ class PipelineMixin:
         if split != fixed:
             info["ne_split"], fixed = fixed, split
         alt = ev.get("multi") or ""
+        fixed, days = guards.month_days(fixed, alt)
+        if days:
+            info["month_days"] = [list(x) for x in days]
         if alt and lang_score(alt) > 0:                 # the other transcript is Romanian too
             fixed, longer = guards.longer_numbers(fixed, alt)
             if longer:
@@ -689,6 +726,9 @@ class PipelineMixin:
         src_text = self._repair_names(src_text, lang, src_info)
         src_text = self._repair_numbers(ev, src_text, lang, src_info)
         if self._echo_word(ev, src_text):               # "trecute." then "trecut." alone (logged)
+            return
+        if lang == "ro" and scrap(src_text):            # «să-l.» → "call out.", «rom.» (logged)
+            self._log_failure(ev, "scrap", source=src_text)
             return
         if not src_text.strip():
             self._log_failure(ev, "empty_stt", lang=lang)
