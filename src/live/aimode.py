@@ -17,6 +17,9 @@ class AIMixin:
         self._ai_engine: ai.Engine | None = None
         self._ai_tr: translate.HybridTranslator | None = None
         self._ai_lock = threading.Lock()
+        self._ai_reset = False                         # the engine changed: contexts start clean at the next phrase
+        self._ai_used = {k: {"phrases": 0, "s": 0.0} for k in ("ai", "local", "local_fallback")}   # this service (After)
+        self._ai_used_prev: float | None = None
         self.register_state(self._ai_state)
 
     # --- settings -----------------------------------------------------------------------------
@@ -50,10 +53,16 @@ class AIMixin:
     def _translator(self):
         """The AI translator when AI is chosen and there is a key; else the local one (`self.tr`).
         The local translator is always loaded: it is the hot spare, and the fallback inside AI mode."""
+        if self._ai_reset:                              # the knob was turned: both start clean, here, between
+            self._ai_reset = False                      # two phrases, never under a translation in progress
+            if self._ai_tr is not None:
+                self._ai_tr.reset_context()
+            if hasattr(self.tr, "reset_context"):
+                self.tr.reset_context()
         if not self.ai_selected() or self.tr is None:
             return self.tr
         eng = self.ai()
-        if not eng.has_key():
+        if not eng.key_present():
             return self.tr
         if self._ai_tr is None or self._ai_tr.engine is not eng:
             self._ai_tr = translate.HybridTranslator(eng, lambda: self.tr,
@@ -74,7 +83,7 @@ class AIMixin:
         """"ai" or "local", now. AI needs a key: without one the knob stays on Local and says why."""
         if name not in ("ai", "local"):
             return 400, {"error": "bad_request", "detail": "engine must be ai or local"}
-        if name == "ai" and not self.ai().has_key():
+        if name == "ai" and not self.ai().key_present():
             return 409, {"error": "no_key", "detail": "Add an Anthropic API key in Settings first."}
         code, body = self.put_settings({"values": {"ai.enabled": name == "ai"}}, by_hand=False)
         if code != 200:
@@ -87,10 +96,7 @@ class AIMixin:
         if self._ai_engine is not None:
             self._ai_engine.configure(self.ai_cfg())
         if "ai.enabled" in changed:
-            if self._ai_tr is not None:
-                self._ai_tr.reset_context()             # a change of engine starts clean, like a profile switch
-            if hasattr(self.tr, "reset_context"):
-                self.tr.reset_context()
+            self._ai_reset = True                       # a change of engine starts clean, like a profile switch
             if getattr(self, "running", False):
                 self._log_event({"event": "engine", "selected": "ai" if self.ai_selected() else "local"})
 
@@ -105,20 +111,16 @@ class AIMixin:
             if not ai.keychain_set(key):
                 return 507, {"error": "write_failed", "detail": "The key could not be saved in the Keychain."}
         self.ai().reload_key()
-        if not self.ai().has_key() and self.ai_selected():
+        if not self.ai().key_present() and self.ai_selected():
             self.put_settings({"values": {"ai.enabled": False}}, by_hand=False)
         return 200, self.state()
 
     # --- what the operator sees ---------------------------------------------------------------------
     def _ai_state(self) -> dict:
         sel = self.ai_selected()
-        eng = self._ai_engine
-        if eng is None and not sel:                     # never asked for: do not even look for a key yet
-            eng = self.ai() if getattr(self, "_ai_looked", False) else None
-        if eng is None:
-            self._ai_looked = True
-            eng = self.ai()
-        has = eng.has_key()
+        eng = self.ai()
+        has = eng.key_present(wait=False)               # only whether a key exists: no client, no host allowed,
+                                                        # and never waiting for the Keychain in the state feed
         if not sel:
             state = "local"
         elif not has:
@@ -129,7 +131,23 @@ class AIMixin:
                        "key_source": eng.key_source(), "model": eng.model,
                        "reason": eng.down_reason if state == "fallback" else None,
                        "down_s": round(time.time() - eng.down_since, 1) if state == "fallback" and eng.down_since else None,
-                       "latency_median_s": eng.latency()["median_s"]}}
+                       "latency_median_s": eng.latency()["median_s"],
+                       "used": {k: {"phrases": v["phrases"], "s": round(v["s"], 1)} for k, v in self._ai_used.items()}}}
+
+    def _engine_note(self, rec: dict):
+        """A caption was logged: its engine's count and seconds for After (report.engines, live)."""
+        e = rec.get("engine") if rec.get("engine") in self._ai_used else "local"
+        t = rec.get("t_end")
+        if not isinstance(t, (int, float)):
+            return
+        span = rec.get("audio_s") if self._ai_used_prev is None else t - self._ai_used_prev
+        self._ai_used[e]["phrases"] += 1
+        self._ai_used[e]["s"] += min(max(float(span or 0.0), 0.0), 30.0)
+        self._ai_used_prev = t
+
+    def _engine_new_run(self):
+        self._ai_used = {k: {"phrases": 0, "s": 0.0} for k in self._ai_used}
+        self._ai_used_prev = None
 
     # --- the voice's summaries follow the same rule (voicelink.py) ---------------------------------------
     def _voice_summary(self, texts: list[str], lang: str, deadline: float) -> dict:
@@ -140,6 +158,7 @@ class AIMixin:
             left = deadline - time.time() - 0.2
             if left > 0.5:
                 gen = ai.ClaudeSummarizer(self.ai(), timeout=min(left, float(self.ai_cfg().get("summary_timeout_s", 3.0))))
+                # (a summary that times out says nothing about captions: ClaudeSummarizer calls with soft=True)
                 res = summarize.summarize(gen, texts, lang)
                 if not str(res.get("reason") or "").startswith("error"):
                     return res                          # an answer, accepted or refused by a guard

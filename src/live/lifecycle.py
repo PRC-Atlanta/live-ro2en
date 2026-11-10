@@ -349,6 +349,8 @@ class LifecycleMixin:
             self._speech_reset()                       # Live Voice: no sentence of the last service is left
         if hasattr(self, "_voice_new_run"):
             self._voice_new_run()
+        if hasattr(self, "_engine_new_run"):
+            self._engine_new_run()
         self.behind_s = self.stt_behind = None
         self.eof.clear()
         self._stopping = False

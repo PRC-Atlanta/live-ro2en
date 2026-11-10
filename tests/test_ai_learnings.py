@@ -227,10 +227,20 @@ def test_speech_that_sounds_like_an_instruction_is_only_ever_the_text_to_transla
 
 
 def test_a_real_caption_is_never_taken_for_a_comment_about_the_input():
+    piece = [{"content": "Translate the next piece into English:\nceva spus în biserică"}]
     for real in ("In that fog we no longer recognize the way home.", "He will translate us into His kingdom.",
                  "The piece of bread was broken for us.", "Nu recunoaștem traducerea aceasta a Bibliei.",
-                 "This text is from the letter to the Romans."):
-        assert T.ClaudeTranslator._tuned_filter(real, [{"content": "Translate the next piece into English:\nceva"}]) == real, real
+                 "This text is from the letter to the Romans.", "I'm sorry, brothers, that I am late today.",
+                 "This text is not about money, it is about the heart.",
+                 "The natural man cannot understand the things of the Spirit.",
+                 "We can't make sense of suffering without the cross.", "Moses did as instructed by the Lord.",
+                 "I apologize to you, church, for my words last week.", "It seems that God had forgotten him."):
+        assert T.ClaudeTranslator._tuned_filter(real, piece) == real, real
     for comment in ("I cannot translate this piece: it seems garbled.", "The input is unintelligible.",
-                    "I'm sorry, but nothing understandable is in the piece.", "Nu pot traduce acest fragment."):
-        assert T.ClaudeTranslator._tuned_filter(comment, [{"content": "x:\nceva"}]) == "", comment
+                    "I'm sorry, but there is nothing to translate in the piece.", "Nu pot traduce acest fragment.",
+                    "It seems the transcription is cut off; could you provide the rest?",
+                    "Could you please provide more context?"):
+        assert T.ClaudeTranslator._tuned_filter(comment, piece) == "", comment
+    # a sermon that itself talks about translating is left alone
+    about = [{"content": "x:\nNu pot traduce acest cuvânt din greacă, fraților."}]
+    assert T.ClaudeTranslator._tuned_filter("I cannot translate this word from Greek, brothers.", about) != ""

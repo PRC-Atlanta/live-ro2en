@@ -459,6 +459,16 @@ class VoiceMixin:
         port = self._voice_port or int(self.voice_cfg().get("port", 8767))
         return f"http://{ip}:{port}/" if ip else None
 
+    def _voice_retry_when_model_arrives(self):
+        """Live Voice is on but its model was missing: once it is downloaded, start (looked at most every 5 s)."""
+        now = time.time()
+        if now - getattr(self, "_voice_model_look", 0.0) < 5.0:
+            return
+        self._voice_model_look = now
+        if self.voice is None and self._voice_dead and "not downloaded" in self._voice_dead and self.voice_model_ready():
+            self._voice_dead = None
+            threading.Thread(target=self._voice_apply, args=(False, True), daemon=True, name="voice-start").start()
+
     def _voice_light(self) -> tuple[str, float | None]:
         """(off | starting | ready | speaking | behind | stopped, seconds behind)."""
         if not self.voice_enabled():
@@ -485,6 +495,8 @@ class VoiceMixin:
         return None
 
     def _voice_state(self) -> dict:
+        if self.voice_enabled():
+            self._voice_retry_when_model_arrives()
         light, behind = self._voice_light()
         langs = (self._voice_status.get("langs") or {}) if light not in ("off", "stopped") else {}
         en_on = self.voice_lang_enabled("en")
@@ -496,21 +508,19 @@ class VoiceMixin:
             "port": self._voice_port or int(self.voice_cfg().get("port", 8767)),
             "model": self.voice_model_ready() if self.voice_enabled() else None,
             "summarizer": self._voice_can_summarize() if self.voice_enabled() else False,
-            "error": (self._voice_dead or self._voice_error) if light == "stopped" else None}}
+            "error": (self._voice_dead or self._voice_error) if light == "stopped" else None,
+            "session": self.voice_summary()}}
 
-    def voice_summary(self, items: list[dict] | None = None) -> dict | None:
+    def voice_summary(self, items: list[dict] | None = None) -> dict:
         """The voice's numbers for After (§5): median delay, share within 10 s, summaries, peak listeners."""
         items = self._voice_items if items is None else items
         played = [i for i in items if i.get("kind") in ("sentence", "summary") and i.get("delay_after_end_s") is not None]
-        if not played and not self._voice_counts:
-            return None
         d = [float(i["delay_after_end_s"]) for i in played]
         return {"items": len(played),
                 "delay_median_s": round(statistics.median(d), 1) if d else None,
                 "within_10s_pct": round(100 * sum(x <= 10 for x in d) / len(d)) if d else None,
                 "summaries": sum(1 for i in played if i.get("kind") == "summary"),
                 "summaries_refused": int(self._voice_counts.get("summaries_refused", 0)),
-                "skips": int((self._voice_status.get("counts") or {}).get("skips", 0)),
                 "cut": sum(1 for i in played if i.get("cut")),
                 "peak_listeners": {"ro": int(self._voice_peak.get("ro", 0)), "en": int(self._voice_peak.get("en", 0))}}
 

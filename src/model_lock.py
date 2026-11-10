@@ -55,6 +55,7 @@ def fetch(repo: str, files: list[str] | None = None) -> None:
 
 PLACEHOLDER = "0" * 40               # an unpublished repo (see the comment in models.lock.txt)
 TIERS = ("fast", "quality")          # download profiles; each one includes the tiers before it
+VOICE = "voice"                      # Live Voice (Supertonic 3): downloaded when it is turned on
 
 
 def items(lock: pathlib.Path | None = None) -> list[dict]:
@@ -75,8 +76,10 @@ def items(lock: pathlib.Path | None = None) -> list[dict]:
 
 def subset(profile: str, lock: pathlib.Path | None = None) -> list[dict]:
     """The lock items a download profile needs: 'fast' = Fast only, 'quality' = Fast + Best."""
+    if profile == VOICE:                 # Live Voice's model: its own download, not part of either tier
+        return [i for i in items(lock) if i["profile"] == VOICE]
     if profile not in TIERS:
-        raise ValueError(f"unknown profile {profile!r}; one of {', '.join(TIERS)}")
+        raise ValueError(f"unknown profile {profile!r}; one of {', '.join(TIERS + (VOICE,))}")
     want = TIERS[:TIERS.index(profile) + 1]
     return [i for i in items(lock) if i["profile"] in want]
 

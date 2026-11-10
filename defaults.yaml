@@ -101,7 +101,8 @@ profiles:
 ai:
   enabled: false
   model: claude-haiku-5-5
-  timeout_s: 2.5          # per phrase (measured 2026-11-10: median 0.9 s, p95 1.3 s, p99 2.2 s)
+  timeout_s: 2.5          # per call, wall clock (measured 2026-11-10: median 0.9 s, p95 1.3 s, p99 2.2 s)
+  phrase_s: 4.0           # per phrase, across the guards' retries; past it the local model answers
   retry_s: 10.0           # while down, look every this often whether the API answers again
   summary_timeout_s: 3.0
 

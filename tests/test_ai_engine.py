@@ -157,6 +157,12 @@ def test_where_the_key_is_looked_for(tmp_path, monkeypatch):
     assert ai.find_key(tmp_path) == (KEY, "env")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "not a key")
     assert ai.find_key(tmp_path) == (None, None)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", KEY + "\n")              # a trailing newline is not part of a key
+    assert ai.find_key(tmp_path) == (KEY, "env") and not ai.KEY_RE.match(KEY + "\n")
+    other = "sk-ant-" + "zZ9" * 12                                   # the Keychain is what Settings shows: it wins
+    monkeypatch.delenv("LIVE_AI_NO_KEYCHAIN")
+    monkeypatch.setattr(ai, "keychain_get", lambda: other)
+    assert ai.find_key(tmp_path) == (other, "keychain")
 
 
 def test_the_keychain_gets_the_key_on_stdin_never_on_a_command_line(monkeypatch):
@@ -176,7 +182,10 @@ def test_the_keychain_gets_the_key_on_stdin_never_on_a_command_line(monkeypatch)
     assert ai.keychain_get() == KEY
     runs.clear()
     assert not ai.keychain_set("sk-ant-short") and not ai.keychain_set('sk-ant-"; delete-keychain x' + "a" * 30)
+    assert not ai.keychain_set(KEY + "\ndelete-keychain login.keychain")
     assert runs == []                                                # a malformed key never reaches the tool
+    monkeypatch.setenv("LIVE_KEYCHAIN_SERVICE", 'x" -a evil -w "y')  # a service name cannot break the command either
+    assert ai._keychain_service() == ai.KEYCHAIN_SERVICE
 
 
 # --- the hybrid translator ---------------------------------------------------------------------------------
@@ -290,7 +299,9 @@ def live_with(tmp_path, reply=lambda kw: "Answer from the API.", selected=True, 
     live.tr = local or types.SimpleNamespace(translate=lambda t, *a, **k: "Local: " + t)
     live.pp = PP()
     client = FakeClient(reply)
-    live._ai_engine = ai.Engine(conf["ai"], client=client if key else None, log=live._ai_event) if key else ai.Engine(conf["ai"], root=tmp_path, log=live._ai_event)
+    live._ai_engine = ai.Engine(conf["ai"], client=client, log=live._ai_event) if key else \
+        ai.Engine(conf["ai"], root=tmp_path, log=live._ai_event)
+    live._ai_engine.key_present()                                    # the lookup is done (the state feed never waits for it)
     live.client = client
     return live
 
@@ -379,9 +390,18 @@ def test_ai_chosen_with_no_key_translates_locally_and_says_so(tmp_path):
 
 def test_the_key_never_appears_in_state_logs_or_the_feed(tmp_path, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", KEY)
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://gateway.example/v1")       # set by some other tool's shell
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "someone-elses-token")
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example:8080")
     made = {}
+
+    def Anthropic(**kw):
+        made["kw"] = kw
+        return made.setdefault("c", FakeClient())
+    monkeypatch.setitem(sys.modules, "httpx2", types.SimpleNamespace(HTTPTransport=lambda **kw: ("transport", kw)))
     monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(
-        Anthropic=lambda **kw: made.setdefault("c", FakeClient()), **{n: getattr(anthropic, n) for n in (
+        Anthropic=Anthropic, DefaultHttpxClient=lambda **kw: made.setdefault("http", kw),
+        **{n: getattr(anthropic, n) for n in (
             "APITimeoutError", "APIConnectionError", "RateLimitError", "AuthenticationError", "PermissionDeniedError",
             "APIStatusError")}))
     conf = yaml.safe_load(open(ROOT / "config.yaml"))
@@ -395,6 +415,10 @@ def test_the_key_never_appears_in_state_logs_or_the_feed(tmp_path, monkeypatch):
     live._handle(clause(1, time.time() - 20, ro="Bună dimineața tuturor fraților și surorilor."))
     st = live.state()
     assert st["ai"]["key_source"] == "env" and st["ai"]["state"] == "ai" and made["c"].calls
+    assert made["kw"]["base_url"] == "https://api.anthropic.com" and made["kw"]["max_retries"] == 0
+    assert made["http"]["trust_env"] is False and made["http"]["follow_redirects"] is False
+    assert made["http"]["transport"] == ("transport", {"trust_env": False})      # our own: no proxy from the environment
+    assert not any(k in os.environ for k in ai.ENV_IGNORED)                      # no gateway, profile or other token
     everything = json.dumps(st) + json.dumps(live.remote_feed()) + live.log_path.read_text() + json.dumps(live.settings_view())
     assert KEY not in everything and "sk-ant-" not in everything
     assert netaudit.allowed() == {"api.anthropic.com"}
@@ -518,4 +542,134 @@ def test_local_mode_never_allows_a_host_and_only_ai_py_may_open_a_connection(tmp
     assert users == ["ai.py"]
     sdk = sorted(p.name for p in src.glob("*.py") if "import anthropic" in p.read_text())
     assert sdk == ["ai.py", "translate.py"]                          # translate.py: the old experiment, LIVE_ALLOW_NETWORK only
-    assert "api.anthropic.com" in (src / "ai.py").read_text() and "base_url" not in (src / "ai.py").read_text()
+    assert 'BASE_URL = "https://" + HOST' in (src / "ai.py").read_text()
+
+
+# --- review of 2026-11-10 ----------------------------------------------------------------------------------------
+def test_the_budget_is_wall_clock_for_the_whole_call():
+    """The HTTP client's timeout bounds each step, not DNS and not the sum: the call is waited for
+    `timeout` seconds and no longer, whatever it is stuck in."""
+    def hang(kw):
+        time.sleep(1.5)
+        return "too late"
+    e, c, events = engine(hang, timeout_s=0.2)
+    t0 = time.time()
+    with pytest.raises(ai.Unavailable) as x:
+        e.call("s", [{"role": "user", "content": "x"}])
+    assert x.value.reason == "timeout" and time.time() - t0 < 0.6 and not e.up
+    e.close()
+
+
+def test_one_phrase_has_one_budget_for_all_its_calls():
+    """A guard retry or a repeat check adds calls; the phrase as a whole still gets `phrase_s` of the API."""
+    def slow(kw):
+        time.sleep(0.25)
+        return "We will be afraid."
+    t, c, e = hybrid(slow, local=FakeNLLB(), timeout_s=0.4, phrase_s=0.6)
+    t.begin_phrase()
+    assert t.translate("Nu ne vom teme.", "ro", "en", None, use_context=True) == "We will be afraid."
+    assert t.translate("Nu ne vom teme.", "ro", "en", None) == "We will be afraid."       # the guard asks again
+    out = t.translate("Nu ne vom teme.", "ro", "en", None)                                 # and again: no time left
+    assert out == "[Nu ne vom teme.]" and t.last_reason == "phrase_budget" and len(c.calls) == 2
+    assert e.up                                                      # the API is fine: this phrase just used its time
+    t.begin_phrase()
+    assert t.translate("Altă frază acum.", "ro", "en", None, use_context=True) == "We will be afraid."
+
+
+def test_local_mode_with_a_key_builds_no_client_imports_no_sdk_and_allows_no_host(tmp_path, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", KEY)
+    monkeypatch.setitem(sys.modules, "anthropic", None)              # importing the SDK would raise
+    before = netaudit.allowed()
+    conf = yaml.safe_load(open(ROOT / "config.yaml"))
+    live = Live(conf, types.SimpleNamespace(file=None))
+    live.log_path = tmp_path / "log.jsonl"
+    live.tr = types.SimpleNamespace(translate=lambda t, *a, **k: "Local: " + t)
+    live.pp = PP()
+    live.lang.set_mode("ro-en")
+    live._handle(clause(1, time.time() - 20, ro="Bună dimineața tuturor fraților și surorilor."))
+    end = time.time() + 3
+    while not live.state()["ai"]["available"] and time.time() < end:
+        time.sleep(0.02)
+    st = live.state()
+    assert st["ai"] == {**st["ai"], "selected": "local", "state": "local", "available": True, "key_source": "env"}
+    assert live._ai_engine._client is None and netaudit.allowed() == before
+    assert recs(live)[0]["engine"] == "local"
+
+
+def test_the_state_feed_never_waits_for_the_keychain(tmp_path, monkeypatch):
+    monkeypatch.delenv("LIVE_AI_NO_KEYCHAIN")
+    monkeypatch.setattr(ai, "keychain_get", lambda: time.sleep(1.0) or None)
+    live = Live(yaml.safe_load(open(ROOT / "config.yaml")), types.SimpleNamespace(file=None))
+    t0 = time.time()
+    st = live.state()
+    assert time.time() - t0 < 0.5 and st["ai"]["available"] is False
+
+
+def test_a_summary_that_times_out_does_not_take_captions_off_ai(tmp_path):
+    def reply(kw):
+        if "condense" in kw["system"]:
+            time.sleep(1.0)
+        return "Good morning to all brothers and sisters."
+    live = live_with(tmp_path, reply, summary_timeout_s=0.3)
+    live.lang.set_mode("ro-en")
+
+    class Gen:
+        name, tr = "local", object()
+
+        def generate(self, texts, lang):
+            return "Tatăl meu m-a învățat să citesc Biblia."
+    live._voice_summarizer = lambda: Gen()
+    res = live._voice_summary(TEXT, "ro", time.time() + 4.0)         # 0.3 s for the API: too little
+    assert res["engine"] == "local" and live._ai_engine.up           # the local model wrote it; AI stays up
+    live._handle(clause(1, time.time() - 20, ro="Bună dimineața tuturor fraților și surorilor."))
+    assert recs(live)[-1]["engine"] == "ai" and live.state()["ai"]["state"] == "ai"
+
+
+def test_a_published_verse_in_ai_mode_is_not_a_fallback(tmp_path):
+    import verses as V
+    live = live_with(tmp_path)
+    live.lang.set_mode("ro-en")
+    live._translator().verses = V.Matcher(background=False)
+    live._handle(clause(1, time.time() - 20, ro="pentru mine a trăi este Hristos și a muri este un câștig"))
+    rec = recs(live)[-1]
+    assert rec["verse"]["ref"] == "Philippians 1:21" and rec["engine"] == "ai" and "engine_reason" not in rec
+    assert live.counts["ai_fallback"] == 0 and live.client.calls == []
+
+
+def test_a_local_answer_that_was_cut_short_is_flagged():
+    class CutGemma(FakeGemma):
+        def _truncated(self, out):
+            return True
+    t, _, e = hybrid(lambda kw: err("APIConnectionError"), local=CutGemma())
+    t.translate("O frază lungă care nu încape.", "ro", "en", None, use_context=True)
+    assert t.last_truncated
+    e.close()
+
+
+def test_turning_the_knob_resets_contexts_between_phrases_not_under_one(tmp_path):
+    live = live_with(tmp_path)
+    live.lang.set_mode("ro-en")
+    live._handle(clause(1, time.time() - 30, ro="Bună dimineața tuturor fraților și surorilor."))
+    hy = live._ai_tr
+    assert hy.context
+    live.set_engine("local")
+    assert hy.context and live._ai_reset                             # nothing was touched from the settings thread
+    live._handle(clause(2, time.time() - 20, ro="Astăzi vorbim despre harul lui Dumnezeu."))
+    assert hy.context == [] and not live._ai_reset                   # the worker did it before its next phrase
+
+
+def test_diagnostics_never_carry_a_key_shaped_string():
+    from live import report
+    assert KEY not in report.redact(f"error: 401 for key {KEY} at api.anthropic.com")
+    assert "<redacted>" in report.redact(f"ANTHROPIC_API_KEY={KEY}")
+
+
+def test_a_rejected_key_recovers_when_a_new_one_is_saved():
+    e, c, _ = engine(lambda kw: err("AuthenticationError"))
+    with pytest.raises(ai.Unavailable):
+        e.call("s", [{"role": "user", "content": "x"}])
+    assert not e.up and e.down_reason == "key_rejected"
+    e._key_source = None                                             # as a real engine (not the test client)
+    e.reload_key()
+    assert e.up and e.down_reason is None
+    e.close()

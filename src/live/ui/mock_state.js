@@ -28,9 +28,12 @@ export function baseState() {
     display: { size: "large", lines: 2, colors: "white_on_black", network: false, show_hidden: false, remote: false, url: null, network_error: null },
     remote: { enabled: false, pin: null, clients: 0 },
     ai: { selected: "local", state: "local", available: true, key_source: "keychain", model: "claude-haiku-5-5",
-          reason: null, down_s: null, latency_median_s: null },
+          reason: null, down_s: null, latency_median_s: null,
+          used: { ai: { phrases: 0, s: 0 }, local: { phrases: 0, s: 0 }, local_fallback: { phrases: 0, s: 0 } } },
     voice: { enabled: false, state: "off", behind_s: null, listeners: { ro: 0, en: 0 }, en: true, url: null, port: 8767,
-             model: null, summarizer: false, error: null },
+             model: null, summarizer: false, error: null,
+             session: { items: 0, delay_median_s: null, within_10s_pct: null, summaries: 0, summaries_refused: 0, cut: 0,
+                        peak_listeners: { ro: 0, en: 0 } } },
     pace: { state: "ok", behind_s: null }, backlog: { n: 0, oldest_s: null },
     paused: false, held: false, song: false, song_auto: false, problem: null, auto_actions: [],
     elapsed_s: null, first_word_ok_pct: null, rehearsal: false, session_terms_n: 0, corrections_n: 0, preflight: null,
@@ -252,6 +255,7 @@ export const mockBackend = {
     const done = Math.round(total * d.pct / 100);
     return {
       profiles, models, recommended_profile: rec,
+      voice: { size_bytes: 401297315, present: true, published: true },
       disk: { path: "/Users/church/Library/Application Support/Live RO2EN/hf/hub", free_bytes: free },
       hardware: { ram_bytes: ram, arch: "arm64", chip: small ? "Apple M1" : "Apple M2 Pro", apple_silicon: true },
       checks: [

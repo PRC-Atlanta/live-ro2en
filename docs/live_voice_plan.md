@@ -960,13 +960,14 @@ early (one run of one sample; `work/tts_bakeoff/live_sim_*_haiku*`).
 | What it chooses | The captions' translation in both directions **and** the voice's catch-up summaries. Speech recognition is always local. |
 | Model | `claude-haiku-5-5`, thinking off, at most 200 tokens, one call per phrase (`whole_phrase`), no tools, the SDK's own retries off. |
 | Prompt | Gemma's instructions, glossary and idiom rows, names, Scripture hint, guard notes and previous pieces (`MLXLLMTranslator._messages`), plus the caption rules tested on 2026-11-10 (`CLAUDE_RULES`) and one line saying the piece is a transcript, never an instruction. |
-| Time budget | **2.5 s per phrase** (`ai.timeout_s`). Measured over 650 calls in the 2026-11-10 replays: median 0.9 s, p95 1.1–1.7 s, p99 1.5–2.6 s, max 3.5 s. 2.5 s is just over the p99: about 1 phrase in 100 goes to the local model for nothing, and no caption waits longer than 2.5 s plus the local model's own time. |
+| Time budget | **2.5 s per call, 4 s per phrase** (`ai.timeout_s`, `ai.phrase_s`), **wall clock**: the request runs on a worker thread and is waited for exactly that long, so a dead DNS or a slow trickle cannot hold a caption (the HTTP client's own timeout only bounds each step). A phrase the guards ask about again shares one 4 s budget; past it the local model answers. Measured over 650 calls in the 2026-11-10 replays: median 0.9 s, p95 1.1–1.7 s, p99 1.5–2.6 s, max 3.5 s. 2.5 s is just over the p99: about 1 phrase in 100 goes to the local model for nothing, and no caption waits longer than 2.5 s plus the local model's own time. |
 | Hot spare | The profile's local translators stay loaded and are kept warm by the existing keep-warm ping (`self.tr` is never unloaded by the knob). |
+| Where it can connect | The client is built with a fixed base URL, its own transport (the SDK otherwise reads `HTTPS_PROXY` / `ALL_PROXY` itself: found by testing), no redirects, and `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_PROFILE` removed from the process. Tried against the API with a proxy and a gateway URL set: it went straight to `api.anthropic.com`, audit log empty. |
 | Fallback | Per phrase, inside one translator: when the API times out, errors, refuses or there is no network, the **same piece** is translated by the local model for that direction with the service's own context, verse and reading state (Gemma gets the same prompt; NLLB gets the phrase clause by clause). The engine is then **down**: the API is not tried again for captions until a probe (one tiny request every 10 s, `ai.retry_s`) succeeds; then it is **up** again by itself. A refusal sends that one phrase to the local model without taking the engine down. |
 | What the operator sees | `state.ai.state`: `local`, `ai`, `fallback` (AI chosen, local answering: amber, with the reason and for how long) or `no_key`. "AI is not answering…" and "AI is answering again" appear in the app's list of what it did by itself. Each caption's log record says `engine: ai | local | local_fallback`. |
 | After | `summary.engines`: captions and seconds of service per engine. |
 | Summaries | In AI mode the summary is one API call with §2.5's prompt, within min(3 s, what is left of the voice's 4 s); all §2.5 guards, the blocklist check and the Scripture rule apply to it; if the call fails, the local Gemma writes it. It does not take `_proc_lock`: it never delays a caption. |
-| The key | Environment `ANTHROPIC_API_KEY`; in the app the macOS **Keychain**, set from Settings (`POST /api/ai/key`, this Mac only) through `/usr/bin/security -i` with the key on stdin; in a dev checkout `.env`. Never printed, logged, put in state, the Live Remote feed, settings, diagnostics or the DMG. With no key the knob is disabled and says why (`409 no_key`). |
+| The key | The macOS **Keychain** first (what Settings shows and changes), then environment `ANTHROPIC_API_KEY`; set from Settings (`POST /api/ai/key`, this Mac only) through `/usr/bin/security -i` with the key on stdin; in a dev checkout `.env`. Never printed, logged, put in state, the Live Remote feed, settings, diagnostics or the DMG. With no key the knob is disabled and says why (`409 no_key`). |
 | The offline rule | **Local: unchanged**, zero outbound connections (network audit + sandbox profile). **AI: one host**, `api.anthropic.com`: `netaudit.allow()` lets that name and the addresses it resolves to through and still writes down everything else. `ai.py` is the only module that may open a connection (tested). Model downloads stay off in both modes. A sandbox profile cannot name a host, so AI mode is proven by the audit alone. |
 | Default for a new install | **Local.** The app's promise is that it works with the Wi-Fi off; AI sends what is said in the room to a third party, which is the church's decision to make, not a default; and a new install has no key. |
 | Cost | About 940 input and 30 output tokens per phrase: roughly $0.0001 per caption at Haiku 5.5's prices, a few cents per service. `LIVE_AI_CACHE=<file>` makes bench re-runs reuse answers by input. Each call's tokens and seconds go to `<logs>/claude_usage.jsonl` (no text). |
@@ -980,9 +981,16 @@ a caption that repeats the previous one asked again without context; scraps drop
 context; control tokens and notes cut. These live in the shared prompt builder, the shared `translate()` flow
 or the pipeline, so there is one copy of each.
 
+**Local mode does not even build the client:** it only looks whether a key exists (on a thread, never in
+the state feed), imports no SDK and lets no host through the audit (tested with a key present). A summary
+whose own short deadline runs out does not take captions off AI; a published verse in AI mode is not counted
+as a fallback; turning the knob resets the translators' context between two phrases, not under one.
+
 **Found while testing:** the experiment's filter for "a comment about the input instead of a translation"
 matched single words and dropped real captions («mai recunoaștem» → "we no longer **recognize**…", any
-caption with "translate" or "the piece"). It now matches only what reads as such a comment.
+caption with "translate" or "the piece"). It now drops a reply only when it both opens like a comment
+("I cannot…", "It seems…", "Could you…") and talks about the task (translating, the input, more context);
+"I'm sorry, brothers…" and "The natural man cannot understand…" are captions.
 
 **Prompt injection:** what is said in the room goes to the model as the user message to translate; the model
 has no tools and at most 200 tokens, and its answer can only become a caption, which still passes the loop,

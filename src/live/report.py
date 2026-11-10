@@ -374,9 +374,14 @@ def is_secret_file(path: pathlib.Path) -> bool:
     return (b"-----BEGIN" in head and b"PRIVATE KEY" in head) or b'"private_key"' in head
 
 
+API_KEY_VALUE = re.compile(r"sk-ant-[A-Za-z0-9_\-]{8,}")
+
+
 def redact(text: str) -> str:
-    """Blank the value of any setting whose name looks like a key, password or token."""
-    return SECRET_KEY.sub(lambda m: m.group(1) + "<redacted>", text)
+    """Blank the value of any setting whose name looks like a key, password or token, and anything
+    that is shaped like an Anthropic API key wherever it stands (a log line, an error text)."""
+    text = SECRET_KEY.sub(lambda m: m.group(1) + "<redacted>", text)
+    return API_KEY_VALUE.sub("<redacted>", text)
 
 
 def _tail(path: pathlib.Path, n: int = LOG_TAIL) -> bytes:

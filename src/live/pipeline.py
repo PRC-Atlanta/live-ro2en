@@ -797,8 +797,8 @@ class PipelineMixin:
         src_info.update(gated)
         tgt = "en" if lang == "ro" else "ro"
         tr = self._translator() if hasattr(self, "_translator") else self.tr   # AI or local (aimode.py)
-        if hasattr(tr, "engines_used"):
-            tr.engines_used.clear()
+        if hasattr(tr, "begin_phrase"):
+            tr.begin_phrase()
         clauses, tail = split_clauses(src_text)
         parts = clauses + ([tail] if tail else [])        # at a pause everything is committed
         if _whole_phrase(tr, lang, tgt):             # an online translator: one round trip per phrase
@@ -837,7 +837,9 @@ class PipelineMixin:
             src_info["odd_figure"] = True
         t_tr = time.time() - t0
         used = set(getattr(tr, "engines_used", None) or ()) if tr is not self.tr else {"local"}
-        engine = "ai" if used == {"ai"} else "local" if tr is self.tr else "local_fallback"
+        # AI chosen: "ai" when only the API answered, or when no model was asked at all (a published
+        # verse); "local_fallback" when the local model answered any part of it
+        engine = "local" if tr is self.tr else "local_fallback" if "local" in used else "ai"
         if "local" in used:
             self._tr_used[id(self.tr)] = time.time()
         src_info["engine"] = engine
@@ -919,6 +921,8 @@ class PipelineMixin:
             elif ok is False:                           # None: nothing was sent (hidden or held)
                 self.counts["pp_error"] += 1
         self._write_log(rec)
+        if hasattr(self, "_engine_note"):
+            self._engine_note(rec)
         if hasattr(self, "_speech_chunk"):              # Live Voice: the sentence step (speech.py)
             try:
                 self._speech_chunk(ev, tgt, translation, src_text, outcome, t_disp, verse=verse, mark=voice_mark)
