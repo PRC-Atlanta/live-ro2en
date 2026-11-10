@@ -750,3 +750,40 @@ def test_child_processes_never_get_the_api_key(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY"); monkeypatch.delenv("ANTHROPIC_BASE_URL")
     monkeypatch.delenv("LIVE_ENGINE_PYTHONPATH"); monkeypatch.delenv("LIVE_VOICE_PYTHONPATH")
     assert paths.engine_env() is None and paths.voice_env() is None        # nothing secret: inherit, as before
+
+
+# 2026-11-10 18:39: Haiku broke off a Romanian translation to correct itself in English; it went on
+# screen and was read aloud. A Romanian reply with English in it is translated again by the local model.
+TONIGHT = 'că se aprinde... — no, the piece begins with "that\'s misfiring", continuing the sentence about the code.'
+
+
+@pytest.mark.parametrize("reply, english", [
+    (TONIGHT, True),
+    ("el știa că trebuie să ne ab *Note: Since the sentence is incomplete in the source, the translation reflects it.", True),
+    ("Dumnezeu vede deja aceste probleme în viața voastră.", False),
+    ("Vom cânta «How Great Is Our God», apoi «Amazing Grace».", False),     # an English title alone is fine
+    ("Isus a spus: «It is finished», adică s-a terminat.", False),          # a short English quote too
+    ("Dar cel care primise unul a mers și a săpat o groapă.", False),
+    ("Are un cod specific, ca la mașină, și îți spune ce nu merge.", False),   # Romanian "are", "nu"
+])
+def test_english_in_a_romanian_translation_is_recognised(reply, english):
+    assert T.english_in_romanian(reply) is english
+
+
+def test_a_romanian_reply_with_english_in_it_is_translated_again_locally():
+    gemma = FakeGemma()
+    t, c, e = hybrid(lambda kw: TONIGHT, local=gemma)
+    t.begin_phrase()
+    out = t.translate("that's misfiring, what's happening.", "en", "ro", None, use_context=True)
+    assert out == "Local answer." and t.engines_used == {"ai", "local"} and t.last_reason == "english_in_ro"
+    assert len(gemma.prompts) == 1 and "that's misfiring" in gemma.prompts[0]
+    assert e.up                                                      # a bad reply does not take the API down
+    e.close()
+
+
+def test_an_english_translation_is_not_checked_for_english():
+    t, c, e = hybrid(lambda kw: "When that engine light comes on, it tells you what it is.")
+    t.begin_phrase()
+    out = t.translate("Când se aprinde becul, îți spune ce este.", "ro", "en", None, use_context=True)
+    assert out.startswith("When that engine light") and t.engines_used == {"ai"}
+    e.close()

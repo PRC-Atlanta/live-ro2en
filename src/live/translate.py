@@ -775,6 +775,28 @@ _META_SRC_STRONG = re.compile(r"\b(?:incomplet\w*|input\w*|neclar\w*|neînțeles
                               r"cut off)\b", re.IGNORECASE)
 
 
+# English words that are never Romanian words: a Romanian translation holding several of them close
+# together has English in it. 2026-11-10 18:39 Haiku broke off a translation to correct itself in
+# English («că se aprinde... — no, the piece begins with "that's misfiring", continuing the sentence
+# about the code.»): it went on screen and was read aloud. Words a Romanian sentence can hold ("a",
+# "are", "in", "do", "an", "nu"…) and names (God, Jesus, Amen) are left out, so one English title or
+# name in a caption is not enough: it takes 3 of these within 6 words.
+_EN_ONLY = frozenset("""the and of to is that it for you he was with his they this from or had by not but
+what all were we when your can said there which she their if will about them these some her would
+him into has than been who its did could should my me our us i'm it's that's isn't don't doesn't
+didn't wasn't can't won't you're we're they're i've let's piece begins continuing sentence translation
+translate input source""".split())
+_EN_TOK = re.compile(r"[A-Za-zĂÂÎȘȚăâîșțŞŢşţ]+(?:'[A-Za-z]+)?")
+
+
+def english_in_romanian(reply: str, run: int = 3, window: int = 6) -> bool:
+    """`reply`, a Romanian translation, holds a stretch of English (`run` English-only words within
+    `window` words)."""
+    toks = [t.lower() for t in _EN_TOK.findall(reply or "")]
+    hits = [t in _EN_ONLY for t in toks]
+    return any(sum(hits[i:i + window]) >= run for i in range(len(hits)))
+
+
 def is_meta_comment(reply: str, piece: str) -> bool:
     """`reply` is a comment about the input, not a translation of `piece`."""
     reply = reply.strip()
@@ -939,7 +961,13 @@ class HybridTranslator(ClaudeTranslator):
                 out, self._stop = self.engine.call(piece[0]["content"], list(piece[1:]), self.max_tokens,
                                                    timeout=budget, soft=short)
                 self.engines_used.add("ai")
-                return self._tuned_filter(out, piece)
+                if piece.args[2] == "ro" and english_in_romanian(clean_output(out)):
+                    # the reply broke into English (a note to itself): the local model translates
+                    # the same piece, so its words still reach the screen and the voice
+                    print("translate: English in the Romanian reply, translated locally", file=sys.stderr)
+                    self.last_reason = "english_in_ro"
+                else:
+                    return self._tuned_filter(out, piece)
             except Unavailable as e:
                 self.last_reason = e.reason
         else:
