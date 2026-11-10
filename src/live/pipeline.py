@@ -89,6 +89,13 @@ def scrap(text: str) -> bool:
         and fold_diacritics(words[0]) not in {fold_diacritics(w) for w in _ALONE_RO}
 
 
+def _whole_phrase(tr, lang: str, tgt: str) -> bool:
+    """The translator for this direction takes a whole phrase in one call instead of clause by
+    clause (the experimental online Claude translator: each call is a network round trip)."""
+    m = tr.trs.get((lang, tgt), tr) if isinstance(getattr(tr, "trs", None), dict) else tr   # ByDirection
+    return bool(getattr(m, "whole_phrase", False))
+
+
 def pack_parts(parts: list[str], max_words: int) -> list[str]:
     """Join consecutive clauses into calls of at most max_words (a clause longer than that
     stays whole), so a backlog is translated in few calls without overrunning max_tokens."""
@@ -740,6 +747,8 @@ class PipelineMixin:
         tgt = "en" if lang == "ro" else "ro"
         clauses, tail = split_clauses(src_text)
         parts = clauses + ([tail] if tail else [])        # at a pause everything is committed
+        if _whole_phrase(self.tr, lang, tgt):             # an online translator: one round trip per phrase
+            parts = [src_text]
         if ev.get("caught_up"):                           # catching up: few calls, each bounded
             parts = pack_parts(parts, int(self.lc.get("catchup_max_words", 60)))
         t0 = time.time()
