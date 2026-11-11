@@ -563,6 +563,11 @@ class SpeechMixin:
             for k in sorted(holy)[:200]:
                 del holy[k]
         self._log_event({"event": "sentence", **s})
+        if hasattr(self, "_monitor_sentence"):          # the Monitor screen groups its rows the same way
+            try:
+                self._monitor_sentence(s)
+            except Exception:                           # noqa: BLE001
+                self._state_failed(self._monitor_sentence)
         send = getattr(self, "_voice_send", None)
         if send is not None:
             send({"type": "sentence", **s})

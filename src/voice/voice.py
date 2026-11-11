@@ -515,7 +515,7 @@ class Voice:
                "pause_before": it.pause_before, "scripture": any(c.get("scripture") for c in it.covers)}
         if it.kind != "test":
             self.counts["items"] += 1
-        emit({"type": "item", **rec})
+        emit({"type": "item", **rec, "text": it.text})       # the text: for the Monitor screen
         self.log({"event": "item", **rec, "played_s": round(played_s, 3), "text": it.text,
                   "lag_est_s": round(getattr(it, "lag_est", 0.0), 2), "gen_end": round(it.gen_end, 3),
                   "t_end": round(getattr(it, "t_end", time.time()), 3)})

@@ -352,7 +352,12 @@ class VoiceMixin:
         elif t == "item":
             if ev.get("kind") != "test":
                 self._voice_items.append(ev)
-                self._voice_event({"event": "voice_item", **{k: v for k, v in ev.items() if k != "type"}})
+                self._voice_event({"event": "voice_item", **{k: v for k, v in ev.items() if k not in ("type", "text")}})
+                if hasattr(self, "_monitor_voice"):     # the Monitor screen's third column
+                    try:
+                        self._monitor_voice(ev)
+                    except Exception:                   # noqa: BLE001
+                        self._state_failed(self._monitor_voice)
         elif t == "summarize":
             threading.Thread(target=self._voice_summarize, args=(ev,), daemon=True, name="voice-summary").start()
         elif t == "error":

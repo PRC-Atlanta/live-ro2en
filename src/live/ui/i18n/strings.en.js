@@ -13,6 +13,7 @@ export const S = {
     after: "After", afterHint: "Summary, rating and transcript of the last service",
     setupName: (device, pp) => `${device || "No sound input"} → ${pp === "off" ? "this Mac only" : pp ? "ProPresenter" : "ProPresenter (not connected)"}`,
     display: "Captions display", displayHint: "A captions-only window for a second screen or projector",
+    monitor: "Monitor", monitorHint: "Every segment: what was heard, what was translated and what Live Voice said",
   },
 
   // big dial face per phase: [big text, small text]; "{pct}" and "{t}" are filled in
@@ -52,7 +53,7 @@ export const S = {
     label: "Speaker", keys: "1 · 2 · 3",
   },
   quality: {
-    knob: { fast: "Quickest", quality: "Best" },
+    knob: { fast: "Quick", quality: "Best" },
     face: { fast: "Quick", quality: "Best" },
     long: { fast: "Quickest", quality: "Best quality" },
     label: "Quality", keys: "Q",
@@ -66,7 +67,29 @@ export const S = {
     title: "Local: this Mac's own models, nothing leaves it. AI: Claude Haiku over the internet; the local models take over by themselves when it does not answer.",
     noKey: "AI needs an Anthropic API key. Add one in Settings → AI.",
   },
+  // the Live Voice knob: the voice on phones, on or off (the same switch as Settings → Live Voice)
+  voice: {
+    knob: { off: "Off", on: "On" },
+    face: { off: "Off", on: "On" },
+    label: "Live Voice", keys: "L",
+    title: "Live Voice: the spoken translation on listeners' phones. The same switch as Settings → Live Voice.",
+    on: "Live Voice on", off: "Live Voice off",
+  },
   lang: { ro: "Romanian", en: "English" },
+
+  // the Monitor screen: one row per segment
+  monitor: {
+    heard: "Transcribed", translated: "Translated", voiced: "Live Voice said",
+    empty: "Nothing yet. Rows appear here as the speaker is captioned.",
+    notShown: "not shown", notVoiced: "–", summary: "summary",
+    // which translator made the row's translation: ai, local, or local_fallback (AI chosen, the local
+    // model answered because the API did not in time)
+    engine: { ai: "AI", local: "Local", local_fallback: "Local · fallback" },
+    engineTitle: "Which translator made this translation",
+    clear: "Clear", cleared: "Monitor cleared",
+    count: n => `${n} segment${n === 1 ? "" : "s"}`,
+    follow: "Follow newest",
+  },
 
   hide: "Hide captions", hideKey: "H", hideTitle: "Blank ProPresenter and the stage display. Recognition and the log carry on. H again to show.",
   tabs: { heard: "Heard", screen: "On screen", both: "Both", hint: "V to switch", hiddenTag: "· captions hidden" },
@@ -189,6 +212,7 @@ export const S = {
     ["1 / 2 / 3", "Speaker: Auto-detect / Romanian / English"],
     ["Q", "Quality: Quickest or Best"],
     ["A", "Translator: AI or Local"],
+    ["L", "Live Voice: on or off"],
     ["Backspace", "Remove the last caption"],
     ["E", "Fix the last caption"],
     ["T", "Today's names & words"],

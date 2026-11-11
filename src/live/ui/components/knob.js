@@ -21,7 +21,7 @@ export function knob(el, { id, label, keys, positions, face, onPick }) {
     if (value === cur) return;
     cur = value;
     const p = positions.find(x => x.value === value) || positions[0];
-    k.querySelector(".ptr").style.transform = `rotate(${p.angle}deg) translateY(27px)`;
+    k.querySelector(".ptr").style.setProperty("--a", `${p.angle}deg`);    // the length follows --knob (live.css)
     k.querySelector(".val").textContent = face[value] ?? value;
     k.setAttribute("aria-label", `${label}: ${p.label}`);
     btns.forEach(b => { const on = b.dataset.v === value; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); });

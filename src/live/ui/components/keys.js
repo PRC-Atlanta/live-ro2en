@@ -8,6 +8,7 @@ export const KEYS = {
   "1": "mode_auto", "2": "mode_ro", "3": "mode_en",
   q: "quality",
   a: "engine",            // the AI / Local knob
+  l: "voice",             // the Live Voice knob: on / off
   backspace: "retract",
   e: "fix",               // opens the fix-last-caption box, which then posts `correct`
   t: "terms",             // opens today's names & words, which then posts `terms`

@@ -923,6 +923,11 @@ class PipelineMixin:
         self._write_log(rec)
         if hasattr(self, "_engine_note"):
             self._engine_note(rec)
+        if hasattr(self, "_monitor_phrase"):            # the Monitor screen's row (monitor.py), before the
+            try:                                        # sentence step can group it with others
+                self._monitor_phrase(rec)
+            except Exception:                           # noqa: BLE001  the monitor never stops a caption
+                self._state_failed(self._monitor_phrase)
         if hasattr(self, "_speech_chunk"):              # Live Voice: the sentence step (speech.py)
             try:
                 self._speech_chunk(ev, tgt, translation, src_text, outcome, t_disp, verse=verse, mark=voice_mark)

@@ -35,7 +35,7 @@ export function gainKnob(el, { label, keys, min, max, fmt, onChange, onCommit, a
 
   function show(v) {
     cur = v;
-    ptr.style.transform = `rotate(${180 - SWEEP / 2 + frac(v) * SWEEP}deg) translateY(${Math.round((k.offsetWidth || 84) * 0.32)}px)`;
+    ptr.style.setProperty("--a", `${180 - SWEEP / 2 + frac(v) * SWEEP}deg`);   // the length follows --knob (live.css)
     val.textContent = fmt(v);
     const a = frac(Math.min(0, v)), b = frac(Math.max(0, v));
     fill.setAttribute("d", a === b ? "" : arc(a, b));

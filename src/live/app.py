@@ -57,6 +57,7 @@ from report import SessionMixin                      # noqa: E402
 from state import StateMixin                         # noqa: E402
 from speech import SpeechMixin                       # noqa: E402
 from voicelink import VoiceMixin                     # noqa: E402
+from monitor import MonitorMixin                     # noqa: E402
 from aimode import AIMixin                           # noqa: E402
 from translate import Glossary                       # noqa: E402
 # re-exported: tests and tools import these from live.app
@@ -65,7 +66,7 @@ from security import LOOPBACK, allowed_hosts, request_allowed      # noqa: E402,
 
 
 class Live(AIMixin, LifecycleMixin, PipelineMixin, OutputMixin, DisplayMixin, RemoteMixin, SessionMixin, StateMixin,
-           SettingsMixin, SpeechMixin, VoiceMixin):
+           SettingsMixin, SpeechMixin, VoiceMixin, MonitorMixin):
     """One service: the engine child, the translator, ProPresenter and the control state.
     The behaviour lives in the mixins (lifecycle, pipeline, output, state); this is the data."""
 
@@ -129,6 +130,8 @@ def build_app(live: Live):
     app.include_router(system.router(live, hosts, port))
     for mod in (output, settings, setup, session):
         app.include_router(mod.router(live))
+    import monitor
+    app.include_router(monitor.router(live))          # the Monitor screen's rows
     app.mount("/ui", NoCache(directory=HERE / "ui", html=True), name="ui")   # the operator UI (S5)
     return app
 
