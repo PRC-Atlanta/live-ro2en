@@ -46,10 +46,13 @@ def test_settings_keys_exist_in_config():
     keys = re.findall(r'key: "([\w.]+)"', (UI / "screens" / "settings" / "fields.js").read_text())
     assert len(keys) >= 15
     for k in keys:
-        sec, name = k.split(".")
-        assert sec in ("live", "propresenter", "display", "safety"), k
+        sec, *rest = k.split(".")
+        assert sec in ("live", "propresenter", "display", "safety", "voice", "ai"), k
         if k != "live.autostart":                  # new in S3's defaults.yaml
-            assert name in cfg[sec], k
+            node = cfg[sec]
+            for part in rest:                      # voice.en.enabled: nested
+                assert part in node, k
+                node = node[part]
 
 
 def test_s5b_screens_are_not_placeholders():

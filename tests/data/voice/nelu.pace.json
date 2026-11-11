@@ -1,0 +1,97 @@
+{
+ "settings": {
+  "gap_s": 0.25,
+  "skip_pause_s": 0.6,
+  "limit_s": 10.0,
+  "skip_s": 20.0,
+  "speed": [
+   1.25,
+   1.5
+  ],
+  "step": 0.1,
+  "deadband": 0.05,
+  "grid": 0.05,
+  "lag": [
+   2.0,
+   6.0
+  ],
+  "min_in_words": 12,
+  "max_ratio": 0.6,
+  "min_ro_score": 0.15,
+  "ready": "ready_live",
+  "hold_s": 0.0,
+  "max_words": 30,
+  "cap_words": 45,
+  "split_words": 0,
+  "fade": false,
+  "fade_s": 0.5,
+  "fade_min_left_s": 3.0
+ },
+ "stats": {
+  "items": 50,
+  "summaries": 1,
+  "sentences_summarized": 2,
+  "summary_requests": 2,
+  "summaries_accepted": 1,
+  "summaries_rejected": {
+   "too_short": 1
+  },
+  "skips": 0,
+  "sentences_skipped": 0,
+  "delay_after_end_median": 5.13,
+  "delay_after_end_p90": 9.37,
+  "delay_after_end_max": 12.43,
+  "share_within_10s": 0.98,
+  "voiced_share_within_10s": 0.996,
+  "final_delay_s": 6.07,
+  "speed_min": 1.35,
+  "speed_max": 1.5,
+  "speed_largest_step": 0.1,
+  "speed_median": 1.45,
+  "speed_counts": {
+   "1.35": 3,
+   "1.40": 21,
+   "1.45": 3,
+   "1.50": 23
+  },
+  "voice_audio_s": 390.0,
+  "english_span_s": 594.1,
+  "silence_between_s_median": 3.21,
+  "voice_over_romanian_s": 0,
+  "items_faded": 0,
+  "words_faded": 0,
+  "items_yielded": 0,
+  "words_yielded": 0
+ },
+ "summary_requests": [
+  {
+   "first": 38,
+   "last": 39,
+   "lag_est_s": 11.51,
+   "speed": 1.5,
+   "in": [
+    "Sisters, let us give everything for this kingdom, nothing is more fleeting than life, but nothing is more eternal than it, says the song. Therefore, let us do everything, let us give everything.",
+    "Everything for this kingdom and for this reward. will cost us much."
+   ],
+   "in_words": 45,
+   "out": "Sisters, let us give everything for this kingdom and reward because life is fleeting but eternal.",
+   "out_words": 16,
+   "gemma_s": 1.874,
+   "accepted": true,
+   "reason": null
+  },
+  {
+   "first": 43,
+   "last": 43,
+   "lag_est_s": 12.43,
+   "speed": 1.5,
+   "in": [
+    "A reward for each one of us."
+   ],
+   "in_words": 7,
+   "accepted": false,
+   "reason": "too_short (7 words)"
+  }
+ ],
+ "scripture_sentences": 13
+}

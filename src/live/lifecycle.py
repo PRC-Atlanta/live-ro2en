@@ -55,6 +55,8 @@ PROBLEMS = {
     "recognition_behind": ("warn", "quickest", "Switch to Quickest"),
     "captions_behind": ("warn", "quickest", "Switch to Quickest"),
     "english_unavailable": ("info", "lock_ro", "Romanian speaker only"),
+    "voice_stopped": ("warn", "settings", "Open Settings"),      # Live Voice: captions are not affected
+    "voice_behind": ("info", "help", "What this means"),
 }
 
 
@@ -343,6 +345,12 @@ class LifecycleMixin:
             path = logdir / f"{stem}_{n}.jsonl"           # sorts after the first one
         self.log_path = path
         self.warnings, self.counts = list(self._engine_warnings), collections.Counter()
+        if hasattr(self, "_speech_reset"):
+            self._speech_reset()                       # Live Voice: no sentence of the last service is left
+        if hasattr(self, "_voice_new_run"):
+            self._voice_new_run()
+        if hasattr(self, "_engine_new_run"):
+            self._engine_new_run()
         self.behind_s = self.stt_behind = None
         self.eof.clear()
         self._stopping = False
@@ -487,6 +495,13 @@ class LifecycleMixin:
                 self._reader_thread.join(30)  # let the final clause be translated, shown and logged
             self._flush()                    # a held fragment is shown before the service ends
             self._drain()                    # nothing from this run may land in the next one
+            if hasattr(self, "_speech_stop"):
+                try:
+                    self._speech_stop()      # Live Voice: the open sentence is spoken (speech.py)
+                except Exception:            # noqa: BLE001  the voice never keeps a service from stopping
+                    self._state_failed(self._speech_stop)
+            if hasattr(self, "_voice_end_run"):
+                self._voice_end_run()
             self.running = False
             self.phase_hint = None
             if warm:
@@ -550,6 +565,11 @@ class LifecycleMixin:
                 self.stop()
             self._retire_engine()
         finally:
+            if hasattr(self, "voice_stop"):
+                try:
+                    self.voice_stop()                 # Live Voice ends with the app
+                except Exception:                     # noqa: BLE001
+                    pass
             if hasattr(self, "stop_pp_monitor"):
                 self.stop_pp_monitor()
             if hasattr(self, "_bonjour_stop"):
@@ -611,16 +631,17 @@ class LifecycleMixin:
         d = pathlib.Path(run_dir) if run_dir else paths.log_dir(self.root) / "run"
         d.mkdir(parents=True, exist_ok=True)
         ours = str(ENGINE_SCRIPT)
-        for f in d.glob("engine-*.pid"):
-            try:
-                epid, apid = (int(x) for x in f.read_text().split()[:2])
-            except (OSError, ValueError):
-                f.unlink(missing_ok=True)
-                continue
-            if apid != os.getpid() and not _alive(apid):
-                if _alive(epid) and ours in _command(epid):
-                    _terminate(epid)
-                f.unlink(missing_ok=True)
+        for pat, script in (("engine-*.pid", ours), ("voice-*.pid", str(HERE.parent / "voice" / "voice.py"))):
+            for f in d.glob(pat):
+                try:
+                    epid, apid = (int(x) for x in f.read_text().split()[:2])
+                except (OSError, ValueError):
+                    f.unlink(missing_ok=True)
+                    continue
+                if apid != os.getpid() and not _alive(apid):
+                    if _alive(epid) and script in _command(epid):
+                        _terminate(epid)
+                    f.unlink(missing_ok=True)
         (d / "app.pid").write_text(f"{os.getpid()}\n")
         self._pid_dir = d
 
@@ -849,6 +870,8 @@ class LifecycleMixin:
                                      bool(ev.get("speech"))))
         if ev.get("speech"):
             self._last_voice_t = now
+        if hasattr(self, "_speech_level"):
+            self._speech_level(ev, now)                # Live Voice: the replay clock (speech.py)
         if ev.get("auto") and isinstance(ev.get("gain_db"), (int, float)):
             self._eng_gain = float(ev["gain_db"])
         if now - self._last_level_push >= 0.05:        # the meter moves at the engine's rate (≤ 20 Hz)
@@ -991,6 +1014,8 @@ class LifecycleMixin:
                 return "captions_behind"            # S4's pace: captions lag the speech (not recognition)
         if self._english_unavailable and self._engine_alive() and self.lang.mode != "ro-en":
             return "english_unavailable"
+        if hasattr(self, "voice_problem"):               # Live Voice: least urgent, the captions come first
+            return self.voice_problem()
         return None
 
     def _lifecycle_state(self) -> dict:

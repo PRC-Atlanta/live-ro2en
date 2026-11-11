@@ -9,6 +9,8 @@
 #   site/common/        packages pinned to the same version in nemo.txt and mt.txt (torch, mlx, numpy…)
 #   site/nemo/          the rest of requirements/nemo.txt   (engine.py)
 #   site/mt/            the rest of requirements/mt.txt     (app.py, translators, web UI)
+#   site/voice/         requirements/voice.txt minus what site/common has at the same version
+#                       (voice.py: Supertonic, onnxruntime, lameenc; numpy and soundfile from common)
 #   reqs/               the split requirement files actually installed
 #   env.sh              the environment the shell sets (sourced by the relocation test)
 #   size_report.txt     sizes before/after pruning, biggest packages
@@ -78,7 +80,12 @@ comm -23 "$OUT/reqs/nemo.all.txt" "$OUT/reqs/mt.all.txt" > "$OUT/reqs/nemo.txt"
 comm -13 "$OUT/reqs/nemo.all.txt" "$OUT/reqs/mt.all.txt" > "$OUT/reqs/mt.txt"
 # a name in both lists at different versions must not be in common (it is in each env's own dir)
 cut -d= -f1 "$OUT/reqs/nemo.txt" | sort > "$OUT/reqs/.n"; cut -d= -f1 "$OUT/reqs/mt.txt" | sort > "$OUT/reqs/.m"
+# Live Voice (docs/live_voice_plan.md §7): its process runs on site/voice:site/common, voice first, so
+# every pin of voice.txt that common does not have at exactly that version is installed here.
+norm "$REPO/requirements/voice.txt" > "$OUT/reqs/voice.all.txt"
+comm -23 "$OUT/reqs/voice.all.txt" "$OUT/reqs/common.txt" > "$OUT/reqs/voice.txt"
 cnt() { wc -l < "$1" | tr -d ' '; }
+echo "voice-only $(cnt "$OUT/reqs/voice.txt") of $(cnt "$OUT/reqs/voice.all.txt")"
 echo "common $(cnt "$OUT/reqs/common.txt") · nemo-only $(cnt "$OUT/reqs/nemo.txt") · mt-only $(cnt "$OUT/reqs/mt.txt")"
 echo "different versions per env: $(comm -12 "$OUT/reqs/.n" "$OUT/reqs/.m" | tr '\n' ' ')"
 rm -f "$OUT/reqs/.n" "$OUT/reqs/.m"
@@ -86,7 +93,7 @@ rm -f "$OUT/reqs/.n" "$OUT/reqs/.m"
 # --- 3. install (no dependency resolution: the pins are the full closure) ------------------
 # Wheels only: every pin gets --only-binary except the sdist-only ones in SDIST_OK, which
 # uv builds here and which are then checked to be pure Python (Root-Is-Purelib, no .so).
-for name in common nemo mt; do
+for name in common nemo mt voice; do
   say "install site/$name ($(cnt "$OUT/reqs/$name.txt") packages)"
   args=()
   for p in $(cut -d= -f1 "$OUT/reqs/$name.txt"); do
@@ -113,7 +120,7 @@ find "$OUT/site" -maxdepth 2 -name '*.pth' -print | sed "s|$OUT/||" || true
 du_k() { du -sk "$1" | cut -f1; }
 mb() { awk -v k="$1" 'BEGIN{printf "%.0f MB", k/1024}'; }
 before_rt=$(du_k "$OUT/runtime"); before_c=$(du_k "$OUT/site/common")
-before_n=$(du_k "$OUT/site/nemo"); before_m=$(du_k "$OUT/site/mt")
+before_n=$(du_k "$OUT/site/nemo"); before_m=$(du_k "$OUT/site/mt"); before_v=$(du_k "$OUT/site/voice")
 say "prune (packaging/prune.txt)"
 while read -r kind pat _; do
   case "$kind" in ''|'#'*) continue;; esac
@@ -155,7 +162,7 @@ while IFS= read -r f; do
   nscrub=$((nscrub + 1))
 done < <(macho_files "$OUT")
 echo "  rewrote $nscrub files"
-pr_rt=$(du_k "$OUT/runtime"); pr_c=$(du_k "$OUT/site/common"); pr_n=$(du_k "$OUT/site/nemo"); pr_m=$(du_k "$OUT/site/mt")
+pr_rt=$(du_k "$OUT/runtime"); pr_c=$(du_k "$OUT/site/common"); pr_n=$(du_k "$OUT/site/nemo"); pr_m=$(du_k "$OUT/site/mt"); pr_v=$(du_k "$OUT/site/voice")
 
 # --- 5. precompile -------------------------------------------------------------------------
 # unchecked-hash: valid wherever the folder is copied (no mtime/path check) and never rewritten;
@@ -184,6 +191,15 @@ b = k(inputs=[mx.arange(4, dtype=mx.float32)], grid=(4, 1, 1), threadgroup=(4, 1
 assert b.tolist() == [0, 2, 4, 6], b
 print("  mt ok: fastapi", fastapi.__version__, "ctranslate2", ctranslate2.__version__, "mlx kernel ok")'
 
+VOICE_PP="$OUT/site/voice:$OUT/site/common"
+PYTHONNOUSERSITE=1 PYTHONPATH="$VOICE_PP" HF_HUB_OFFLINE=1 "$PY" -s -B -c '
+import numpy, onnxruntime, lameenc, soundfile, supertonic
+from supertonic import TTS
+assert onnxruntime.__file__.split("/site/")[1].startswith("voice/"), onnxruntime.__file__   # its own pin, not the engine one
+enc = lameenc.Encoder(); enc.set_bit_rate(64); enc.set_in_sample_rate(44100); enc.set_channels(1); enc.set_quality(5)
+assert len(enc.encode(numpy.zeros(44100, dtype=numpy.int16).tobytes()) + enc.flush()) > 1000
+print("  voice ok: onnxruntime", onnxruntime.__version__, "supertonic", getattr(supertonic, "__version__", "?"), "lameenc mp3 ok")'
+
 # --- 7. env.sh: what the shell sets (paths relative to this folder) -------------------------
 cat > "$OUT/env.sh" <<'SH'
 # Environment for the embedded runtime. `source env.sh` from anywhere; R is this folder.
@@ -193,6 +209,8 @@ export LIVE_PYTHON="$R/runtime/bin/python3.12"            # run app.py as: $LIVE
 export PYTHONPATH="$R/site/common:$R/site/mt"             # orchestrator (app.py)
 export LIVE_ENGINE_PYTHON="$R/runtime/bin/python3.12"
 export LIVE_ENGINE_PYTHONPATH="$R/site/common:$R/site/nemo"
+export LIVE_VOICE_PYTHON="$R/runtime/bin/python3.12"      # Live Voice (src/voice/voice.py)
+export LIVE_VOICE_PYTHONPATH="$R/site/voice:$R/site/common"
 export PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1       # the engine is spawned without -s -B
 export NUMBA_CACHE_DIR="${TMPDIR:-/tmp}/live-numba"       # the shell: ~/Library/Caches/.../numba
 unset PYTHONHOME PYTHONSTARTUP
@@ -204,15 +222,15 @@ say "size report"
   echo "Embedded runtime size report ($(date '+%Y-%m-%d %H:%M'), python $PBS_PY / pbs $PBS_TAG)"
   echo
   printf '%-14s %12s %12s %12s\n' part installed pruned "with .pyc"
-  for p in "runtime:$before_rt:$pr_rt" "site/common:$before_c:$pr_c" "site/nemo:$before_n:$pr_n" "site/mt:$before_m:$pr_m"; do
+  for p in "runtime:$before_rt:$pr_rt" "site/common:$before_c:$pr_c" "site/nemo:$before_n:$pr_n" "site/mt:$before_m:$pr_m" "site/voice:$before_v:$pr_v"; do
     IFS=: read -r d b q <<< "$p"
     printf '%-14s %12s %12s %12s\n' "$d" "$(mb "$b")" "$(mb "$q")" "$(mb "$(du_k "$OUT/$d")")"
   done
-  printf '%-14s %12s %12s %12s\n' total "$(mb $((before_rt + before_c + before_n + before_m)))" \
-    "$(mb $((pr_rt + pr_c + pr_n + pr_m)))" "$(mb "$(du_k "$OUT")")"
+  printf '%-14s %12s %12s %12s\n' total "$(mb $((before_rt + before_c + before_n + before_m + before_v)))" \
+    "$(mb $((pr_rt + pr_c + pr_n + pr_m + pr_v)))" "$(mb "$(du_k "$OUT")")"
   echo
   echo "compressed estimate (tar | gzip -1): $(tar cf - -C "$OUT" runtime site | gzip -1 | wc -c | awk '{printf "%.0f MB", $1/1048576}')"
-  for d in common nemo mt; do
+  for d in common nemo mt voice; do
     echo; echo "largest in site/$d:"
     du -sk "$OUT/site/$d"/* | sort -rn | head -12 |
       awk -F'\t' '{n = $2; sub(/.*\//, "", n); printf "  %7.0f MB  %s\n", $1 / 1024, n}'

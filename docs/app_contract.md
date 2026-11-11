@@ -109,6 +109,8 @@ listed here.
 | `captions_behind` | `behind_s` over `lag_warn_s` |
 | `engine_stopped` | the engine exited without `eof` |
 | `english_unavailable` | engine `mode` event / multilingual `warn` |
+| `voice_stopped` | Live Voice is on and its process is not running: it died 3 times in 2 minutes, could not start, or its model is not downloaded (`voicelink.py`) |
+| `voice_behind` | the voice is more than 10 s behind the speaker during a service (`voice.state: behind`) |
 | `pp_unreachable` | ProPresenter connection failed (S2 health ping) |
 | `pp_message_missing` | the configured ProPresenter message does not exist (S2) |
 | `disk_full` | preflight (S9) |
@@ -151,6 +153,8 @@ beam search; `words`, the English side, has no consumer in the engine).
 | `LIVE_CACHE_DIR` | caches | `<LIVE_HOME>/.cache` |
 | `LIVE_ENGINE_PYTHON` | interpreter for `engine.py` | `<repo>/<stt_venv>/bin/python` |
 | `LIVE_ENGINE_PYTHONPATH` | `PYTHONPATH` for the engine (embedded runtime site dirs) | inherited |
+| `LIVE_VOICE_PYTHON` | interpreter for Live Voice's process (`src/voice/voice.py`) | `<repo>/.venv-voice/bin/python` |
+| `LIVE_VOICE_PYTHONPATH` | `PYTHONPATH` for that process (`site/voice:site/common`) | inherited |
 | `LIVE_ALLOW_NETWORK` | `1` only for setup and download children | unset = offline |
 | `HF_HOME` | model cache | the user's HF cache; the app sets `<LIVE_HOME>/hf` |
 | `PYTHONDONTWRITEBYTECODE`, `PYTHONNOUSERSITE` | the app sets both to `1`: nothing is written into the signed bundle | unset |
@@ -188,4 +192,5 @@ The shell starts the orchestrator like this:
 runtime/bin/python3.12 -s -B app/src/live/app.py --port <free>
 ```
 with `PYTHONPATH=site/common:site/mt`, plus `LIVE_ENGINE_PYTHON=runtime/bin/python3.12` and
-`LIVE_ENGINE_PYTHONPATH=site/common:site/nemo`.
+`LIVE_ENGINE_PYTHONPATH=site/common:site/nemo`, and for Live Voice `LIVE_VOICE_PYTHON=runtime/bin/python3.12`
+and `LIVE_VOICE_PYTHONPATH=site/voice:site/common` (voice first: its own pins win).

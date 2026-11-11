@@ -141,7 +141,43 @@ def ro_names(gloss) -> list[str]:
 # a word after one of these is a person's name more often than not ("familia Pha", "fratele Drago")
 RO_CUES = {"frate", "fratele", "fratelui", "fratilor", "sora", "sorei", "sura", "surorii", "familia",
            "familiei", "familie", "familiile", "tata", "tatal", "tatei", "mama", "mamei", "fiul", "fiica",
-           "pastor", "pastorul", "pastorului"}
+           "pastor", "pastorul", "pastorului", "fiule", "fiului", "fiicei", "tată", "tatăl"}
+# a word after these is a man's / a woman's name: on 2026-11-08 «fratele <man>» and «sora <woman>»
+# were each repaired into a saved name of the other sex
+_MALE_CUES = {"frate", "fratele", "fratelui", "pastor", "pastorul", "pastorului", "fiul", "tata", "tatal"}
+_FEMALE_CUES = {"sora", "sorei", "sura", "surorii", "mama", "mamei", "fiica", "fiicei"}
+_MALE_IN_A = {"luca", "toma", "zaharia", "mircea", "horia", "mihnea", "sava", "ilia", "iona", "iosua",
+              "ezra", "noe", "costea", "nichita", "matia", "ieremia", "isaia", "ilarie"}
+_FEMALE_NOT_A = {"carmen", "beatrice", "alice", "ruth", "rut", "ester", "miriam", "noemi", "ingrid",
+                 "rahel", "rachel", "agnes", "iris", "elisabet", "lidia", "dorcas"}
+_ROMANIAN_ENDINGS = ("ului", "lor", "ul", "ei", "ii", "le", "a", "e", "i")
+
+
+def _female(name: str) -> bool:
+    f = fold(name)
+    return f in _FEMALE_NOT_A or (f.endswith("a") and f not in _MALE_IN_A)
+
+
+def _first_names(names: list[str], given: set[str]) -> set[str]:
+    """Folded words that are a person's first name: the first word of a listed person's name
+    ('Dragoș Puha' → dragoș), or a single listed word that the proper-names list knows
+    (Cristina). A surname ending in -a (Puha, Popa) is not a woman's name."""
+    out = set()
+    for n in names:
+        words = [w for w in n.split() if fold(w) not in RO_CUES]
+        if len(words) > 1 and all(w[:1].isupper() for w in words):
+            out.add(fold(words[0]))
+        elif len(words) == 1 and fold(words[0]) in given:
+            out.add(fold(words[0]))
+    return out
+
+
+def _is_known(f: str, known: set[str]) -> bool:
+    """A dictionary word, or a case form of one: «creștină» (creștin + ă) was repaired into the
+    saved name Cristina on 2026-11-08 ("Cristina's literature")."""
+    if f in known:
+        return True
+    return any(f.endswith(e) and len(f) - len(e) >= 4 and f[:-len(e)] in known for e in _ROMANIAN_ENDINGS)
 # endings of a name's case forms: 'Paraschivei', 'Dragoșului' are the name, not a near-miss
 _RO_ENDINGS = ("ului", "ul", "ei", "ii", "i", "a", "u", "e")
 
@@ -167,7 +203,7 @@ def _variant(heard: str, name: str) -> bool:
     h, n = fold(heard), fold(name)
     if len(h) >= 4 and len(n) >= 4 and h[:-1] == n[:-1] and h[-1] in "aeiou" and n[-1] in "aeiou":
         return True
-    if min(len(h), len(n)) >= 5 and (h == n + "a" or n == h + "a"):
+    if min(len(h), len(n)) >= 4 and (h == n + "a" or n == h + "a"):   # Ioan/Ioana (2026-11-08)
         return True
     if abs(len(h) - len(n)) >= 2 and (h.startswith(n) or n.startswith(h)):
         return True                                     # Mariana/Maria, Cristi/Cristian
@@ -201,23 +237,28 @@ def _ro_match(heard: str, name: str, cued: bool) -> bool:
     return r >= 0.9 or (r >= 0.75 and a[0] == b[0] and a[-1] == b[-1])
 
 
-def repair_ro(text: str, names: list[str], known: set[str] = frozenset()) -> tuple[str, list[tuple[str, str]]]:
+def repair_ro(text: str, names: list[str], known: set[str] = frozenset(),
+              given: set[str] = frozenset()) -> tuple[str, list[tuple[str, str]]]:
     """Map the Romanian recogniser's near-misses of today's names back to the name, before
     translating: 'familia Pha' → 'familia Puha', 'Drago' → 'Dragoș', 'Parascheva' → 'Paraschiva',
     'paraschiva' → 'Paraschiva'. `known` holds folded dictionary words, which are left alone
-    unless capitalised inside a sentence right after a cue ('familia Pua', 'Dragoș Puva').
-    Returns (text, [(heard, name)])."""
+    unless short (4 letters or fewer) and capitalised inside a sentence right after a cue
+    ('familia Pua', 'Dragoș Puva'): «Tată, Fiule și Duhul Sfânt» stays the Trinity (2026-11-08).
+    `given` holds folded first names (the proper-names list): a heard first name is another
+    person, only respelled (Vadim → Vadym), never turned into a different name (Ioan → Ioana),
+    and a name after «fratele» / «sora» keeps its sex. Returns (text, [(heard, name)])."""
     if not names or not text:
         return text, []
     single = [c for c in candidates(names) if " " not in c and (c in names or fold(c) not in known)]
     exact = {fold(c): c for c in single}
     glued = {fold(a) + fold(b): f"{a} {b}" for a in single for b in single if a != b}
+    firsts = _first_names(names, given)
     words = list(_WORD_RE.finditer(text))
     out, fixes, last = [], [], 0
     for i, m in enumerate(words):
         w = m.group(0)
         f = fold(w)
-        if len(f) < 2:
+        if len(f) < 2 or f in RO_CUES:
             continue
         hit = None
         if f in glued and f not in known:
@@ -232,13 +273,21 @@ def repair_ro(text: str, names: list[str], known: set[str] = frozenset()) -> tup
             gap_ok = i and not re.search(r"[.!?;:]", before)
             mid_cap = w[:1].isupper() and gap_ok
             cued = bool(gap_ok and (prev in RO_CUES or prev in exact)) or nxt in exact
-            if f in known and not (cued and mid_cap):
-                continue
+            is_known = _is_known(f, known)
+            if is_known and not (cued and mid_cap and len(f) <= 4):
+                continue                                # 'Fiule', 'creștină' are words
             loose = w.islower() and not cued
             if loose and prev in _RO_VERB_LEFT:
                 continue                                # 'nu înșeală' is a verb, not 'nu Ionela'
-            ok = [c for c in single if _ro_match(w, c, cued and (mid_cap or f not in known))
-                  and not (loose and _ratio(ro_key(w), ro_key(c)) < LOOSE_MIN)]
+            sex = None
+            if gap_ok and prev in _MALE_CUES:
+                sex = "m"
+            elif gap_ok and prev in _FEMALE_CUES:
+                sex = "f"
+            ok = [c for c in single if _ro_match(w, c, cued and (mid_cap or not is_known))
+                  and not (loose and _ratio(ro_key(w), ro_key(c)) < LOOSE_MIN)
+                  and not (f in given and ro_key(w) != ro_key(c))
+                  and not (sex and fold(c) in firsts and _female(c) != (sex == "f"))]
             if ok:
                 hit = max(ok, key=lambda c: _ratio(ro_key(w), ro_key(c)))
         if hit:

@@ -1,0 +1,9 @@
+(version 1)
+; Live Voice offline profile (docs/live_voice_plan.md §7): the voice process accepts listeners on its
+; port and never opens a connection itself. Outbound is denied except to this Mac; inbound stays allowed.
+(allow default)
+(deny network-outbound)
+(allow network-outbound (remote ip "localhost:*"))
+(allow network-outbound (remote unix-socket))
+(allow network-inbound)
+(allow network-bind)

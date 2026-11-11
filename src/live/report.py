@@ -93,6 +93,8 @@ def summary(recs: list[dict], start: float | None = None, first_word_ok_s: float
     events = collections.Counter(r["event"] for r in recs if "event" in r)
     rating = next((r for r in reversed(recs) if r.get("event") == "rating"), None)
     return {
+        "engines": engines(caps),
+        "voice": voice(recs),
         "elapsed_s": round(max(times) - start, 1) if times and start is not None else None,
         "phrases": len(caps),
         "outcomes": dict(outcomes),
@@ -109,6 +111,41 @@ def summary(recs: list[dict], start: float | None = None, first_word_ok_s: float
         "rating": {"score": rating.get("score"), "tags": rating.get("tags") or [], "note": rating.get("note") or ""}
                   if rating else {"score": None, "tags": [], "note": ""},
     }
+
+
+ENGINE_GAP_S = 30.0                   # a longer silence between two captions is not counted as either engine's time
+
+
+def engines(caps: list[dict]) -> dict:
+    """Which engine translated, and for how long (After): per engine (ai = Claude answered, local = the
+    local models were chosen, local_fallback = AI was chosen but the local model answered) the number of
+    captions and the seconds of service they cover. A caption's time is the time since the caption
+    before it, at most ENGINE_GAP_S. Logs from before the knob count as local."""
+    out = {k: {"phrases": 0, "s": 0.0} for k in ("ai", "local", "local_fallback")}
+    prev = None
+    for r in sorted((r for r in caps if isinstance(r.get("t_end"), (int, float))), key=lambda r: r["t_end"]):
+        e = r.get("engine") if r.get("engine") in out else "local"
+        out[e]["phrases"] += 1
+        span = r.get("audio_s") if prev is None else r["t_end"] - prev
+        out[e]["s"] += min(max(float(span or 0.0), 0.0), ENGINE_GAP_S)
+        prev = r["t_end"]
+    return {k: {"phrases": v["phrases"], "s": round(v["s"], 1)} for k, v in out.items()}
+
+
+def voice(recs: list[dict]) -> dict:
+    """Live Voice's numbers for After (plan §5), from the played items in the service log: median delay
+    after the speaker's end, share within 10 s, summaries, refused summaries, skipped sentences, peak
+    listeners (the newest `voice_listeners` record). items 0 when the voice played nothing."""
+    items = [r for r in recs if r.get("event") == "voice_item" and r.get("delay_after_end_s") is not None]
+    d = [float(i["delay_after_end_s"]) for i in items]
+    summ = [r for r in recs if r.get("event") == "voice_summary"]
+    peak = next((r for r in reversed(recs) if r.get("event") == "voice_listeners"), {})
+    return {"items": len(items), "delay_median_s": round(statistics.median(d), 1) if d else None,
+            "within_10s_pct": round(100 * sum(x <= 10 for x in d) / len(d)) if d else None,
+            "summaries": sum(1 for i in items if i.get("kind") == "summary"),
+            "summaries_refused": sum(1 for s in summ if not s.get("ok")),
+            "cut": sum(1 for i in items if i.get("cut")),
+            "peak_listeners": {"ro": int(peak.get("ro") or 0), "en": int(peak.get("en") or 0)}}
 
 
 # --- exports ---------------------------------------------------------------------------------
@@ -337,9 +374,14 @@ def is_secret_file(path: pathlib.Path) -> bool:
     return (b"-----BEGIN" in head and b"PRIVATE KEY" in head) or b'"private_key"' in head
 
 
+API_KEY_VALUE = re.compile(r"sk-ant-[A-Za-z0-9_\-]{8,}")
+
+
 def redact(text: str) -> str:
-    """Blank the value of any setting whose name looks like a key, password or token."""
-    return SECRET_KEY.sub(lambda m: m.group(1) + "<redacted>", text)
+    """Blank the value of any setting whose name looks like a key, password or token, and anything
+    that is shaped like an Anthropic API key wherever it stands (a log line, an error text)."""
+    text = SECRET_KEY.sub(lambda m: m.group(1) + "<redacted>", text)
+    return API_KEY_VALUE.sub("<redacted>", text)
 
 
 def _tail(path: pathlib.Path, n: int = LOG_TAIL) -> bytes:

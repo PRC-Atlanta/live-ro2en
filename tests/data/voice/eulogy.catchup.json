@@ -1,0 +1,80 @@
+{
+ "clock": {
+  "offset_s": 1405923.428,
+  "mode_share": 0.52,
+  "rows_ok": 128,
+  "langs": {
+   "ro": 56,
+   "en": 72
+  },
+  "other_rows": 1
+ },
+ "hold_s": 2.0,
+ "limit_s": 10.0,
+ "variants": {
+  "live_hold0_nocatchup": {
+   "items": 48,
+   "summaries": 0,
+   "sentences_summarized": 0,
+   "delay_after_end_median": 4.97,
+   "delay_after_end_p90": 12.2,
+   "delay_after_end_max": 16.53,
+   "lag_start_median": 13.59,
+   "share_within_10s": 0.729,
+   "final_delay_s": 4.51,
+   "voice_audio_s": 355.8,
+   "english_span_s": 715.9,
+   "silence_between_s_median": 0.0,
+   "breakdown_median": {
+    "recog_translate_s": 1.85,
+    "sentence_wait_s": 0.0,
+    "hold_s": 0.0,
+    "summarize_s": 0.0,
+    "voice_queue_s": 0.0,
+    "generate_s": 1.04,
+    "stream_queue_s": 0.44
+   },
+   "breakdown_mean": {
+    "recog_translate_s": 2.48,
+    "sentence_wait_s": 0.0,
+    "hold_s": 0.0,
+    "summarize_s": 0.0,
+    "voice_queue_s": 0.0,
+    "generate_s": 1.26,
+    "stream_queue_s": 2.96
+   }
+  },
+  "live_hold0_catchup": {
+   "items": 46,
+   "summaries": 7,
+   "sentences_summarized": 9,
+   "delay_after_end_median": 4.08,
+   "delay_after_end_p90": 10.03,
+   "delay_after_end_max": 14.36,
+   "lag_start_median": 11.73,
+   "share_within_10s": 0.891,
+   "final_delay_s": 4.51,
+   "voice_audio_s": 327.2,
+   "english_span_s": 715.9,
+   "silence_between_s_median": 1.31,
+   "breakdown_median": {
+    "recog_translate_s": 1.8,
+    "sentence_wait_s": 0.0,
+    "hold_s": 0.0,
+    "summarize_s": 0.0,
+    "voice_queue_s": 0.0,
+    "generate_s": 0.93,
+    "stream_queue_s": 0.0
+   },
+   "breakdown_mean": {
+    "recog_translate_s": 2.48,
+    "sentence_wait_s": 0.0,
+    "hold_s": 0.0,
+    "summarize_s": 0.21,
+    "voice_queue_s": 0.0,
+    "generate_s": 1.22,
+    "stream_queue_s": 1.46
+   }
+  }
+ }
+}

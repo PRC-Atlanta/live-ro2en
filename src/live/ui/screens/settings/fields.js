@@ -10,7 +10,8 @@ export const NEVER_EXPOSED = [
 ];
 
 export const TABS = [
-  ["basic", "Basic"], ["names", "Names & Spellings"], ["propresenter", "ProPresenter"], ["advanced", "Advanced"],
+  ["basic", "Basic"], ["names", "Names & Spellings"], ["propresenter", "ProPresenter"], ["voice", "Live Voice"],
+  ["ai", "AI"], ["advanced", "Advanced"],
 ];
 
 // kind: device | choice | toggle | number | text
@@ -55,7 +56,20 @@ export const FIELDS = {
     { key: "display.remote", label: "Allow Live Remote on this network", kind: "toggle",
       hint: "Hide, hold, clear, remove last, song and today's names from another Mac, and its full view: start, stop, gain and quality too. Setup and Settings stay here." },
   ],
+  // Live Voice (docs/live_voice_plan.md §5): the on/off switch, the address and Test voice are built by hand
+  voice: [
+    { key: "voice.en.enabled", label: "Also an English stream", kind: "toggle",
+      hint: "For listeners who understand only English: the English translation of a Romanian speaker, at /listen/en. Changing it restarts the voice (a few seconds)." },
+    { key: "voice.speed", label: "Speaking speed", kind: "number", min: 1.0, max: 1.5, step: 0.05,
+      hint: "1.25 is the speed that was chosen by ear. The voice never adds pauses of its own." },
+    { key: "voice.speed_max", label: "Fastest it may speak when behind", kind: "number", min: 1.0, max: 1.75, step: 0.05,
+      hint: "When the voice falls behind the speaker it eases up to this speed, and back, a little per sentence." },
+    { key: "voice.port", label: "Port", kind: "number", min: 1024, max: 65535,
+      hint: "Part of the address on the QR card: after changing it, print the card again." },
+  ],
   advanced: [
+    { key: "ai.timeout_s", label: "AI: wait for an answer at most (seconds)", kind: "number", min: 1, max: 6, step: 0.5,
+      hint: "Past this the local models translate that phrase. 2.5 s is just over the slowest 1 in 100 answers." },
     { key: "live.input_gain_target_db", label: "Auto gain: speech level (dBFS)", kind: "number", min: -30, max: -10, step: 1,
       hint: "The level auto gain aims for. -20 is the middle of the meter's good band." },
     { key: "live.vad_threshold", label: "Ignore music & singing", kind: "choice",

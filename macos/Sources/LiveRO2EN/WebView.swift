@@ -18,6 +18,8 @@ final class WebViewController: NSObject, WKNavigationDelegate, WKUIDelegate, WKD
         cfg.preferences.javaScriptCanOpenWindowsAutomatically = false
         cfg.mediaTypesRequiringUserActionForPlayback = []
         cfg.userContentController.addScriptMessageHandler(LoginItemBridge(), contentWorld: .page, name: "loginItem")
+        cfg.userContentController.addScriptMessageHandler(QRCodeBridge(), contentWorld: .page, name: "qrCode")
+        cfg.userContentController.add(PrintBridge(), contentWorld: .page, name: "printPage")
         webView = WKWebView(frame: .zero, configuration: cfg)
         super.init()
         webView.navigationDelegate = self

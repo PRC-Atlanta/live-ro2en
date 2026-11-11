@@ -107,6 +107,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "pause": body = ["on": !f.paused]
         case "hold": body = ["on": !f.held]
         case "song": body = ["on": !f.song]
+        case "engine":
+            guard let ai = f.ai, let sel = ai.selected else { NSSound.beep(); return }   // an older captions app
+            if sel != "ai" && ai.available != true { NSSound.beep(); return }            // no key on the captions Mac
+            body = ["engine": sel == "ai" ? "local" : "ai"]
         default: body = [:]
         }
         client.send(action, body) { err in

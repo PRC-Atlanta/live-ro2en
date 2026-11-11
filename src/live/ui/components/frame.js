@@ -20,7 +20,7 @@ export function ensureStyles() {
 }
 
 // toolbar button -> the screen it opens (the wide setup button opens Settings)
-const GOES = { live: "live", setup: "settings", names: "settings", settings: "settings", after: "after", help: "help" };
+const GOES = { live: "live", setup: "settings", names: "settings", monitor: "monitor", settings: "settings", after: "after", help: "help" };
 
 export function frame(el, opts = {}) {
   const here = (location.hash.slice(1) || "live");
@@ -32,6 +32,7 @@ export function frame(el, opts = {}) {
         <button class="tb" data-tb="rehearsal" title="${S.toolbar.rehearsalHint}">${S.toolbar.rehearsal}</button>
         <button class="tb wide" data-tb="setup" title="${S.toolbar.setupHint}"></button>
         <button class="tb tdisp" data-tb="display" title="${S.toolbar.displayHint}" aria-label="${S.toolbar.display}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>${S.toolbar.display}</span></button>
+        <button class="tb" data-tb="monitor" title="${S.toolbar.monitorHint}">${S.toolbar.monitor}</button>
         <button class="tb" data-tb="names">${S.toolbar.names}</button>
         <button class="tb" data-tb="settings">${S.toolbar.settings}</button>
         <button class="tb" data-tb="after" title="${S.toolbar.afterHint}" hidden>${S.toolbar.after}</button>
@@ -40,7 +41,7 @@ export function frame(el, opts = {}) {
       <div class="panel"><div class="panel-body"></div>
         <div class="foot">
           <div class="mark">${S.app.mark[0]}<span></span>${S.app.mark[1]}</div>
-          <div class="brand"><b>${S.app.brand}</b>${S.app.offline}</div>
+          <div class="brand"><b>${S.app.brand}</b><span data-where>${S.app.offline}</span></div>
         </div>
       </div>
     </div>`;
@@ -68,7 +69,7 @@ export function frame(el, opts = {}) {
   for (const [n, screen] of Object.entries(GOES)) if (!tb(n).onclick) tb(n).onclick = go(screen);
   if (opts.onNames) tb("names").onclick = opts.onNames;
   // only the Live button stands for Live; Settings and Help for themselves
-  for (const n of ["live", "settings", "after", "help"]) if (here === n) tb(n).setAttribute("aria-current", "page");
+  for (const n of ["live", "monitor", "settings", "after", "help"]) if (here === n) tb(n).setAttribute("aria-current", "page");
   const api = {
     panel: el.querySelector(".panel-body"),
     setSetupName(t) { if (tb("setup").textContent !== t) tb("setup").textContent = t; },
@@ -80,6 +81,10 @@ export function frame(el, opts = {}) {
         s.pp?.enabled === false ? "off" : !(s.pp ? !s.pp.connected : s.pp_error)));
       const ran = s.elapsed_s != null || Object.keys(s.counts || {}).length > 0;
       tb("after").hidden = !(here === "after" || (ran && !isLive(s)));
+      // the footer says "offline" only while it is true: with AI chosen, speech goes to the API as text
+      const where = el.querySelector("[data-where]");
+      const text = s.ai?.selected === "ai" ? S.app.online : S.app.offline;
+      if (where && where.textContent !== text) where.textContent = text;
     },
   };
   return api;

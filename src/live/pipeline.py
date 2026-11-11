@@ -51,9 +51,73 @@ DANGLING = frozenset("din de la în cu pe pentru și că care dar iar sau ca să
                      "of to in on for and but that which the a an".split())
 
 
+# a Romanian phrase that stops on a negation lost it at the cut: «în ceața aceea că nu.» |
+# «mai recunoaștem» came out "where we do not" | "we again recognize" (2026-11-08 evening, idea 35)
+NEGATION_END = frozenset({"nu", "nici", "n"})
+
+
 def dangling(text: str) -> bool:
     words = tokens(text)
-    return bool(words) and words[-1] in DANGLING
+    if not words:
+        return False
+    if words[-1] in DANGLING or words[-1] in NEGATION_END:
+        return True
+    return words[-1] == "mai" and len(words) > 1 and words[-2] in NEGATION_END     # «nu mai.»
+
+
+# a Romanian piece of 1-2 words that is not a sentence: clitics and small words alone («să-l.» →
+# "call out.", 2026-11-08 evening) or a scrap of a word («rom.»). Words a whole utterance can be:
+_FUNCTION_RO = frozenset("să l il îl o i îi le se ne vă te mă și n a al ale de la cu pe în din că "
+                         "care ca dar iar sau mai prin spre".split())
+_ALONE_RO = frozenset("da nu bun bine așa ok hai aha mda păi eu tu el ea noi voi ei ele ce cum cât cine "
+                      "oh vai uite iată amin gata sigur".split())
+
+
+def scrap(text: str) -> bool:
+    """A Romanian piece too small to mean anything on its own (idea 17): ≤ 2 words, all of them
+    small function words, or a single word of ≤ 3 letters that is not an utterance by itself.
+    Questions and exclamations stay."""
+    t = text.strip()
+    if not t or t.endswith(("?", "!")):
+        return False
+    words = [w.lower() for w in re.findall(r"[^\W\d_]+", t)]
+    if not words or len(words) > 2 or re.search(r"\d", t):
+        return False
+    if all(w in _FUNCTION_RO for w in words):
+        return True
+    return len(words) == 1 and len(words[0]) <= 3 and words[0] not in _ALONE_RO \
+        and fold_diacritics(words[0]) not in {fold_diacritics(w) for w in _ALONE_RO}
+
+
+RO_IN_EN_MARGIN = 0.2          # idea 12: the Romanian transcript's real-word share must beat the English one's by this
+RO_IN_EN_MIN_WORDS = 3
+
+
+def romanian_inside_english(en_text: str, ro_text: str, lex: dict, names=frozenset(),
+                            margin: float = RO_IN_EN_MARGIN) -> dict | None:
+    """Idea 12 (2026-11-08 evening): Romanian said while the captions are in English mode. The English
+    recogniser writes it as romanised scraps ("in FSN capitolopatru, versetus shaptashpe", "Voi Parinsi")
+    that are few enough to pass the gate. When the Romanian recogniser's transcript of the same audio
+    has a clearly higher share of real words (by `margin`) and reads as Romanian (lang_score > 0.15),
+    that one is the text: the shares and the score, else None."""
+    ro_text = (ro_text or "").strip()
+    if not ro_text or len(tokens(ro_text)) < RO_IN_EN_MIN_WORDS:
+        return None
+    score = lang_score(ro_text)
+    if score <= 0.15:
+        return None
+    en_share = gate.features(en_text, "en", lex, names)["real_share"]
+    ro_share = gate.features(ro_text, "ro", lex, names)["real_share"]
+    if ro_share - en_share < margin:
+        return None
+    return {"en_share": en_share, "ro_share": ro_share, "ro_score": round(score, 2)}
+
+
+def _whole_phrase(tr, lang: str, tgt: str) -> bool:
+    """The translator for this direction takes a whole phrase in one call instead of clause by
+    clause (the experimental online Claude translator: each call is a network round trip)."""
+    m = tr.trs.get((lang, tgt), tr) if isinstance(getattr(tr, "trs", None), dict) else tr   # ByDirection
+    return bool(getattr(m, "whole_phrase", False))
 
 
 def pack_parts(parts: list[str], max_words: int) -> list[str]:
@@ -203,10 +267,16 @@ class PipelineMixin:
         """Keep the other profile's translator loaded: `live.keep_both_translators`
         true/false, or auto (the default) = this Mac has the RAM for it (>= 24 GB)."""
         v = self.lc.get("keep_both_translators", "auto")
-        if isinstance(v, bool):
-            return v
+        if v is True:
+            return True
         import model_setup
-        return model_setup.hardware()["ram_bytes"] >= model_setup.QUALITY_RAM
+        roomy = model_setup.hardware()["ram_bytes"] >= model_setup.QUALITY_RAM
+        if v is False:                       # "Never", unless Live Voice needs Gemma for its summaries while
+            return roomy and self._voice_wants_gemma()   # Quickest translates with NLLB (plan §2.5)
+        return roomy
+
+    def _voice_wants_gemma(self) -> bool:
+        return bool(getattr(self, "voice_enabled", lambda: False)())
 
     def _load_one(self, spec: str, lc: dict, direction: tuple = ("ro", "en")):
         """Translator `spec` loaded and warmed up in the direction it serves (outside _proc_lock)."""
@@ -500,6 +570,11 @@ class PipelineMixin:
         with self.lock:
             self.counts[outcome] += 1
         self._write_log(rec)
+        if hasattr(self, "_speech_dropped") and outcome != "stt_error":   # Live Voice (speech.py)
+            try:
+                self._speech_dropped(ev)
+            except Exception:                           # noqa: BLE001  the voice never stops a caption
+                self._state_failed(self._speech_dropped)
 
     def _guard_fallback(self):
         """A loaded NLLB for the guard's last try (idea 5): Quality keeps one for English →
@@ -559,7 +634,8 @@ class PipelineMixin:
         'familia Pha' → 'familia Puha', 'Drago' → 'Dragoș'; logged as `names_fixed`."""
         if lang != "ro" or getattr(self, "gloss", None) is None:
             return text
-        text, fixed = namelist.repair_ro(text, namelist.ro_names(self.gloss), gate.lexicon()["ro"])
+        text, fixed = namelist.repair_ro(text, namelist.ro_names(self.gloss), gate.lexicon()["ro"],
+                                           gate.lexicon()["names"])
         if fixed:
             info["names_fixed"] = [list(f) for f in fixed]
         return text
@@ -593,6 +669,9 @@ class PipelineMixin:
         if split != fixed:
             info["ne_split"], fixed = fixed, split
         alt = ev.get("multi") or ""
+        fixed, days = guards.month_days(fixed, alt)
+        if days:
+            info["month_days"] = [list(x) for x in days]
         if alt and lang_score(alt) > 0:                 # the other transcript is Romanian too
             fixed, longer = guards.longer_numbers(fixed, alt)
             if longer:
@@ -618,6 +697,22 @@ class PipelineMixin:
         if not min_real:
             return src, lang, {}
         names = self._gate_names()
+        if lang == "en" and self.lang.mode == "auto" and self.lang.home == "ro" and self.lc.get("ro_inside_en", True):
+            # idea 12: Romanian said in English mode passes the gate as romanised scraps; the Romanian
+            # recogniser's transcript of the same audio is the text when it is clearly the better one
+            ro_text = apply_spellings(ev.get("ro") or "", self.cfg.get("spellings") or {})
+            better = romanian_inside_english(src, ro_text, gate.lexicon(), names)
+            if better:
+                info = {"gate_switched": src, "ro_inside_en": better}
+                ro_text = self._repair_names(ro_text, "ro", info)
+                with self.lock:
+                    self.counts["ro_inside_en"] += 1
+                self._ro_in_en = getattr(self, "_ro_in_en", 0) + 1
+                if self._ro_in_en >= 2:                 # two in a row: the speaker is back in Romanian
+                    self.lang.go_home()                 # (the way back took a minute on 2026-11-08, 19:17)
+                    self._ro_in_en = 0
+                return ro_text, "ro", info
+            self._ro_in_en = 0
         kept, why, cut = gate.screen(src, lang, gate.lexicon(), names, min_real)
         if kept and not cut:
             return src, lang, {}
@@ -690,6 +785,9 @@ class PipelineMixin:
         src_text = self._repair_numbers(ev, src_text, lang, src_info)
         if self._echo_word(ev, src_text):               # "trecute." then "trecut." alone (logged)
             return
+        if lang == "ro" and scrap(src_text):            # «să-l.» → "call out.", «rom.» (logged)
+            self._log_failure(ev, "scrap", source=src_text)
+            return
         if not src_text.strip():
             self._log_failure(ev, "empty_stt", lang=lang)
             return
@@ -698,28 +796,33 @@ class PipelineMixin:
             return
         src_info.update(gated)
         tgt = "en" if lang == "ro" else "ro"
+        tr = self._translator() if hasattr(self, "_translator") else self.tr   # AI or local (aimode.py)
+        if hasattr(tr, "begin_phrase"):
+            tr.begin_phrase()
         clauses, tail = split_clauses(src_text)
         parts = clauses + ([tail] if tail else [])        # at a pause everything is committed
+        if _whole_phrase(tr, lang, tgt):             # an online translator: one round trip per phrase
+            parts = [src_text]
         if ev.get("caught_up"):                           # catching up: few calls, each bounded
             parts = pack_parts(parts, int(self.lc.get("catchup_max_words", 60)))
         t0 = time.time()
         out, truncated, verse, is_verse = [], False, [], []
         for p in parts:
-            out.append(self.tr.translate(p, lang, tgt, self.gloss, use_context=True)
-                       if hasattr(self.tr, "context") else self.tr.translate(p, lang, tgt, self.gloss))
-            truncated |= bool(getattr(self.tr, "last_truncated", False))
-            verse += [getattr(self.tr, "last_verse", None)] if getattr(self.tr, "last_verse", None) else []
-            is_verse.append(bool(getattr(self.tr, "last_verse", None)))
+            out.append(tr.translate(p, lang, tgt, self.gloss, use_context=True)
+                       if hasattr(tr, "context") else tr.translate(p, lang, tgt, self.gloss))
+            truncated |= bool(getattr(tr, "last_truncated", False))
+            verse += [getattr(tr, "last_verse", None)] if getattr(tr, "last_verse", None) else []
+            is_verse.append(bool(getattr(tr, "last_verse", None)))
         # a published verse is not checked for numbers/negations ("nu voi duce lipsă" = "I shall
         # lack nothing"); the other parts of the same phrase still are
         if not verse:
-            translation, guard = guards.check(self.tr, src_text, " ".join(o for o in out if o),
+            translation, guard = guards.check(tr, src_text, " ".join(o for o in out if o),
                                               lang, tgt, self.gloss, fallback=self._guard_fallback())
         else:
             guard = {}
             for i, (p, o) in enumerate(zip(parts, out)):
                 if o and not is_verse[i]:
-                    out[i], g = guards.check(self.tr, p, o, lang, tgt, self.gloss,
+                    out[i], g = guards.check(tr, p, o, lang, tgt, self.gloss,
                                              fallback=self._guard_fallback())
                     guard = guard or g
             translation = " ".join(o for o in out if o)
@@ -733,7 +836,17 @@ class PipelineMixin:
             translation = guards.hide_odd(src_text, translation)
             src_info["odd_figure"] = True
         t_tr = time.time() - t0
-        self._tr_used[id(self.tr)] = time.time()
+        used = set(getattr(tr, "engines_used", None) or ()) if tr is not self.tr else {"local"}
+        # AI chosen: "ai" when only the API answered, or when no model was asked at all (a published
+        # verse); "local_fallback" when the local model answered any part of it
+        engine = "local" if tr is self.tr else "local_fallback" if "local" in used else "ai"
+        if "local" in used:
+            self._tr_used[id(self.tr)] = time.time()
+        src_info["engine"] = engine
+        if engine == "local_fallback":
+            src_info["engine_reason"] = getattr(tr, "last_reason", None)
+            with self.lock:
+                self.counts["ai_fallback"] += 1
         if not translation.strip():                     # nothing new to show: not a success
             self._log_failure(ev, "empty_mt", lang=lang, source=src_text, mt_s=round(t_tr, 3))
             return
@@ -769,6 +882,12 @@ class PipelineMixin:
                 self.caps.retract()                     # the previous caption goes; this replaces it
             shown, ok, outcome = self._show(screen_text, close="." if prev_open and not continues and not redo else "",
                                             audio_s=ev.get("audio_s"))
+            voice_mark = None
+            if hasattr(self, "_speech_mark"):           # Live Voice: this chunk's place among the shown ones
+                try:
+                    voice_mark = self._speech_mark(ev, tgt, outcome, redo=redo)
+                except Exception:                       # noqa: BLE001  the voice never stops a caption
+                    self._state_failed(self._speech_mark)
         if shown:                                       # in the caption box: a late verse may replace it
             self._last_out = [translation] if redo else [o for o in out if o]
             self._last_src = f"{last_src} {src_text}" if redo else src_text
@@ -802,6 +921,18 @@ class PipelineMixin:
             elif ok is False:                           # None: nothing was sent (hidden or held)
                 self.counts["pp_error"] += 1
         self._write_log(rec)
+        if hasattr(self, "_engine_note"):
+            self._engine_note(rec)
+        if hasattr(self, "_monitor_phrase"):            # the Monitor screen's row (monitor.py), before the
+            try:                                        # sentence step can group it with others
+                self._monitor_phrase(rec)
+            except Exception:                           # noqa: BLE001  the monitor never stops a caption
+                self._state_failed(self._monitor_phrase)
+        if hasattr(self, "_speech_chunk"):              # Live Voice: the sentence step (speech.py)
+            try:
+                self._speech_chunk(ev, tgt, translation, src_text, outcome, t_disp, verse=verse, mark=voice_mark)
+            except Exception:                           # noqa: BLE001  the voice never stops a caption
+                self._state_failed(self._speech_chunk)
 
     def _blocklist(self) -> re.Pattern | None:
         """`safety.blocklist` (words or phrases), the lines of `paths.blocklist` if set, the

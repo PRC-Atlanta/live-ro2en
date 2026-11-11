@@ -62,6 +62,15 @@ FIELDS: dict[str, dict] = {
     "display.network":         {"group": "propresenter", "type": "bool", "apply": "now"},
     "display.show_hidden":     {"group": "propresenter", "type": "bool", "apply": "now"},
     "display.remote":          {"group": "propresenter", "type": "bool", "apply": "now"},
+    # the AI / Local knob (aimode.py): Claude Haiku 5.5 with the local models as a hot spare
+    "ai.enabled":              {"group": "basic", "type": "bool", "apply": "now", "default": False},
+    "ai.timeout_s":            {"group": "advanced", "type": "num", "min": 1.0, "max": 6.0, "apply": "now", "default": 2.5},
+    # Live Voice (docs/live_voice_plan.md §5, §8)
+    "voice.enabled":           {"group": "voice", "type": "bool", "apply": "now", "default": False},
+    "voice.en.enabled":        {"group": "voice", "type": "bool", "apply": "now", "default": True},
+    "voice.speed":             {"group": "voice", "type": "num", "min": 1.0, "max": 1.5, "apply": "now", "default": 1.25},
+    "voice.speed_max":         {"group": "voice", "type": "num", "min": 1.0, "max": 1.75, "apply": "now", "default": 1.5},
+    "voice.port":              {"group": "voice", "type": "int", "min": 1024, "max": 65535, "apply": "now", "default": 8767},
     # Advanced
     "live.input_gain_target_db": {"group": "advanced", "type": "num", "min": -30, "max": -10, "apply": "now", "default": -20},
     "live.vad_threshold":      {"group": "advanced", "type": "num", "min": 0.1, "max": 0.95, "apply": "start"},
@@ -435,6 +444,10 @@ class SettingsMixin:
             self.caps.reveal = bool(get(self.cfg, "live.caption_reveal"))   # from the next phrase
         if "live.caption_reveal_wps" in changed and hasattr(self.caps, "reveal_wps"):
             self.caps.reveal_wps = float(get(self.cfg, "live.caption_reveal_wps") or 1.5)
+        if any(k.startswith("ai.") for k in changed) and hasattr(self, "_ai_settings_changed"):
+            self._ai_settings_changed(changed)
+        if any(k.startswith("voice.") for k in changed) and hasattr(self, "_voice_settings_changed"):
+            self._voice_settings_changed(changed)
         if any(k.startswith("display.") for k in changed) and hasattr(self, "_display_changed"):
             self._display_changed(changed)
         if "propresenter.enabled" in changed and hasattr(self, "_set_pp_enabled"):

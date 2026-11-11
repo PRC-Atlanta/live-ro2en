@@ -1,5 +1,5 @@
 #!/bin/bash
-# One-time setup on an Apple Silicon Mac. Creates five pinned venvs (separate because NeMo,
+# One-time setup on an Apple Silicon Mac. Creates six pinned venvs (separate because NeMo,
 # MLX-LM and Moondream pin conflicting dependencies), downloads/convert models, and runs tests.
 #   ./setup.sh            everything (~35 GB of models)
 #   ./setup.sh live       only what the live app needs (STT + translator + VAD)
@@ -21,6 +21,7 @@ mk() { [ -d "$1" ] || uv venv -q -p 3.12 "$1"; uv pip install -q -p "$1" -r "$2"
 mk .venv          requirements.txt           # core: scoring, Google dev tools, tests
 mk .venv-nemo     requirements/nemo.txt      # Jackrabbit / SpeD / Canary + live engine
 mk .venv-mt       requirements/mt.txt        # NLLB (CTranslate2), MLX-LM, live orchestrator, web UI
+mk .venv-voice    requirements/voice.txt     # Live Voice: Supertonic 3 (ONNX), MP3 encoder (docs/live_voice_plan.md)
 if [ "${1:-}" != "live" ]; then
   mk .venv-mlx       requirements/mlx.txt        # Parakeet / Whisper (MLX) benchmarks
   mk .venv-moondream requirements/moondream.txt  # Parakeet Redux benchmark

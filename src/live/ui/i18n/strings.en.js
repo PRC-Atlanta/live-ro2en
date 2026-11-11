@@ -3,7 +3,7 @@
 // One message and one action for each contract.json problem_code (the test fails on a missing one).
 
 export const S = {
-  app: { mark: ["LIVE", "TRANSLATE"], brand: "RO ⇄ EN", offline: "Offline · on this Mac" },
+  app: { mark: ["LIVE", "TRANSLATE"], brand: "RO ⇄ EN", offline: "Offline · on this Mac", online: "AI translation · online" },
 
   toolbar: {
     rehearsal: "Rehearsal", rehearsalHint: "Run a rehearsal with a recorded sermon",
@@ -13,6 +13,7 @@ export const S = {
     after: "After", afterHint: "Summary, rating and transcript of the last service",
     setupName: (device, pp) => `${device || "No sound input"} → ${pp === "off" ? "this Mac only" : pp ? "ProPresenter" : "ProPresenter (not connected)"}`,
     display: "Captions display", displayHint: "A captions-only window for a second screen or projector",
+    monitor: "Monitor", monitorHint: "Every segment: what was heard, what was translated and what Live Voice said",
   },
 
   // big dial face per phase: [big text, small text]; "{pct}" and "{t}" are filled in
@@ -52,12 +53,43 @@ export const S = {
     label: "Speaker", keys: "1 · 2 · 3",
   },
   quality: {
-    knob: { fast: "Quickest", quality: "Best" },
+    knob: { fast: "Quick", quality: "Best" },
     face: { fast: "Quick", quality: "Best" },
     long: { fast: "Quickest", quality: "Best quality" },
     label: "Quality", keys: "Q",
   },
+  // the AI / Local knob: which engine translates (and writes Live Voice's summaries)
+  engine: {
+    knob: { local: "Local", ai: "AI" },
+    face: { local: "Local", ai: "AI" },
+    long: { local: "Local models", ai: "AI (Claude Haiku)" },
+    label: "Translator", keys: "A",
+    title: "Local: this Mac's own models, nothing leaves it. AI: Claude Haiku over the internet; the local models take over by themselves when it does not answer.",
+    noKey: "AI needs an Anthropic API key. Add one in Settings → AI.",
+  },
+  // the Live Voice knob: the voice on phones, on or off (the same switch as Settings → Live Voice)
+  voice: {
+    knob: { off: "Off", on: "On" },
+    face: { off: "Off", on: "On" },
+    label: "Live Voice", keys: "L",
+    title: "Live Voice: the spoken translation on listeners' phones. The same switch as Settings → Live Voice.",
+    on: "Live Voice on", off: "Live Voice off",
+  },
   lang: { ro: "Romanian", en: "English" },
+
+  // the Monitor screen: one row per segment
+  monitor: {
+    heard: "Transcribed", translated: "Translated", voiced: "Live Voice said",
+    empty: "Nothing yet. Rows appear here as the speaker is captioned.",
+    notShown: "not shown", notVoiced: "–", summary: "summary",
+    // which translator made the row's translation: ai, local, or local_fallback (AI chosen, the local
+    // model answered because the API did not in time)
+    engine: { ai: "AI", local: "Local", local_fallback: "Local · fallback" },
+    engineTitle: "Which translator made this translation",
+    clear: "Clear", cleared: "Monitor cleared",
+    count: n => `${n} segment${n === 1 ? "" : "s"}`,
+    follow: "Follow newest",
+  },
 
   hide: "Hide captions", hideKey: "H", hideTitle: "Blank ProPresenter and the stage display. Recognition and the log carry on. H again to show.",
   tabs: { heard: "Heard", screen: "On screen", both: "Both", hint: "V to switch", hiddenTag: "· captions hidden" },
@@ -74,6 +106,17 @@ export const S = {
     pp: { ok: "ProPresenter connected", down: "ProPresenter not connected", missing: "ProPresenter message not found",
           unknown: "ProPresenter", off: "ProPresenter off" },
     pace: { unknown: "Pace", ok: "Keeping up", slow: "A bit slow", behind: "Falling behind", behindBy: s => `About ${Math.round(s)} s behind` },
+    // Live Voice (shown only while it is on) and the engine that is translating right now
+    voice: {
+      starting: "Voice starting", stopped: "Voice stopped",
+      ready: n => `Voice ready · ${n}`, speaking: n => `Voice · ${n}`,
+      behind: (s, n) => `Voice ${Math.round(s)} s behind · ${n}`,
+      listeners: (ro, en, both) => (both ? `${ro} RO · ${en} EN` : `${ro} listening`),
+    },
+    engine: {
+      local: "Local models", ai: "AI translating", fallback: "AI not answering: Local", no_key: "AI has no key: Local",
+      fallbackFor: s => `AI not answering (${Math.round(s)} s): Local`,
+    },
   },
 
   // the strip under the sound meter (the panel glows red while one shows)
@@ -124,6 +167,10 @@ export const S = {
                           action: { id: "settings", label: "Open Settings" } },
     disk_full: { msg: "This Mac is almost out of space. Free at least 1 GB so the transcript can be saved.",
                  action: { id: "help", label: "What to do" } },
+    voice_stopped: { msg: "Live Voice has stopped: phones hear nothing. Captions are not affected. Turn Live Voice off and on again in Settings.",
+                     action: { id: "settings", label: "Open Settings" } },
+    voice_behind: { msg: "Live Voice is more than 10 seconds behind the speaker. It speaks faster and shortens what it says until it has caught up.",
+                    action: { id: "help", label: "What this means" } },
     models_missing: { msg: "Some translation files are missing. Open Setup to download them.",
                       action: { id: "setup", label: "Open Setup" } },
   },
@@ -142,7 +189,7 @@ export const S = {
     reconnecting: "Reconnecting to ProPresenter…",
     pressAgain: "Press Space again to stop",
     started: "Captioning", stopped: "Stopped",
-    mode: m => `Speaker: ${m}`, quality: q => `Quality: ${q}`,
+    mode: m => `Speaker: ${m}`, quality: q => `Quality: ${q}`, engine: e => `Translator: ${e}`,
     nothingToFix: "There is no caption to fix yet.",
     nothingToRemove: "There is no caption to remove.",
     ppOn: "Captions go to ProPresenter again",
@@ -164,6 +211,8 @@ export const S = {
     ["Esc", "Blank the big screen now"],
     ["1 / 2 / 3", "Speaker: Auto-detect / Romanian / English"],
     ["Q", "Quality: Quickest or Best"],
+    ["A", "Translator: AI or Local"],
+    ["L", "Live Voice: on or off"],
     ["Backspace", "Remove the last caption"],
     ["E", "Fix the last caption"],
     ["T", "Today's names & words"],
@@ -190,6 +239,18 @@ export const S = {
       ["Captions are late", [
         "Captions catch up by themselves; nothing is lost.",
         "If it keeps happening, turn the Quality knob to Quickest (press Q)."]],
+      ["The Translator knob is amber", [
+        "AI is chosen, but the internet or the AI service is not answering, so this Mac is translating by itself. Captions keep coming.",
+        "It goes back to AI by itself. To stop trying, press A for Local."]],
+      ["The Translator knob will not turn to AI", [
+        "AI needs an Anthropic API key. Add it in Settings → AI."]],
+      ["People can't hear the voice on their phones", [
+        "Look at the VOICE light at the top. Red: open Settings → Live Voice. Captions are not affected.",
+        "The phone must be on the church Wi-Fi, the same network as this Mac.",
+        "Ask them to scan the QR code in Settings → Live Voice again and tap “Ascultă în română”."]],
+      ["The voice is late", [
+        "It catches up by itself: it speaks a little faster, then gives a short summary of what it missed.",
+        "Bible verses are always read in full."]],
       ["Wrong language", [
         "Turn the Speaker knob: press 2 for a Romanian speaker, 3 for an English speaker, 1 for Auto-detect."]],
       ["A name is spelled wrong", [

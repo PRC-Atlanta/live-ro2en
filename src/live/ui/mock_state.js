@@ -13,6 +13,7 @@ const PROBLEMS = {
   no_sound: "warn", device_lost: "error", mic_denied: "error", mic_ask: "error", recognition_behind: "warn",
   captions_behind: "warn", engine_stopped: "error", english_unavailable: "info",
   pp_unreachable: "error", pp_message_missing: "error", disk_full: "error", models_missing: "error",
+  voice_stopped: "warn", voice_behind: "info",
 };
 
 export function baseState() {
@@ -26,6 +27,13 @@ export function baseState() {
     pp: { connected: true, since: Date.now() / 1000 - 600, last_ms: 3, error_code: null, enabled: true },
     display: { size: "large", lines: 2, colors: "white_on_black", network: false, show_hidden: false, remote: false, url: null, network_error: null },
     remote: { enabled: false, pin: null, clients: 0 },
+    ai: { selected: "local", state: "local", available: true, key_source: "keychain", model: "claude-haiku-5-5",
+          reason: null, down_s: null, latency_median_s: null,
+          used: { ai: { phrases: 0, s: 0 }, local: { phrases: 0, s: 0 }, local_fallback: { phrases: 0, s: 0 } } },
+    voice: { enabled: false, state: "off", behind_s: null, listeners: { ro: 0, en: 0 }, en: true, url: null, port: 8767,
+             model: null, summarizer: false, error: null,
+             session: { items: 0, delay_median_s: null, within_10s_pct: null, summaries: 0, summaries_refused: 0, cut: 0,
+                        peak_listeners: { ro: 0, en: 0 } } },
     pace: { state: "ok", behind_s: null }, backlog: { n: 0, oldest_s: null },
     paused: false, held: false, song: false, song_auto: false, problem: null, auto_actions: [],
     elapsed_s: null, first_word_ok_pct: null, rehearsal: false, session_terms_n: 0, corrections_n: 0, preflight: null,
@@ -108,6 +116,13 @@ const MOCK_FIELDS = {
   "propresenter.max_chars_per_line": { group: "propresenter", type: "int", min: 20, max: 80, apply: "now" },
   "propresenter.stage_message": { group: "propresenter", type: "bool", apply: "now" },
   "propresenter.health_every_s": { group: "propresenter", type: "int", min: 0, max: 60, apply: "launch" },
+  "ai.enabled": { group: "basic", type: "bool", apply: "now", default: false },
+  "ai.timeout_s": { group: "advanced", type: "num", min: 1.0, max: 6.0, apply: "now", default: 2.5 },
+  "voice.enabled": { group: "voice", type: "bool", apply: "now", default: false },
+  "voice.en.enabled": { group: "voice", type: "bool", apply: "now", default: true },
+  "voice.speed": { group: "voice", type: "num", min: 1.0, max: 1.5, apply: "now", default: 1.25 },
+  "voice.speed_max": { group: "voice", type: "num", min: 1.0, max: 1.75, apply: "now", default: 1.5 },
+  "voice.port": { group: "voice", type: "int", min: 1024, max: 65535, apply: "now", default: 8767 },
   "live.input_gain_target_db": { group: "advanced", type: "num", min: -30, max: -10, apply: "now", default: -20 },
   "live.vad_threshold": { group: "advanced", type: "num", min: 0.1, max: 0.95, apply: "start" },
   "live.hold_min_words": { group: "advanced", type: "int", min: 0, max: 12, apply: "now" },
@@ -146,6 +161,8 @@ const MOCK_DEFAULTS = {
   "propresenter.enabled": true, "display.size": "large", "display.lines": 2, "display.colors": "white_on_black",
   "display.network": false, "display.show_hidden": false, "display.remote": false,
   "ui.show_latency": false, "ui.show_counts": false,
+  "ai.enabled": false, "ai.timeout_s": 2.5,
+  "voice.enabled": false, "voice.en.enabled": true, "voice.speed": 1.25, "voice.speed_max": 1.5, "voice.port": 8767,
 };
 // model_lock.py items: each profile includes the ones before it
 const MOCK_MODELS = [
@@ -238,6 +255,7 @@ export const mockBackend = {
     const done = Math.round(total * d.pct / 100);
     return {
       profiles, models, recommended_profile: rec,
+      voice: { size_bytes: 401297315, present: true, published: true },
       disk: { path: "/Users/church/Library/Application Support/Live RO2EN/hf/hub", free_bytes: free },
       hardware: { ram_bytes: ram, arch: "arm64", chip: small ? "Apple M1" : "Apple M2 Pro", apple_silicon: true },
       checks: [
@@ -455,7 +473,10 @@ export async function mockApi(method, path, body = {}) {
       return status(200, { ok: true, log: LOG, summary: {
         elapsed_s: 2712, phrases: 422, outcomes: { ok: 412, empty_mt: 3, mt_echo: 2, pp_error: 1, caught_up: 4, mt_loop: 1 }, failed: 10, filtered: 1,
         latency_median: 2.1, first_word_median: 3.4, first_word_ok_pct: 94, pp_errors: 1, corrections: 2, warnings: 1,
-        engine_exits: 0, kind: "service", rating } });
+        engine_exits: 0, kind: "service", rating,
+        engines: { ai: { phrases: 0, s: 0 }, local: { phrases: 202, s: 2590 }, local_fallback: { phrases: 0, s: 0 } },
+        voice: { items: 0, delay_median_s: null, within_10s_pct: null, summaries: 0, summaries_refused: 0, cut: 0,
+                 peak_listeners: { ro: 0, en: 0 } } } });
     }
     case "POST export": {
       const fmt = body.format ?? "txt";
@@ -479,6 +500,20 @@ export async function mockApi(method, path, body = {}) {
       return live({ [path === "pause" ? "paused" : "held"]: body.on });
     case "POST blank": case "POST clear": case "POST reconnect": case "POST layout": return live();
     case "POST remote/pin": return live({ remote: B.remote(true) });
+    case "POST engine": {
+      if (body.engine !== "ai" && body.engine !== "local") return status(400, { error: "bad_request", detail: "engine must be ai or local" });
+      const cur = stateNow().ai;
+      if (body.engine === "ai" && !cur.available) return status(409, { error: "no_key", detail: "Add an Anthropic API key in Settings first." });
+      return live({ ai: { ...cur, selected: body.engine, state: body.engine } });
+    }
+    case "POST ai/key":
+      if (body.key === null) return live({ ai: { ...stateNow().ai, available: false, key_source: null, selected: "local", state: "local" } });
+      if (typeof body.key !== "string" || !/^sk-ant-[A-Za-z0-9_-]{20,300}$/.test(body.key))
+        return status(400, { error: "bad_request", detail: "That does not look like an Anthropic API key (sk-ant-…)." });
+      return live({ ai: { ...stateNow().ai, available: true, key_source: "keychain" } });
+    case "POST voice/test":
+      if (body.lang !== "ro" && body.lang !== "en") return status(400, { error: "bad_request", detail: "lang must be ro or en" });
+      return status(200, { ok: stateNow().voice.state !== "off" && stateNow().voice.state !== "stopped" });
     case "POST retract":
       return stateNow().screen ? live() : nothing("there is no caption to remove");
     case "POST correct":
@@ -541,6 +576,17 @@ const level = (t, lvl, { music = false } = {}) => {
   const rms = music ? lvl + 3 * Math.sin(t / 2) : talking ? lvl + 5 * Math.sin(t / 2) : Math.min(lvl - 20, -56);
   return { rms_db: rms, peak_db: Math.min(0, rms + 8), speech: talking, last_voice_s: talking ? 0 : 9 };
 };
+const SESSION0 = { items: 0, delay_median_s: null, within_10s_pct: null, summaries: 0, summaries_refused: 0, cut: 0,
+                   peak_listeners: { ro: 0, en: 0 } };
+const voiceOf = (state, listeners, behind = null) => ({
+  enabled: true, state, behind_s: behind ?? (state === "speaking" ? 4.2 : null), listeners, en: true,
+  url: "http://192.168.1.20:8767/", port: 8767, model: true, summarizer: true, error: null,
+  session: state === "stopped" ? SESSION0 : { items: 212, delay_median_s: 4.6, within_10s_pct: 93, summaries: 3, summaries_refused: 2, cut: 1,
+                                               peak_listeners: { ro: 16, en: 4 } } });
+const aiOf = (selected, state) => ({
+  selected, state, available: true, key_source: "keychain", model: "claude-haiku-5-5", reason: null, down_s: null,
+  latency_median_s: state === "ai" ? 0.9 : null,
+  used: { ai: { phrases: 180, s: 1500 }, local: { phrases: 20, s: 170 }, local_fallback: { phrases: 6, s: 52 } } });
 const withLevel = (t, lvl, opts) => {
   const s = SCENARIOS.live(t);
   return { ...s, audio: { ...s.audio, ...level(t, lvl, opts) } };
@@ -564,6 +610,17 @@ Object.assign(SCENARIOS, {
                           problem: { code: "pp_unreachable", severity: "error", action: { id: "reconnect", label: "Try again" } } }),
   pp_message_missing: t => ({ ...SCENARIOS.live(t), pp: { connected: true, since: null, last_ms: 4, error_code: "message_missing", enabled: true },
                               problem: { code: "pp_message_missing", severity: "error", action: { id: "settings", label: "Open Settings" } } }),
+  // Live Voice and the AI / Local knob (docs/live_voice_plan.md §5, §15)
+  voice_on: t => ({ ...SCENARIOS.live(t), voice: voiceOf("speaking", { ro: 14, en: 3 }) }),
+  voice_ready: t => ({ ...SCENARIOS.live(t), voice: voiceOf("ready", { ro: 2, en: 0 }) }),
+  voice_behind: t => ({ ...SCENARIOS.live(t), voice: voiceOf("behind", { ro: 14, en: 3 }, 13.4),
+                        problem: { code: "voice_behind", severity: "info", action: { id: "help", label: "What this means" } } }),
+  voice_stopped: t => ({ ...SCENARIOS.live(t), voice: { ...voiceOf("stopped", { ro: 0, en: 0 }), error: "the voice stopped (exit 9) and was not restarted again" },
+                         problem: { code: "voice_stopped", severity: "warn", action: { id: "settings", label: "Open Settings" } } }),
+  ai_on: t => ({ ...SCENARIOS.live(t), ai: aiOf("ai", "ai"), voice: voiceOf("speaking", { ro: 14, en: 3 }) }),
+  ai_fallback: t => ({ ...SCENARIOS.live(t), ai: { ...aiOf("ai", "fallback"), reason: "timeout", down_s: 12 },
+                       voice: voiceOf("speaking", { ro: 14, en: 3 }) }),
+  ai_no_key: t => ({ ...SCENARIOS.live(t), ai: { ...aiOf("local", "local"), available: false, key_source: null } }),
   no_sound: t => { const s = withLevel(t, null);
                    return { ...s, audio: { ...s.audio, ok: false },
                             problem: { code: "no_sound", severity: "warn", action: { id: "help", label: "What to check" } } }; },

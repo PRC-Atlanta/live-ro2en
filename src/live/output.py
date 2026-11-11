@@ -110,6 +110,22 @@ class OutputMixin:
     def blank(self):
         self.clear()
         self._log_event({"event": "blank"})
+        self._voice_op("blank")
+
+    def _voice_op(self, what: str, *a):
+        """Live Voice follows the operator (speech.py, voicelink.py; plan §2.4). Never raises."""
+        try:
+            if what in ("hide", "show", "blank", "song") and hasattr(self, "_speech_discard"):
+                self._speech_discard(what)
+            elif what == "retract" and hasattr(self, "_speech_retract"):
+                self._speech_retract()
+            elif what == "correct" and hasattr(self, "_speech_correct"):
+                self._speech_correct(*a)
+            if hasattr(self, "_voice_state_now"):
+                self._voice_state_now(blank=what == "blank")
+        except Exception:                               # noqa: BLE001
+            if hasattr(self, "_state_failed"):
+                self._state_failed(self._voice_op)
 
     def pause(self, on: bool = True):
         """Hide (on) / Show (off). Hide blanks ProPresenter and the stage display; recognition,
@@ -128,6 +144,7 @@ class OutputMixin:
         if not on:
             self._reset_translator_context()
         self._log_event({"event": "pause", "on": on})
+        self._voice_op("hide" if on else "show")
         self._broadcast()
 
     def _show_hidden(self) -> bool:
@@ -157,6 +174,7 @@ class OutputMixin:
                     self.caps.flush()
                 self._push()
         self._log_event({"event": "hold", "on": on})
+        self._voice_op("hold")
         self._broadcast()
 
     def _song_symbol(self) -> str:
@@ -186,6 +204,7 @@ class OutputMixin:
         if not on:
             self._reset_translator_context()
         self._log_event({"event": "song", "on": on, "auto": auto})
+        self._voice_op("song")
         self._broadcast()
 
     def retract(self) -> bool:
@@ -198,6 +217,7 @@ class OutputMixin:
                 return False
             if not (self.paused or self.held):
                 self._push()
+            self._voice_op("retract")           # inside the screen's lock: no caption can come in between
         self._note_correction({"event": "correction", "kind": "retract", "removed": before, "screen": text})
         return True
 
@@ -214,6 +234,7 @@ class OutputMixin:
                 return False
             if not (self.paused or self.held):
                 self._push()
+            self._voice_op("correct", text)     # inside the screen's lock, as Remove last
         with self.lock:
             if self.history:
                 self.history = self.history[:-1] + [{**self.history[-1], "translation": text,

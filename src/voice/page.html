@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#101418">
+<title>Traducere audio</title>
+<style>
+  :root { color-scheme: dark; --bg:#101418; --card:#1a2028; --line:#2b3440; --text:#f2f4f7; --dim:#9aa5b4; --go:#2f7df6; --on:#22a565; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 17px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         display: flex; flex-direction: column; align-items: center; justify-content: center;
+         padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom)); }
+  main { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 14px; }
+  h1 { font-size: 22px; font-weight: 650; margin: 0 0 6px; text-align: center; }
+  button { appearance: none; border: 1px solid var(--line); background: var(--card); color: var(--text);
+           border-radius: 16px; padding: 20px 18px; font: inherit; font-size: 20px; font-weight: 600;
+           width: 100%; min-height: 76px; cursor: pointer; display: flex; align-items: center; gap: 14px;
+           text-align: left; -webkit-tap-highlight-color: transparent; }
+  button .dot { flex: none; width: 14px; height: 14px; border-radius: 50%; background: var(--line); }
+  button small { display: block; font-size: 14px; font-weight: 400; color: var(--dim); margin-top: 2px; }
+  button[aria-pressed="true"] { border-color: var(--on); background: #16271f; }
+  button[aria-pressed="true"] .dot { background: var(--on); box-shadow: 0 0 0 5px rgba(34,165,101,.22); }
+  button:focus-visible { outline: 3px solid var(--go); outline-offset: 2px; }
+  #status { min-height: 1.5em; text-align: center; color: var(--dim); font-size: 16px; margin-top: 4px; }
+  #status.on { color: var(--text); }
+  p.note { color: var(--dim); font-size: 14px; text-align: center; margin: 6px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Traducere audio · Audio translation</h1>
+  <button id="ro" type="button" aria-pressed="false"><span class="dot"></span>
+    <span>Ascultă în română<small>Traducerea în română a vorbitorului englez</small></span></button>
+  <button id="en" type="button" aria-pressed="false"><span class="dot"></span>
+    <span>Listen in English<small>The English translation of the Romanian speaker</small></span></button>
+  <div id="status" role="status" aria-live="polite"></div>
+  <p class="note" id="note">Folosiți căștile. · Please use headphones.</p>
+</main>
+<audio id="a" playsinline preload="none"></audio>
+<script>
+(function () {
+  "use strict";
+  var T = {
+    ro: { title: "Traducere în română", artist: "Live RO2EN", on: "Se aude", wait: "Se conectează…",
+          again: "Se reconectează…", stop: "Oprit. Apăsați pentru a asculta.", tap: "Apăsați din nou pentru a asculta." },
+    en: { title: "English translation", artist: "Live RO2EN", on: "Playing", wait: "Connecting…",
+          again: "Reconnecting…", stop: "Stopped. Tap to listen.", tap: "Tap again to listen." }
+  };
+  var audio = document.getElementById("a"), status = document.getElementById("status");
+  var lang = null, lastLang = null, tries = 0, timer = null, watchdog = null, lastTime = -1, lastMove = 0;
+  var rehearsal = false, t0 = 0, stalls = 0, statsTimer = null;
+
+  function say(key, on) { status.textContent = lang ? T[lang][key] : ""; status.className = on ? "on" : ""; }
+  function mark() {
+    ["ro", "en"].forEach(function (l) { document.getElementById(l).setAttribute("aria-pressed", String(l === lang)); });
+  }
+  function session() {
+    if (!("mediaSession" in navigator) || !lang) return;
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({ title: T[lang].title, artist: T[lang].artist });
+      // the lock screen's play button after its pause: the same language again, at the live edge
+      navigator.mediaSession.setActionHandler("play", function () { if (lang) connect(false); else if (lastLang) choose(lastLang); });
+      navigator.mediaSession.setActionHandler("pause", function () { stop(); });
+      navigator.mediaSession.setActionHandler("stop", function () { stop(); });
+    } catch (e) {}
+  }
+  // A new URL every time: the stream is live, and a reused URL may replay what the phone buffered.
+  function connect(again) {
+    if (!lang) return;
+    clearTimeout(timer); timer = null;
+    lastMove = Date.now();
+    say(again ? "again" : "wait", false);
+    audio.src = "/listen/" + lang + "?t=" + Date.now();
+    t0 = performance.now();
+    var p = audio.play();
+    if (p && p.catch) p.catch(function () { if (lang) say("tap", false); });
+  }
+  function retry() {
+    if (!lang || timer) return;                  // one reconnect at a time: a pending one is not pushed back
+    stalls += 1;
+    tries = Math.min(tries + 1, 6);
+    say("again", false);
+    timer = setTimeout(function () { timer = null; connect(true); }, Math.min(500 * Math.pow(2, tries - 1), 8000));
+  }
+  function stop() {
+    var was = lang;
+    lastLang = lang || lastLang;
+    lang = null; tries = 0;
+    clearTimeout(timer); timer = null;
+    audio.pause(); audio.removeAttribute("src"); audio.load();
+    mark();
+    if (was) { status.textContent = T[was].stop; status.className = ""; }
+  }
+  function choose(l) {
+    if (lang === l) { stop(); return; }
+    lang = l; tries = 0;
+    mark(); session(); connect(false);
+  }
+  document.getElementById("ro").addEventListener("click", function () { choose("ro"); });
+  document.getElementById("en").addEventListener("click", function () { choose("en"); });
+  audio.addEventListener("playing", function () { tries = 0; lastMove = Date.now(); say("on", true); });
+  audio.addEventListener("waiting", function () { if (lang) say("again", false); });
+  audio.addEventListener("stalled", function () { if (lang && audio.readyState < 3) retry(); });
+  audio.addEventListener("error", retry);
+  audio.addEventListener("ended", retry);
+  // The stream never ends: if the play position stops moving for 6 s, connect again at the live edge.
+  watchdog = setInterval(function () {
+    if (!lang || audio.paused || timer) return;
+    if (audio.currentTime !== lastTime) { lastTime = audio.currentTime; lastMove = Date.now(); return; }
+    if (Date.now() - lastMove > 6000) { lastMove = Date.now(); retry(); }
+  }, 1000);
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden && lang && audio.paused) connect(true);
+  });
+  // Rehearsal mode only (the server says so): how much audio the phone holds back, every 10 s.
+  fetch("/listen", { method: "HEAD", cache: "no-store" }).then(function (r) {
+    rehearsal = r.headers.get("X-Voice-Rehearsal") === "1";
+    if (!rehearsal) return;
+    statsTimer = setInterval(function () {
+      if (!lang || audio.paused || !t0) return;
+      var body = JSON.stringify({ lang: lang, stalls: stalls, pos: audio.currentTime,
+        buffer_s: Math.round(((performance.now() - t0) / 1000 - audio.currentTime) * 100) / 100,
+        ua: navigator.userAgent.slice(0, 160) });
+      fetch("/stats", { method: "POST", body: body, cache: "no-store", keepalive: true }).catch(function () {});
+    }, 10000);
+  }).catch(function () {});
+})();
+</script>
+</body>
+</html>

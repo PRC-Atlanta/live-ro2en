@@ -6,6 +6,7 @@ const ROUTES = {
   settings: () => import("../screens/settings/index.js"),
   after: () => import("../screens/after.js"),
   help: () => import("../screens/help.js"),
+  monitor: () => import("../screens/monitor.js"),
 };
 
 // First launch: the first state the backend sends says the models are missing, and nobody asked

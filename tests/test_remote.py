@@ -66,7 +66,8 @@ def test_the_pin_is_six_digits_kept_and_renewed(tmp_path, monkeypatch):
 def test_every_route_needs_the_pin(rig):
     live, client, _ = rig
     for method, path in (("GET", "/remote/state"), ("POST", "/remote/pause"), ("POST", "/remote/blank"),
-                         ("POST", "/remote/retract"), ("GET", "/remote/terms"), ("POST", "/remote/terms")):
+                         ("POST", "/remote/retract"), ("GET", "/remote/terms"), ("POST", "/remote/terms"),
+                         ("POST", "/remote/engine")):
         assert client.request(method, path, json={}).status_code == 401, path
         assert client.request(method, path, json={}, headers={"X-Live-Pin": "000000x"}).status_code == 401
         live._remote_fails.clear()                             # not the lockout's test
@@ -105,9 +106,25 @@ def test_hide_hold_song_clear_and_remove_last(rig):
 def test_the_feed_has_what_the_toolbar_shows(rig):
     live, client, pin = rig
     feed = client.get("/remote/state", headers=pin).json()
-    assert set(feed) == {"name", "phase", "running", "paused", "held", "song", "screen", "lag_s", "terms_n", "pp"}
+    assert set(feed) == {"name", "phase", "running", "paused", "held", "song", "screen", "lag_s", "terms_n", "pp",
+                         "voice", "ai"}
+    assert set(feed["voice"]) == {"enabled", "state", "behind_s", "listeners"}       # no address, no error text
+    assert set(feed["ai"]) == {"selected", "state", "available"}                     # and nothing about the key
     assert set(feed["pp"]) == {"enabled", "connected"}
     assert "pin" not in json.dumps(feed)
+
+
+def test_the_remote_turns_the_ai_local_knob_and_never_sees_the_key(rig, monkeypatch):
+    live, client, pin = rig
+    r = client.post("/remote/engine", json={"engine": "ai"}, headers=pin)          # no key on this Mac
+    assert r.status_code == 409 and set(r.json()) == {"error", "detail"} and r.json()["error"] == "no_key"
+    assert client.post("/remote/engine", json={"engine": "gpt"}, headers=pin).status_code == 400
+    assert client.post("/remote/engine", json={}, headers=pin).status_code == 400
+    monkeypatch.setattr(live.ai(), "key_present", lambda wait=True: True)
+    feed = client.post("/remote/engine", json={"engine": "ai"}, headers=pin).json()
+    assert feed["ai"]["selected"] == "ai" and live.ai_selected() and "sk-ant" not in json.dumps(feed)
+    feed = client.post("/remote/engine", json={"engine": "local"}, headers=pin).json()
+    assert feed["ai"]["selected"] == "local" and not live.ai_selected()
 
 
 def test_names_and_words_go_to_today_and_can_be_kept(rig):

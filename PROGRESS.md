@@ -1,9 +1,16 @@
 # Progress
 
-Resume: open this folder in Claude Code and say "resume from PROGRESS.md".
-Repo: https://github.com/PRC-Atlanta/live-ro2en (private). Audio, models, .env, correction data and transcripts are not tracked (see .gitignore).
-Venvs (uv, Python 3.12): `.venv` (core/scoring/Google), `.venv-nemo` (Jackrabbit/SpeD/Canary, live engine),
-`.venv-mlx` (Parakeet/Whisper), `.venv-moondream` (Parakeet Redux), `.venv-mt` (NLLB, MLX LLMs, live orchestrator).
+## WHERE I AM (live-voice branch, 2026-11-10 evening)
+
+- **Built and committed:** M0–M7, idea 12, the AI / Local engine, both apps' UI. Reviews (Opus): one per
+  milestone with fix reviews, and a security review of the whole branch; outcomes in the plan and DECISIONS.
+- **M6:** sermon gate passes in Local and AI; captions gate passes; the eulogy gate is not met on the median
+  (4.1 s Local, 4.6 s AI against 4.0 s) with 100% / 98% within 10 s. Plan §9 has every number and the paths
+  of the recordings to listen to.
+- **Not done, needs the church or other Macs:** M8–M10 (R1–R3 checklists in plan §10); M0 numbers on the Mac
+  Studio; Supertonic 3 copied to the church's Hugging Face repo; the 2026-11-08 evening bench for AI
+  (`scripts/ai_regression.py`); notarization.
+- **Next:** listen to the recordings; R1.
 
 ## Iteration 1 — DONE (2026-10-21, 22:05)
 - Phase 0: src/google_stt.py (+ mocked tests). Bible set transcribed by chirp_2 (europe-west4) and chirp_3 (us). 68.1/600 Google minutes used. Chirp 3 = silver reference.

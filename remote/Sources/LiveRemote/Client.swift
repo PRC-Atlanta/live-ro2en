@@ -3,6 +3,20 @@ import Foundation
 /// What the captions Mac sends (GET /remote/state, WS /remote/ws; src/live/remote.py remote_feed).
 struct Feed: Decodable, Equatable {
     struct PP: Decodable, Equatable { var enabled: Bool; var connected: Bool }
+    /// Live Voice (the spoken translation on listeners' phones). Absent from an older captions app.
+    struct Voice: Decodable, Equatable {
+        var enabled: Bool?
+        var state: String?              // off, starting, ready, speaking, behind, stopped
+        var behind_s: Double?
+        var listeners: [String: Int]?   // "ro", "en"
+    }
+    /// The AI / Local knob: which engine is chosen, and which is answering (state "fallback" =
+    /// AI chosen, the local models answering). Never anything about the key itself.
+    struct AI: Decodable, Equatable {
+        var selected: String?           // ai, local
+        var state: String?              // ai, local, fallback, no_key
+        var available: Bool?            // a key is stored on the captions Mac
+    }
     var name: String
     var phase: String?
     var running: Bool
@@ -13,6 +27,8 @@ struct Feed: Decodable, Equatable {
     var lag_s: Double?
     var terms_n: Int
     var pp: PP
+    var voice: Voice?
+    var ai: AI?
 }
 
 struct Terms: Decodable { var lines: [String]; var n: Int }

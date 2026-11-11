@@ -1,0 +1,221 @@
+[
+ {
+  "in": [
+   "Isus este Domnul.",
+   "El ne iubește."
+  ],
+  "in_words": 6,
+  "out": "Isus este Domnul și ne iubește.",
+  "out_words": 6,
+  "gemma_s": 1.476
+ },
+ {
+  "in": [
+   "Câți dintre voi vă ocupați de asta?"
+  ],
+  "in_words": 7,
+  "out": "Câți dintre voi vă ocupați de asta?",
+  "out_words": 7,
+  "gemma_s": 1.112
+ },
+ {
+  "in": [
+   "Câți dintre voi vă ocupați de asta?",
+   "Știu deja. Puneți-l pe caietele voastre."
+  ],
+  "in_words": 13,
+  "out": "Cine se ocupă de asta? Scrieți-l pe caiete.",
+  "out_words": 8,
+  "gemma_s": 1.319
+ },
+ {
+  "in": [
+   "În 9 din 10 cazuri e senzorul de oxigen."
+  ],
+  "in_words": 9,
+  "out": "În 90% din cazuri, problema este senzorul de oxigen.",
+  "out_words": 9,
+  "gemma_s": 1.26
+ },
+ {
+  "in": [
+   "În 9 din 10 cazuri e senzorul de oxigen.",
+   "Sau ceva legat. Dar îți spune ce este, asta e o greșeală, ceea ce se întâmplă. Când ai probleme în viața ta, trebuie să știi de ce ai probleme."
+  ],
+  "in_words": 38,
+  "out": "De cele mai multe ori este senzorul de oxigen. Trebuie să înțelegi cauza problemelor tale.",
+  "out_words": 15,
+  "gemma_s": 1.64
+ },
+ {
+  "in": [
+   "Este intitulată \"Parabola talantelor\"."
+  ],
+  "in_words": 4,
+  "out": "Este intitulată „Parabola talantelor”.",
+  "out_words": 4,
+  "gemma_s": 1.055
+ },
+ {
+  "in": [
+   "Cel ce primise cei cinci talanți a venit, a adus alți cinci talanți și a zis: ‘Doamne, mi-ai încredințat cinci talanți; Uite, am câștigat încă cinci talente pe lângă acestea."
+  ],
+  "in_words": 30,
+  "out": "Cel care primise cinci talanți a adus încă cinci talanți câștigate.",
+  "out_words": 11,
+  "gemma_s": 1.437
+ },
+ {
+  "in": [
+   "Cel ce primise cei cinci talanți a venit, a adus alți cinci talanți și a zis: ‘Doamne, mi-ai încredințat cinci talanți; Uite, am câștigat încă cinci talente pe lângă acestea.",
+   "Stăpânul său i-a zis: \"Bine, sclav bun și credincios! și credincios, ai fost credincios în puține lucruri, te voi pune peste multe lucruri; intră în bucuria Domnului. El ..."
+  ],
+  "in_words": 59,
+  "out": "Cel care a primit cinci talanți a adus încă cinci și a fost numit sclav bun și credincios, fiind premiat de stăpân.",
+  "out_words": 22,
+  "gemma_s": 2.219
+ },
+ {
+  "in": [
+   "Și am dus și am ascuns orașele voastre în pământ, uită-te acolo, și ai ceea ce este al tău. Domnul său i-a răspuns și i-a spus: slujitor răutăcios și leneș."
+  ],
+  "in_words": 30,
+  "out": "Am ascuns orașele tale în pământ; Domnul l-a numit slujitor răutăcios și leneș.",
+  "out_words": 13,
+  "gemma_s": 2.093
+ },
+ {
+  "in": [
+   "Și am dus și am ascuns orașele voastre în pământ, uită-te acolo, și ai ceea ce este al tău. Domnul său i-a răspuns și i-a spus: slujitor răutăcios și leneș.",
+   "Știai că recolt unde n-am semănat, și culegeți ceea ce nu am împrăștiat."
+  ],
+  "in_words": 43,
+  "out": "Am ascuns orașele tale în pământ, dar ești un slujitor răutăcios și leneș care recoltează fără să semene.",
+  "out_words": 18,
+  "gemma_s": 2.216
+ },
+ {
+  "in": [
+   "Abilitatea ta este, orice Dumnezeu te-a binecuvântat cu, acest lucru este un talent."
+  ],
+  "in_words": 13,
+  "out": "Abilitatea pe cu care Dumnezeu te-a binecuvântat este un talent.",
+  "out_words": 10,
+  "gemma_s": 1.693
+ },
+ {
+  "in": [
+   "E talentul tău. Unii dintre voi poate recunoaste de la o vârstă fragedă, unii dintre voi pot lua 20, 30 de ani să-ți dai seama la ce ești bun."
+  ],
+  "in_words": 29,
+  "out": "Recunoaște-ți talentul, fie că iei câteva ani sau decenii să îl descoperi.",
+  "out_words": 12,
+  "gemma_s": 1.579
+ },
+ {
+  "in": [
+   "E talentul tău. Unii dintre voi poate recunoaste de la o vârstă fragedă, unii dintre voi pot lua 20, 30 de ani să-ți dai seama la ce ești bun.",
+   "Dumnezeu v-a binecuvântat pe fiecare dintre voi."
+  ],
+  "in_words": 36,
+  "out": "Dumnezeu v-a binecuvântat pe fiecare prin talentul propriu, pe care îl descoperiți în timp.",
+  "out_words": 14,
+  "gemma_s": 1.831
+ },
+ {
+  "in": [
+   "E talentul tău. Unii dintre voi poate recunoaste de la o vârstă fragedă, unii dintre voi pot lua 20, 30 de ani să-ți dai seama la ce ești bun.",
+   "Dumnezeu v-a binecuvântat pe fiecare dintre voi.",
+   "Cu acel dar, cu acea abilitate, cu acel talent."
+  ],
+  "in_words": 45,
+  "out": "Dumnezeu v-a binecuvântat pe fiecare cu un talent sau o abilitate, pe care o descoperiți în timp.",
+  "out_words": 17,
+  "gemma_s": 1.922
+ },
+ {
+  "in": [
+   "Și așteptați venirea mea. Vreau să fii productivă."
+  ],
+  "in_words": 8,
+  "out": "Așteptați venirea mea și fiți productivi.",
+  "out_words": 6,
+  "gemma_s": 1.022
+ },
+ {
+  "in": [
+   "Toți cei patru ani într-unul singur."
+  ],
+  "in_words": 6,
+  "out": "Toți cei patru ani într-unul singur.",
+  "out_words": 6,
+  "gemma_s": 0.975
+ },
+ {
+  "in": [
+   "Nu e ceva sexual. Ăsta e al doilea, apropo."
+  ],
+  "in_words": 9,
+  "out": "Nu este ceva sexual. Acesta este al doilea.",
+  "out_words": 8,
+  "gemma_s": 1.153
+ },
+ {
+  "in": [
+   "Nu e ceva sexual. Ăsta e al doilea, apropo.",
+   "Care e numărul unu?"
+  ],
+  "in_words": 13,
+  "out": "Nu este ceva sexual. Care este numărul unu?",
+  "out_words": 8,
+  "gemma_s": 0.931
+ },
+ {
+  "in": [
+   "Mm, mult mai departe. Se pare că voi nu mințiți prea mult.",
+   "Cel puțin doar câțiva dintre voi ați scris pe ea."
+  ],
+  "in_words": 22,
+  "out": "Nu mințiți prea mult, dar doar câțiva ați scris pe ea.",
+  "out_words": 11,
+  "gemma_s": 1.313
+ },
+ {
+  "in": [
+   "Lenețea, lenevitatea, amânarea lucrurilor."
+  ],
+  "in_words": 4,
+  "out": "Lenețea și amânarea lucrurilor sunt probleme grave.",
+  "out_words": 7,
+  "gemma_s": 1.059
+ },
+ {
+  "in": [
+   "Câți dintre voi vă ocupați de asta?",
+   "Știu deja. Puneți-l pe caietele voastre.",
+   "Voi pune-l pe caietele de notițe."
+  ],
+  "in_words": 19,
+  "out": "Scrieți pe caietele de notițe.",
+  "out_words": 5,
+  "gemma_s": 1.258
+ },
+ {
+  "in": [
+   "Unuia i-a dat cinci talanți, altuia doi și altuia unul, și fiecăruia după felul lui, Abilitatea, și imediat el a plecat într-o călătorie, cel care a primit cinci talanți a plecat și a făcut afaceri cu ei."
+  ],
+  "in_words": 37,
+  "out": "Abilitatea a dat cinci, doi și un talant, iar cel cu cinci a făcut afaceri.",
+  "out_words": 15,
+  "gemma_s": 1.848
+ },
+ {
+  "in": [
+   "El a făcut încă cinci talente. La fel și cel care a primit două a câștigat două, unul s-a dus și a săpat în pământ și și-a ascuns banii stăpânului său. După mult timp, stăpânul acestor slujitori unul s-a dus și a săpat în pământ și și-a ascuns banii stăpânului său. După multă vreme, stăpânul robilor acelora s-a întors și le-a cerut socoteală. Deci el."
+  ],
+  "in_words": 65,
+  "out": "Cel care a primit două talente a câștigat două, dar cel care a primit cinci a ascuns banii în pământ. Stăpânul a venit apoi să ceară socoteală.",
+  "out_words": 27,
+  "gemma_s": 2.691
+ }
+]

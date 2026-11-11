@@ -418,7 +418,8 @@ final class ShortcutsWindow: ThemedWindow {
     func show(_ m: HotKeys.Modifiers, failed: [String]) {
         rows.arrangedSubviews.forEach { $0.removeFromSuperview() }
         let names = [("pause", "Hide or show captions"), ("hold", "Hold the current caption"), ("blank", "Clear the big screen"),
-                     ("retract", "Remove the last caption"), ("song", "Song on or off"), ("names", "Today's names & words")]
+                     ("retract", "Remove the last caption"), ("song", "Song on or off"), ("engine", "Translator: AI or Local"),
+                     ("names", "Today's names & words")]
         for (a, t) in names {
             let k = NSTextField(labelWithString: m == .off ? "—" : HotKeys.label(a, m))
             k.font = Theme.rounded(13)

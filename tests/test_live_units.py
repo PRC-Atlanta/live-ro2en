@@ -168,3 +168,26 @@ def test_context_stt_returns_only_new_words():
         pos["end"] += k
         out.append(c(np.zeros(k, dtype=np.float32)))
     assert out == ["for god so", "loved the world", "that he gave his"]
+
+
+# 2026-11-06 / 2026-11-08: NLLB English → Romanian
+def test_nllb_english_without_fillers_and_stutters_split_in_sentences():
+    from live import translate as T
+    assert T.prep_en("Um in the Bible we find") == "In the Bible we find"
+    assert T.prep_en("And I and I booked") == "And I booked"
+    assert T.prep_en("The blue the blueprint") == "The blueprint"
+    assert T.prep_en("I know that that is true") == "I know that that is true"
+    assert T.split_sentences("I'm not talking about continuous abuse. You need to seek help") == \
+        ["I'm not talking about continuous abuse.", "You need to seek help"]
+    assert T.split_sentences("St. Paul wrote. Pride.") == ["St. Paul wrote.", "Pride."]
+
+
+def test_nllb_subtitle_dialogue_and_a_feminine_preacher_are_fixed():
+    from live import translate as T
+    assert T.nllb_ro_fix("why?", "- De ce nu?") == "De ce?"
+    assert T.nllb_ro_fix("that?", "- Asta? - Da.") == "Asta?"
+    assert T.nllb_ro_fix("a little?", "- Puțin?") == "Puțin?"
+    assert T.nllb_ro_fix("Be careful", "Fii atentă.") == "Fii atent."
+    assert T.nllb_ro_fix("don't be overwhelmed", "Nu te lăsa copleșită.") == "Nu te lăsa copleșit."
+    assert T.nllb_ro_fix("She was proud", "Ea era mândră.") == "Ea era mândră."
+    assert T.nllb_ro_fix("and I said", "si am spus") == "și am spus"

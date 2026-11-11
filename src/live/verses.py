@@ -66,6 +66,9 @@ NEAR_VERSES = 4         # verses after the reference (or the last match) searche
 MIN_SIM = 0.7           # word similarity that counts as a match
 MIN_DICE = 0.15         # lexicon strength that anchors a source word to a target word
 CANDIDATES = 6
+RECENT_PIECES = 30      # ~2 min: a verse's words captioned this recently are not captioned again (idea 3)
+SHORT_CAPTION = 4       # a caption of fewer words needs a reference in force for its chapter (idea 3)
+TAIL_WORDS = 3          # a verse's last source words captioned with the piece before them (idea 36)
 WIDEN = 2               # target words a caption may start earlier to take in a reordered word
 VOCAB_MAX = 1 << 24        # word-pair code = id * VOCAB_MAX + next id
 
@@ -425,6 +428,11 @@ class Matcher:
         self.next_src = None      # (stream, position) after the last source word captioned
         self.prev_n = 0           # words of the previous piece (for a verse matched one piece late)
         self.prev_verse = False   # the previous piece was captioned with the published text
+        self.tail = None          # (stream, first, end): the verse's last words captioned ahead of the speaker
+        self.pending_tail = None  # the same, set by the caption just made (moved to `tail` on the next piece)
+        self.n = 0                # pieces seen
+        self.recent: dict = {}    # verse -> (target words captioned up to, piece number)
+        self.last_span = None     # (first verse, last verse) of the caption just made
 
     def _near(self, ref) -> list[tuple[int, int]]:
         """Verse ranges (first, last) of the announced reference and of the passage just matched."""
@@ -463,10 +471,14 @@ class Matcher:
                 votes[(int(p) - i) // 16] += 1
         return [d * 16 for d, c in votes.most_common(CANDIDATES) if c >= 2]
 
-    def match(self, text: str, src: str = "ro", tgt: str = "en", ref=None) -> Match | None:
+    def match(self, text: str, src: str = "ro", tgt: str = "en", ref=None, announced: bool = False) -> Match | None:
         """The published text for this piece if it is part of a verse, else None. Call once per
-        piece, in order (the piece is remembered as context for the next ones)."""
+        piece, in order (the piece is remembered as context for the next ones). `announced`: the
+        reference was named in this piece, so its verses may be captioned again."""
         piece = words(text, src)
+        self.n += 1
+        if announced:                                   # named again: may be read again
+            self.recent, self.done = {}, None
         if self.lang != src:
             self.reset()
             self.lang = src
@@ -483,14 +495,43 @@ class Matcher:
             return None
         next_src = self.next_src
         saved = (self.done, self.next_src, self.lock, self.lock_left)
+        recent = dict(self.recent)
+        self.pending_tail = None
         out = self._find(text, piece, hist, src, tgt, ref, prev_n, prev_verse)
         if out is None and next_src is not None and prev_verse:
             out = self._continues(piece, next_src)      # "Și iată.": held for the next caption
+        if out is not None and out.caption and len(out.caption.split()) < SHORT_CAPTION \
+                and not self._in_ref(ref):
+            out.caption = ""                            # "feet yet." for the stutter «picioare nuț» (2026-11-08)
         if out is not None and not shown(out):
             self.done, self.next_src, self.lock, self.lock_left = saved
             out = None                                  # translated as usual, as if never matched
+            self.pending_tail, self.recent = None, recent
         self.prev_verse = out is not None
+        self.tail, self.pending_tail = self.pending_tail, None
         return out
+
+    def take_tail(self, text: str, src: str = "ro") -> str:
+        """The text without its first words when they are the verse's last words, already captioned
+        with the previous piece (Matthew 6:30 «…pe voi. | puțin credincioșilor»): "won't he much more
+        clothe you, you of little faith?" is on screen, so «puțin credincioșilor» is not translated
+        again (Gemma gave "few faithful ones", 2026-11-08 evening). Call before match()."""
+        tail, self.tail = self.tail, None
+        if not tail or self.lang != src:
+            return text
+        st, a, z = tail
+        piece = words(text, src)
+        n = z - a
+        if len(piece) < n or any(sim(piece[i][0], st.keys[a + i]) < MIN_SIM for i in range(n)):
+            return text
+        return text[piece[n - 1][2]:].lstrip(" ,;:.?!-–—\"”»")
+
+    def _in_ref(self, ref) -> bool:
+        """The caption just made is in the chapter of the reference in force."""
+        if ref is None or ref.book is None or self.last_span is None:
+            return False
+        bk, ch, _ = self.bible.refs[self.last_span[0]]
+        return scripture.BOOKS[bk - 1] is ref.book and ch == ref.chapter
 
     def _find(self, text, piece, hist, src, tgt, ref, prev_n, prev_verse) -> Match | None:
         if len(piece) < NEAR_OWN:
@@ -603,7 +644,13 @@ class Matcher:
         tail = [k for k, *_ in piece[i1 + 1:]]
         if 0 < len(tail) < 3 and None not in (q := edge(tail, p1 + 1, min(vhi, p1 + 5))):
             p1, i1 = max(q), len(piece) - 1
-        out, done, ends = [], self.done, False
+        # the piece stops 1-3 words before the end of the verse: caption to the verse's end, so its last
+        # words don't go to the translator alone (Matthew 6:30 "…clothe you, you" | «puțin credincioșilor»
+        # → "few faithful ones", 2026-11-08 evening, idea 36); the next piece drops them (take_tail)
+        ahead = None
+        if i1 == len(piece) - 1 and 0 < vhi - 1 - p1 <= TAIL_WORDS and int(st.verse[vhi - 1]) == int(st.verse[p1]):
+            ahead, p1 = (st, p1 + 1, vhi), vhi - 1
+        out, done, ends, shown_to = [], self.done, False, []
         for v in range(va, vz + 1):
             f, n = int(st.first[v]), int(st.first[v + 1] - st.first[v])
             s = p0 - f if v == va else 0
@@ -630,9 +677,14 @@ class Matcher:
                     t1 -= 1
             if done is not None and done[0] == v:
                 t0 = done[1] if t0 - done[1] <= 2 else t0  # go on where the last caption stopped
+            seen = self.recent.get(v)
+            if seen and self.n - seen[1] <= RECENT_PIECES and t0 < seen[0]:
+                t0 = seen[0]                            # already on screen (Ps 121:3 "to be moved. He who
+                #                                         keeps you" again 36 s later, 2026-11-08 evening)
             if t1 > t0:
                 out.append(" ".join(ws[t0:t1]))
                 done = (v, t1)
+                shown_to.append((v, t1))
         self.lock, self.lock_left = (va, vz), KEEP_LOCK
         caption = display(" ".join(out), tgt)
         n_words = len(caption.split())
@@ -641,6 +693,10 @@ class Matcher:
             return None                                     # "Your", "men": wait for more of the verse
         self.done = done
         self.next_src = (st, p1 + 1)
+        self.pending_tail = ahead
+        self.last_span = (va, vz)
+        for v, t1 in shown_to:
+            self.recent[v] = (max(t1, self.recent.get(v, (0, 0))[0]), self.n)
         before = text[:piece[i0][1]].strip(" ,;:-–—") if i0 else ""
         after = text[piece[i1][2]:].strip(" ,;:.-–—") if i1 < len(piece) - 1 else ""
         if 0 < len(tail) < 3 and after and None not in edge(tail, vlo, vhi):

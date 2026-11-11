@@ -37,7 +37,7 @@ PIN_COOKIE = "live_pin"
 # What the Live screen may do from there: the console's controls. Setup, Settings, After and
 # quitting stay on this Mac, and so do settings beyond the gain and ProPresenter's switch.
 APP_CALLS = {("POST", "/api/" + a) for a in ("start", "stop", "pause", "hold", "song", "blank", "retract",
-                                             "correct", "terms", "mode", "profile", "reconnect")} \
+                                             "correct", "terms", "mode", "profile", "reconnect", "engine")} \
     | {("GET", "/api/state"), ("GET", "/api/terms"), ("PUT", "/api/settings")}
 APP_SETTINGS = {"live.input_gain_db", "live.input_gain_auto", "propresenter.enabled"}
 MAX_FAILS, FAIL_WINDOW_S = 10, 60.0     # wrong PINs from one address within the window: locked out
@@ -188,7 +188,10 @@ class RemoteMixin:
                 "held": bool(st.get("held")), "song": bool(st.get("song")),
                 "screen": st.get("screen") or "", "lag_s": st.get("lag_s"),
                 "terms_n": int(st.get("session_terms_n") or 0),
-                "pp": {"enabled": bool(pp.get("enabled", True)), "connected": bool(pp.get("connected"))}}
+                "pp": {"enabled": bool(pp.get("enabled", True)), "connected": bool(pp.get("connected"))},
+                # Live Voice and the AI / Local knob, for the toolbar (no address, no key, no error text)
+                "voice": {k: (st.get("voice") or {}).get(k) for k in ("enabled", "state", "behind_s", "listeners")},
+                "ai": {k: (st.get("ai") or {}).get(k) for k in ("selected", "state", "available")}}
 
     # --- Bonjour -----------------------------------------------------------------------
     def _bonjour_sync(self):
@@ -208,7 +211,8 @@ class RemoteMixin:
             try:
                 self._bonjour = subprocess.Popen(["/bin/sh", "-c", WATCH, "sh", name, str(port), str(os.getpid())],
                                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                                 stderr=subprocess.DEVNULL, start_new_session=True)
+                                                 stderr=subprocess.DEVNULL, start_new_session=True,
+                                                 env=paths.without_secrets(dict(os.environ)))
             except OSError:
                 self._bonjour = None
         elif not want and self._bonjour is not None:
@@ -275,6 +279,15 @@ def add_routes(app, live):
     async def blank(request: Request):
         guard(request)
         await run(live.blank)
+        return live.remote_feed()
+
+    @app.post("/remote/engine")
+    async def engine(request: Request):
+        """The AI / Local knob (docs/live_voice_plan.md §15). Only the two names; never a key."""
+        guard(request)
+        code, payload = await run(live.set_engine, (await body(request)).get("engine"))
+        if code != 200:
+            return JSONResponse({k: payload.get(k) for k in ("error", "detail")}, status_code=code)
         return live.remote_feed()
 
     @app.post("/remote/retract")

@@ -516,6 +516,28 @@ def test_a_one_word_echo_of_the_last_word_is_dropped(tmp_path, mock):
     assert outs == ["ok", "echo_word", "ok"]
 
 
+# idea 17 (2026-11-08 evening): «să-l.» → "call out.", «rom.» → "rom." on screen
+def test_romanian_scraps_are_dropped(tmp_path, mock):
+    live = _live(tmp_path, mock.port)
+    live.lang.set_mode("ro-en")
+    t = time.time()
+    live._handle(_pair(1, "Dumnezeu să ne ajute în săptămâna aceasta.", t - 9, t - 7))
+    live._handle(_pair(2, "să-l.", t - 6, t - 5.5))
+    live._handle(_pair(3, "rom.", t - 4, t - 3.5))
+    live._handle(_pair(4, "Da.", t - 3, t - 2.5))
+    live._handle(_pair(5, "Nu?", t - 2, t - 1.5))
+    outs = [r["outcome"] for r in _log(live) if "outcome" in r]
+    assert outs == ["ok", "scrap", "scrap", "ok", "ok"]
+
+
+def test_scrap_rule():
+    from live.pipeline import scrap
+    for t in ("să-l.", "rom.", "și.", "de la."):
+        assert scrap(t), t
+    for t in ("Da.", "Amin.", "Nu?", "Gata.", "Doamne!", "Isus.", "Mulțumesc.", "Fratele Ilie.", "24.", ""):
+        assert not scrap(t), t
+
+
 def test_glued_numbers_are_repaired_before_translating(tmp_path, mock):
     live = _live(tmp_path, mock.port)
     live.lang.set_mode("ro-en")

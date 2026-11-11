@@ -89,9 +89,13 @@ main:has(> .unit) { padding: 12px 16px; }
 .earlier li.empty { display: block; color: var(--mute); }
 
 /* health pills under the text display */
-.ledrow { display: flex; justify-content: flex-end; align-items: center; gap: 12px; flex-wrap: wrap; margin: 14px 4px 4px; }
-.pills { display: flex; gap: 16px; flex-wrap: wrap; }
-.pill { display: inline-flex; align-items: center; gap: 8px; }
+/* one row of lights across the panel, between the text and the controls: Sound, ProPresenter, Pace,
+   Voice (while Live Voice is on) and the engine that is translating */
+.ledrow { display: flex; justify-content: center; align-items: center; margin: 10px 2px 0; padding: 7px 10px;
+          background: rgba(5,11,14,.55); border: 1px solid #0f2a33; border-radius: 3px; }
+.pills { display: flex; gap: 6px 22px; flex-wrap: wrap; justify-content: center; }
+.pill { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.pill[hidden] { display: none; }
 .pill i { width: 9px; height: 9px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 8px var(--lime); }
 .pill.warn i { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
 .pill.err i { background: var(--red); box-shadow: 0 0 8px var(--red); }
@@ -130,48 +134,76 @@ main:has(> .unit) { padding: 12px 16px; }
 .banner[data-severity="info"] .bbtn { border-color: var(--cyan); }
 
 /* control deck */
-.deck { display: grid; grid-template-columns: 1fr 1.6fr 1fr; align-items: end; gap: 8px; margin-top: 6px; }
+/* Hide over Input gain and Quality over Speaker · the dial · Translator and Live Voice. Every small
+   knob (and the Hide button) is the same 64 px round (--knob), in a 124 x 92 box (.knobwrap) */
+.deck { --knob: 64px; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: 12px;
+        margin-top: 12px; }
+.ctlrow { display: flex; justify-content: center; align-items: flex-end; gap: 10px; min-width: 0; }
+.ctlrow .ctl { flex: none; }
+.ctlrow .ctlstack { gap: 24px; }
+.hidectl { width: 124px; }
+.hidectl .label { text-align: center; white-space: nowrap; }
+/* the Translator knob: amber while AI is chosen but the local models answer; dim with no key */
+[data-k-engine][data-state="fallback"] .knob, [data-k-engine][data-state="no_key"] .knob {
+  border-color: var(--amber); box-shadow: 0 0 14px rgba(245,184,61,.45), inset 0 0 12px rgba(0,0,0,.6); }
+[data-k-engine][data-state="fallback"] .knob .val, [data-k-engine][data-state="no_key"] .knob .val { color: var(--amber); }
+[data-k-engine][data-state="ai"] .knob { border-color: var(--lime); box-shadow: 0 0 14px rgba(163,230,53,.4), inset 0 0 12px rgba(0,0,0,.6); }
+[data-k-engine].nokey .pos[data-v="ai"] { opacity: .45; }
+/* the Live Voice knob: lime while it is speaking or ready, amber while it starts or runs behind,
+   red when it stopped or the voice is not downloaded */
+[data-k-voice][data-state="ready"] .knob, [data-k-voice][data-state="speaking"] .knob {
+  border-color: var(--lime); box-shadow: 0 0 14px rgba(163,230,53,.4), inset 0 0 12px rgba(0,0,0,.6); }
+[data-k-voice][data-state="starting"] .knob, [data-k-voice][data-state="behind"] .knob {
+  border-color: var(--amber); box-shadow: 0 0 14px rgba(245,184,61,.45), inset 0 0 12px rgba(0,0,0,.6); }
+[data-k-voice][data-state="stopped"] .knob, [data-k-voice][data-state="missing"] .knob {
+  border-color: var(--red); box-shadow: 0 0 14px rgba(255,93,82,.45), inset 0 0 12px rgba(0,0,0,.6); }
+[data-k-voice][data-state="off"] .knob .val { color: var(--mute); }
 .ctl { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
 .stateline { text-align: center; color: var(--ink); font-size: 11px; letter-spacing: .1em; white-space: nowrap; }
 @media (max-width: 760px) { .stateline { white-space: normal; } }
 .ctl .sub { text-align: center; }
 
 /* small knob */
-.knobwrap { position: relative; width: 150px; height: 118px; }
-.knob { position: absolute; left: 50%; top: 16px; width: 84px; height: 84px; margin-left: -42px; border-radius: 50%; padding: 0;
+.knobwrap { position: relative; width: 124px; height: 92px; }
+.knob { position: absolute; left: 50%; top: 14px; width: var(--knob, 64px); height: var(--knob, 64px);
+        margin-left: calc(var(--knob, 64px) / -2); border-radius: 50%; padding: 0;
         background: radial-gradient(circle at 50% 40%, #1d5a6a 0%, #0f3440 60%, #0a2730 100%); cursor: pointer;
         border: 2px solid var(--cyan); box-shadow: 0 0 14px var(--edge-glow), inset 0 0 12px rgba(0,0,0,.6); }
-.knob .ptr { position: absolute; left: 50%; top: 50%; width: 3px; height: 12px; margin-left: -1.5px;
-             background: var(--cyan-hi); border-radius: 2px; transform-origin: 50% 0; transition: transform .25s; }
-.knob .val { position: absolute; inset: 0; display: grid; place-items: center; font: 600 15px var(--num); color: var(--ink); }
+.knob .ptr { position: absolute; left: 50%; top: 50%; width: 3px; height: 7px; margin-left: -1.5px;
+             background: var(--cyan-hi); border-radius: 2px; transform-origin: 50% 0; transition: transform .25s;
+             transform: rotate(var(--a, 0deg)) translateY(calc(var(--knob, 64px) * .35)); }
+.knob .val { position: absolute; inset: 0; display: grid; place-items: center; font: 600 12px var(--num); color: var(--ink); }
 .pos { position: absolute; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--mute);
        background: none; border: 0; cursor: pointer; padding: 6px; min-width: 44px; min-height: 44px; font-family: inherit;
        display: grid; place-items: center; margin-top: -10px;  /* 44 px target, label where the mockup has it */ }
 .pos.on { color: var(--cyan-hi); text-shadow: 0 0 8px rgba(70,214,236,.6); }
 
 /* input gain knob (components/gainknob.js), stacked above the Speaker knob */
-.ctlstack { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+.ctlstack { display: flex; flex-direction: column; align-items: center; gap: 18px; min-width: 0; }   /* the Speaker knob's
+   top label ("AUTO") used to touch the Auto gain switch above it */
+.ctlstack.ctlside { gap: 8px; }
 .ctlstack .ctl:first-child { gap: 2px; }
-.gk.knobwrap { width: 110px; height: 80px; }
-.gk .knob { top: 10px; width: 60px; height: 60px; margin-left: -30px; }
-.gk svg { position: absolute; left: 13px; top: -2px; width: 84px; height: 84px; overflow: visible; }
+.gk.knobwrap { width: 124px; height: 92px; }
+.gk svg { position: absolute; left: 18px; top: 2px; width: 88px; height: 88px; overflow: visible; }
 .gk-track { fill: none; stroke: #0e2a33; stroke-width: 5; stroke-linecap: round; }
 .gk-fill { fill: none; stroke: var(--lime); stroke-width: 5; stroke-linecap: round; }
 .gk-zero { stroke: var(--mute); stroke-width: 2; }
 .gk .knob { cursor: ns-resize; touch-action: none; user-select: none; }
 .gk .knob .ptr { transition: none; }
 .gk .knob .val { font-size: 12px; }
-.gk-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 6px; }
-.gk-foot > * { white-space: nowrap; }   /* a narrow column puts the Auto gain switch under the label */
+.gk-foot { display: flex; flex-direction: column; align-items: center; gap: 6px; }   /* the label, and the Auto gain
+   switch under it where the other knobs have their key hint: every label in the deck stands on one line */
+.gk-foot > * { white-space: nowrap; }
+[data-k-gain] { width: 124px; }
 .gk-auto { font-family: inherit; font-size: 10px; font-weight: 600; line-height: 1; letter-spacing: .08em; text-transform: uppercase; color: var(--label);
            background: none; border: 1px solid #1d4450; border-radius: 9px; padding: 3px 7px; cursor: pointer;
-           min-height: 22px; }
+           min-height: 22px; margin-bottom: -4px; }
 .gk-auto[aria-pressed="true"] { color: var(--cyan-hi); border-color: var(--cyan); box-shadow: 0 0 6px rgba(70,214,236,.45); }
 .gk-auto:focus-visible { outline: 2px solid var(--cyan-hi); outline-offset: 2px; }
 .gk.auto .gk-fill { stroke: var(--cyan); }
 
 /* Hide captions (H): the screen-off button above the Quality knob; pulses red while hidden */
-.hidebtn { width: 60px; height: 60px; margin: 10px 0; border-radius: 50%; padding: 0; cursor: pointer; display: grid; place-items: center;
+.hidebtn { width: var(--knob, 64px); height: var(--knob, 64px); margin: 14px 0; border-radius: 50%; padding: 0; cursor: pointer; display: grid; place-items: center;
            background: radial-gradient(circle at 50% 40%, #1d5a6a 0%, #0f3440 60%, #0a2730 100%);
            border: 2px solid var(--cyan); box-shadow: 0 0 14px var(--edge-glow), inset 0 0 12px rgba(0,0,0,.6); }
 .hidebtn svg { width: 32px; height: 32px; fill: none; stroke: var(--cyan-hi); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
@@ -234,7 +266,7 @@ main:has(> .unit) { padding: 12px 16px; }
 .big[data-ring="busy"] .tri { opacity: .4; }
 .big[data-ring="setup"] { box-shadow: 0 0 0 3px #0b2027, 0 0 0 5px var(--amber), 0 0 20px rgba(245,184,61,.3), inset 0 0 22px rgba(0,0,0,.55); }
 .big[data-ring="setup"] .tri { display: none; }
-.arc-lbl { position: absolute; right: -34px; top: -16px; text-align: left; }
+.arc-lbl { position: absolute; left: 246px; top: 96px; text-align: left; white-space: nowrap; }   /* beside the arc's middle */
 .arc-lbl .label { font-size: 11px; }
 .arc-lbl .v { color: var(--cyan); font: 600 13px var(--num); }
 .arc-ticks { position: absolute; font: 11px var(--num); color: var(--mute); }
@@ -310,11 +342,32 @@ kbd { font: 600 12px var(--num); color: var(--cyan-hi); background: #050b0e; bor
   .views[data-view="both"] .v-screen { border-left: 0; padding-left: 0; border-top: 1px solid #0f2a33; padding-top: 8px; }
   .deck { grid-template-columns: 1fr 1fr; }
   .deck .ctl.center { grid-column: 1 / -1; order: -1; }
-  .deck { margin-top: 22px; }   /* room for the Delay readout above the dial */
+  .deck { margin-top: 12px; }
+  .ctlrow { flex-wrap: wrap; gap: 6px 4px; }
+  .arc-lbl { left: auto; right: -30px; top: -14px; }
+  .ledrow { padding: 6px 8px; } .pills { gap: 4px 14px; }
   .mark { font-size: 17px; white-space: nowrap; } .mark span { height: 17px; }
   .knobwrap { width: 140px; }
   .earlier li { grid-template-columns: 1fr; gap: 2px; }
   .banner { flex-wrap: wrap; }
+}
+/* a window shorter than the default (the app opens at 1280×800): the 30-second history and the
+   earlier-phrases drawer make room, and the deck is a little smaller, so the dial and every control
+   stay in view also while a problem banner shows */
+@media (max-height: 780px) and (min-height: 601px) {
+  .lvl .hist { display: none; }
+  .earlier { display: none; }
+  .mirror { padding-bottom: 8px; }
+  .deck { zoom: .86; }
+  .foot { margin-top: 4px; }
+}
+/* a little taller than that (the app's own window is 800 high inside), the same is needed only
+   while a problem takes a row: the banner, or the ProPresenter strip in the meter panel */
+@media (max-height: 900px) and (min-height: 781px) {
+  main:has(.banner.show) .lvl .hist, main:has(.banner.show) .earlier,
+  main:has(.ppstrip:not([hidden])) .lvl .hist, main:has(.ppstrip:not([hidden])) .earlier { display: none; }
+  main:has(.banner.show) .mirror, main:has(.ppstrip:not([hidden])) .mirror { padding-bottom: 8px; }
+  main:has(.banner.show):has(.ppstrip:not([hidden])) .deck { zoom: .86; }
 }
 /* small window beside ProPresenter (600×500): keep the dial above the fold */
 @media (max-height: 600px) {
@@ -328,10 +381,24 @@ kbd { font: 600 12px var(--num); color: var(--cyan-hi); background: #050b0e; bor
   /* two lines, newest at the bottom: older wrapped lines scroll off the top */
   .heard, .mirror .screen { height: 2.9em; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
   .earlier { display: none; }
-  .ledrow { margin: 2px 2px 0; }
+  .ledrow { margin: 4px 2px 0; padding: 3px 8px; } .pill span { font-size: 12px; } .pills { gap: 2px 16px; }
   .banner { margin-top: 2px; padding: 4px 10px; font-size: 13px; line-height: 1.3; } .bbtn { min-height: 34px; padding: 4px 12px; }
   .deck { zoom: .66; margin-top: 14px; } .foot { display: none; }
 }
+/* a narrow window (the app allows 600 px): the one-row deck needs about 920 px, so it is drawn
+   smaller, in steps, and stays one row with every control in view. After the height rules above: these
+   width steps, with the two lines under them, so that the smaller of the two sizes is the one used. */
+@media (max-width: 960px) and (min-width: 861px) { .deck { zoom: .86; } }
+@media (max-width: 860px) and (min-width: 761px) { .deck { zoom: .8; } }
+@media (max-width: 760px) and (min-width: 661px) { .deck { zoom: .68; } }
+@media (max-width: 660px) and (min-width: 561px) { .deck { zoom: .58; } }
+@media (max-height: 600px) and (min-width: 661px) { .deck { zoom: .66; } }                 /* the short window's own size */
+@media (max-width: 860px) and (min-width: 761px) and (max-height: 900px) and (min-height: 781px) {
+  main:has(.banner.show):has(.ppstrip:not([hidden])) .deck { zoom: .8; } }
+@media (max-width: 760px) and (min-width: 661px) and (max-height: 900px) and (min-height: 781px) {
+  main:has(.banner.show):has(.ppstrip:not([hidden])) .deck { zoom: .68; } }
+@media (max-width: 660px) and (min-width: 561px) and (max-height: 900px) and (min-height: 781px) {
+  main:has(.banner.show):has(.ppstrip:not([hidden])) .deck { zoom: .58; } }
 @media (prefers-reduced-motion: reduce) {
   .unit *, .toast { transition: none !important; }
   .big.holding .hold { animation-duration: .6s; }
@@ -340,3 +407,30 @@ kbd { font: 600 12px var(--num); color: var(--cyan-hi); background: #050b0e; bor
   .hidebtn.on { animation: none; box-shadow: 0 0 0 2px rgba(255,93,82,.9), 0 0 18px 4px rgba(255,93,82,.6); }
   .hidebtn.on svg { animation: none; opacity: 1; }
 }
+
+/* Monitor screen (screens/monitor.js): transcribed · translated · Live Voice said, one row per
+   segment; the table scrolls, Clear stays at the bottom */
+.mon { display: flex; flex-direction: column; height: calc(100vh - 170px); min-height: 320px; }
+.mon-scroll { flex: 1; overflow: auto; border: 1px solid #0f2a33; border-radius: 4px; background: linear-gradient(#0c1d25, #0a171e); }
+.mon-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.mon-table th { position: sticky; top: 0; z-index: 1; text-align: left; padding: 8px 12px; background: #0b222b;
+                font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--label); font-weight: 600;
+                border-bottom: 1px solid #12333e; }
+.mon-table td { vertical-align: top; padding: 8px 12px; border-bottom: 1px solid #0f2a33; color: var(--ink);
+                font-size: 15px; line-height: 1.4; overflow-wrap: anywhere; }
+.mon-table td + td, .mon-table th + th { border-left: 1px solid #0f2a33; }
+.mon-table td:nth-child(1) { color: var(--label); }
+.mon-table td:nth-child(2) { color: var(--cyan-hi); }
+.mon-t { display: block; font: 600 11px var(--num); letter-spacing: .06em; color: var(--mute); margin-bottom: 2px; }
+.mon-t i { font-style: normal; color: var(--label); }
+.mon-t b { font-weight: 600; text-transform: uppercase; color: var(--amber); margin-left: 4px; }
+.mon-none { color: var(--mute); font-style: italic; }
+.mon-eng { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 3px; font: 600 10px var(--num);
+           letter-spacing: .06em; text-transform: uppercase; line-height: 15px; vertical-align: 1px;
+           color: var(--cyan-hi); border: 1px solid var(--cyan-dim); }
+.mon-eng:first-child { margin-left: 0; }
+.mon-eng[data-engine="ai"] { color: var(--lime); border-color: rgba(163,230,53,.55); }
+.mon-eng[data-engine="local_fallback"] { color: var(--amber); border-color: rgba(245,184,61,.55); }
+.mon-empty { color: var(--mute); font-style: italic; padding: 16px; margin: 0; }
+.mon-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: 10px; }
+@media (max-height: 600px) { .mon { height: calc(100vh - 60px); } }

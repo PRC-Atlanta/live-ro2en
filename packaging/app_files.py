@@ -3,6 +3,7 @@
   python3 -I packaging/app_files.py <repo>      one path per line, relative to <repo>
 
 - all of src/live/ (Python, the old control page and the ui/ folder), minus caches;
+- all of src/voice/ (Live Voice's own process, started by src/live/voicelink.py, and its listener page);
 - the src/*.py modules that src/live imports, followed transitively (found from the
   `import` statements, so a new dependency is picked up without editing this file);
 - the bundled data files the code reads through paths.resource() and friends.
@@ -66,11 +67,21 @@ def main(repo: pathlib.Path) -> list[str]:
     files = [p for p in in_git if p.is_file() and p.is_relative_to(live)
              and not SKIP_PARTS & set(p.relative_to(live).parts) and p.suffix not in SKIP_SUFFIX
              and p.name != ".DS_Store"]
+    voice = src / "voice"                       # a package of its own: started as a script, never imported by src/live
+    files += [p for p in in_git if p.is_file() and p.is_relative_to(voice)
+              and not SKIP_PARTS & set(p.relative_to(voice).parts) and p.suffix not in SKIP_SUFFIX
+              and p.name != ".DS_Store"]
+    if not (voice / "voice.py") in files:
+        sys.exit("app_files.py: src/voice/voice.py is not in git")
     top = {p.stem: p for p in in_git if p.parent == src and p.suffix == ".py"}
-    local = {p.stem for p in files if p.suffix == ".py"}
+    local = {p.stem for p in files if p.suffix == ".py" and p.is_relative_to(live)} | {"voice"}
     # a module someone forgot to `git add` would be left out and fail only on a volunteer's Mac
     untracked = {p.stem for p in live.rglob("*.py") if not SKIP_PARTS & set(p.relative_to(live).parts)} - local
     untracked |= {p.stem for p in src.glob("*.py")} - set(top)
+    not_added = sorted(str(p.relative_to(repo)) for p in voice.rglob("*.py")
+                       if not SKIP_PARTS & set(p.relative_to(voice).parts) and p not in files)
+    if not_added:
+        sys.exit("app_files.py: in src/voice but not in git (git add them): " + ", ".join(not_added))
     todo = [p for p in files if p.suffix == ".py"]
     seen: set[pathlib.Path] = set()
     extra: set[pathlib.Path] = set()

@@ -1,0 +1,122 @@
+[
+ {
+  "in": [
+   "Isus este Domnul.",
+   "El ne iubește."
+  ],
+  "in_words": 6,
+  "out": "Isus este Domnul și ne iubește.",
+  "out_words": 6,
+  "gemma_s": 1.665
+ },
+ {
+  "in": [
+   "Iubirea lui Dumnezeu l-a legat de tatăl meu. Au avut o prietenie unică."
+  ],
+  "in_words": 13,
+  "out": "Iubirea lui Dumnezeu l-a legat de tatăl său într-o prietenie unică.",
+  "out_words": 11,
+  "gemma_s": 1.834
+ },
+ {
+  "in": [
+   "Iubirea lui Dumnezeu l-a legat de tatăl meu. Au avut o prietenie unică.",
+   "Știți voi fraților genul ăla de prietenie în care nu trebuie să spuneți prea multe?"
+  ],
+  "in_words": 28,
+  "out": "Iubirea lui Dumnezeu a legat-o de tatăl său într-o prietenie unică.",
+  "out_words": 11,
+  "gemma_s": 1.661
+ },
+ {
+  "in": [
+   "De ce nu, sunt un milion de dolari. El a spus nu."
+  ],
+  "in_words": 12,
+  "out": "De ce nu? Sunt un milion de dolari. El a spus nu.",
+  "out_words": 12,
+  "gemma_s": 1.156
+ },
+ {
+  "in": [
+   "Pentru că nu e lucrul corect de făcut. Nu vreau să construiesc piese să ucidă oameni. Nu vreau să construiesc piese pentru a face acest lucru. Este adevărat sau nu este adevărat? El a făcut asta."
+  ],
+  "in_words": 36,
+  "out": "Nu vreau să construiesc piese care să ucidă oameni, pentru că nu este corect.",
+  "out_words": 14,
+  "gemma_s": 1.488
+ },
+ {
+  "in": [
+   "Nu are nevoie de lumina reflectoarelor."
+  ],
+  "in_words": 6,
+  "out": "Nu are nevoie de lumina reflectoarelor.",
+  "out_words": 6,
+  "gemma_s": 1.098
+ },
+ {
+  "in": [
+   "Lasă moștenirea să trăiască. Să înțelegem ce treabă avem și să nu căutăm poziția lui. Să căutăm voia Domnului."
+  ],
+  "in_words": 19,
+  "out": "Lasă moștenirea să trăiască. Căutați voia Domnului, nu poziția lui.",
+  "out_words": 10,
+  "gemma_s": 1.653
+ },
+ {
+  "in": [
+   "Lasă moștenirea să trăiască. Să înțelegem ce treabă avem și să nu căutăm poziția lui. Să căutăm voia Domnului.",
+   "Slavă Domnului pentru viața pe care o trăiește omul ăsta."
+  ],
+  "in_words": 29,
+  "out": "Lasă moștenirea să trăiască, căutând voia Domnului în loc de poziția lui.",
+  "out_words": 12,
+  "gemma_s": 1.727
+ },
+ {
+  "in": [
+   "Acest om a susținut financiar mulți, mulți, mulți să facă voia Domnului fără ca nimeni să știe."
+  ],
+  "in_words": 17,
+  "out": "Acest om a susținut mulți să facă voia Domnului în secret.",
+  "out_words": 11,
+  "gemma_s": 1.3
+ },
+ {
+  "in": [
+   "Acest om Bazapa Chizvek a spus, acest om va primi o mare recompensă în rai."
+  ],
+  "in_words": 15,
+  "out": "Bazapa Chizvek va primi o mare recompensă în rai.",
+  "out_words": 9,
+  "gemma_s": 1.06
+ },
+ {
+  "in": [
+   "De asta sunt aici."
+  ],
+  "in_words": 4,
+  "out": "Acesta este scopul meu.",
+  "out_words": 4,
+  "gemma_s": 0.914
+ },
+ {
+  "in": [
+   "El e Grigod și Celeste."
+  ],
+  "in_words": 5,
+  "out": "El este Grigod și Celeste.",
+  "out_words": 5,
+  "gemma_s": 0.751
+ },
+ {
+  "in": [
+   "Dar când a venit timpul să cer sfatul cuiva, știi pe cine am ales?"
+  ],
+  "in_words": 14,
+  "out": "Când am trebuit să cer sfat, pe cine am ales?",
+  "out_words": 10,
+  "gemma_s": 1.377
+ }
+]

@@ -1,14 +1,15 @@
 // Live screen (docs/APP_PLAN.md §1.3 "Live", controls §1.4), matching docs/ui_mockup/live.html:
 // sound meter, Heard / On screen / Both text display, health pills, problem banner, and the
-// control deck (Gain and Speaker knobs, the big Start/Stop dial with its Delay arc, the Hide
-// captions button above the Quality knob).
+// control deck: Hide captions above Input gain and Quality above Speaker on the left, the big
+// Start/Stop dial with its Delay arc, then the Translator and Live Voice knobs. Every small knob is
+// the same size.
 import { S } from "../i18n/strings.en.js";
 import { frame } from "../components/frame.js";
 import { mountMeter } from "../components/meter.js";
 import { knob } from "../components/knob.js";
 import { gainKnob } from "../components/gainknob.js";
 import { intentFor, callFor, spaceGate, isLive } from "../components/keys.js";
-import { dialFor, stateLine, delayOf, pillsFor, bannerFor, heardLines, ppStrip } from "../components/status.js";
+import { dialFor, delayOf, pillsFor, bannerFor, heardLines, ppStrip } from "../components/status.js";
 import { send, messageFor, routeFor } from "../components/actions.js";
 import { toast } from "../components/toast.js";
 import { ask } from "../components/dialog.js";
@@ -44,15 +45,33 @@ const DECK = `
       <span class="pill" data-pill="sound"><i></i><span></span></span>
       <span class="pill" data-pill="pp"><i></i><span></span></span>
       <span class="pill" data-pill="pace"><i></i><span></span></span>
+      <span class="pill" data-pill="voice" hidden><i></i><span></span></span>
+      <span class="pill" data-pill="engine" hidden><i></i><span></span></span>
     </div>
   </div>
 
   <div class="banner" data-banner role="alert"><p></p><button class="bbtn"></button></div>
 
   <div class="deck">
-    <div class="ctlstack">
-      <div class="ctl" data-k-gain></div>
-      <div class="ctl" data-k-mode></div>
+    <div class="ctlrow left">
+      <div class="ctlstack">
+        <div class="ctl hidectl">
+          <button class="hidebtn" data-hide aria-pressed="false" aria-label="${S.hide}" title="${S.hideTitle}">
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <path d="M9 22H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h20a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/>
+              <path class="tri" d="M16 19l6 7H10z"/>
+              <path class="slash" d="M5 4l22 22"/>
+            </svg>
+          </button>
+          <div class="label">${S.hide}</div>
+          <div class="sub">${S.hideKey}</div>
+        </div>
+        <div class="ctl" data-k-gain></div>
+      </div>
+      <div class="ctlstack">
+        <div class="ctl" data-k-prof></div>
+        <div class="ctl" data-k-mode></div>
+      </div>
     </div>
     <div class="ctl center">
       <div class="bigwrap">
@@ -70,22 +89,11 @@ const DECK = `
           <span class="face"><strong data-bigtxt></strong><small data-bigsub></small></span>
         </button>
       </div>
-      <div class="label stateline" data-stateline></div>
       <div class="sub" id="lt-bighint" data-bighint></div>
     </div>
-    <div class="ctlstack">
-      <div class="ctl">
-        <button class="hidebtn" data-hide aria-pressed="false" aria-label="${S.hide}" title="${S.hideTitle}">
-          <svg viewBox="0 0 32 32" aria-hidden="true">
-            <path d="M9 22H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h20a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/>
-            <path class="tri" d="M16 19l6 7H10z"/>
-            <path class="slash" d="M5 4l22 22"/>
-          </svg>
-        </button>
-        <div class="label">${S.hide}</div>
-        <div class="sub">${S.hideKey}</div>
-      </div>
-      <div class="ctl" data-k-prof></div>
+    <div class="ctlrow right">
+      <div class="ctl" data-k-engine title="${S.engine.title}"></div>
+      <div class="ctl" data-k-voice title="${S.voice.title}"></div>
     </div>
   </div>
   <div class="sr" data-announce aria-live="polite"></div>`;
@@ -134,20 +142,40 @@ export function render(el, store) {
   const setMode = knob(q("[data-k-mode]"), {
     id: "mode", label: S.mode.label, keys: S.mode.keys, face: S.mode.face,
     positions: [
-      { value: "ro-en", label: S.mode.knob["ro-en"], at: "left:0;top:86px", angle: 50 },
-      { value: "auto", label: S.mode.knob.auto, at: "left:50%;top:-6px;transform:translateX(-50%)", angle: 180 },
-      { value: "en-ro", label: S.mode.knob["en-ro"], at: "right:0;top:86px", angle: -50 },
+      { value: "ro-en", label: S.mode.knob["ro-en"], at: "left:-14px;top:66px", angle: 50 },
+      { value: "auto", label: S.mode.knob.auto, at: "left:50%;top:-12px;transform:translateX(-50%)", angle: 180 },
+      { value: "en-ro", label: S.mode.knob["en-ro"], at: "right:-14px;top:66px", angle: -50 },
     ],
     onPick: m => run({ auto: "mode_auto", "ro-en": "mode_ro", "en-ro": "mode_en" }[m]),
   });
   const setProf = knob(q("[data-k-prof]"), {
     id: "prof", label: S.quality.label, keys: S.quality.keys, face: S.quality.face,
     positions: [
-      { value: "fast", label: S.quality.knob.fast, at: "left:-10px;top:92px", angle: 50 },
-      { value: "quality", label: S.quality.knob.quality, at: "right:-10px;top:92px", angle: -50 },
+      { value: "fast", label: S.quality.knob.fast, at: "left:-4px;top:66px", angle: 50 },
+      { value: "quality", label: S.quality.knob.quality, at: "right:-4px;top:66px", angle: -50 },
     ],
     onPick: p => { if (p !== s.profile) run("quality"); },
   });
+  // AI / Local: which engine translates. Without a key the knob stays on Local and says why.
+  const setEngine = knob(q("[data-k-engine]"), {
+    id: "engine", label: S.engine.label, keys: S.engine.keys, face: S.engine.face,
+    positions: [
+      { value: "local", label: S.engine.knob.local, at: "left:-4px;top:66px", angle: 50 },
+      { value: "ai", label: S.engine.knob.ai, at: "right:-4px;top:66px", angle: -50 },
+    ],
+    onPick: e => { if (e !== (s.ai?.selected || "local")) run(e === "ai" ? "engine_ai" : "engine_local"); },
+  });
+  // Live Voice on / off: the same setting as the switch in Settings → Live Voice
+  const voiceOn = () => !!(s.voice && s.voice.enabled);
+  const setVoice = knob(q("[data-k-voice]"), {
+    id: "voice", label: S.voice.label, keys: S.voice.keys, face: S.voice.face,
+    positions: [
+      { value: "off", label: S.voice.knob.off, at: "left:-4px;top:66px", angle: 50 },
+      { value: "on", label: S.voice.knob.on, at: "right:-4px;top:66px", angle: -50 },
+    ],
+    onPick: v => { if ((v === "on") !== voiceOn()) run("voice"); },
+  });
+  let voiceWant = null;                                  // what we asked for, until the state agrees
 
   // ---- actions ----------------------------------------------------------------------------
   const say = t => { q("[data-announce]").textContent = t; };
@@ -156,6 +184,7 @@ export function render(el, store) {
     retract: () => S.toast.removed, correct: () => S.toast.fixed, reconnect: () => S.toast.reconnecting,
     start: () => S.toast.started, stop: () => S.toast.stopped,
     mode: b => S.toast.mode(S.mode.long[b.mode]), profile: b => S.toast.quality(S.quality.long[b.profile] || b.profile),
+    engine: b => S.toast.engine(S.engine.long[b.engine] || b.engine),
     terms: b => S.toast.termsSaved(b.lines.length),
   };
   async function post(call) {
@@ -169,7 +198,20 @@ export function render(el, store) {
     return res;
   }
   async function run(intent) {
+    // no key on this Mac: the Translator knob is disabled, and says why (nothing is sent)
+    if ((intent === "engine_ai" || (intent === "engine" && s.ai?.selected !== "ai")) && s.ai && !s.ai.available) {
+      toast(S.engine.noKey, "info", 4000); say(S.engine.noKey); return;
+    }
     if (intent === "view") return setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]);
+    if (intent === "voice") {                            // the Live Voice knob (L)
+      const on = !(voiceWant ?? voiceOn());
+      voiceWant = on; setVoice(on ? "on" : "off");
+      const r = await settingsCall("PUT", "settings", { values: { "voice.enabled": on } });
+      if (!r.ok) { voiceWant = null; paint(); }
+      toast(r.ok ? (on ? S.voice.on : S.voice.off) : S.toast.failed, r.ok ? "ok" : "warn");
+      if (r.ok) say(on ? S.voice.on : S.voice.off);
+      return;
+    }
     if (intent === "pp_on") {                            // the strip's "Turn on": Settings → ProPresenter on
       const r = await settingsCall("PUT", "settings", { values: { "propresenter.enabled": true } });
       toast(r.ok ? S.toast.ppOn : S.toast.failed, r.ok ? "ok" : "warn");
@@ -268,11 +310,21 @@ export function render(el, store) {
     q("[data-bigsub]").textContent = d.small;
     big.setAttribute("aria-label", `${d.small}${d.live ? "" : `. ${d.hint}`}`);
     q("[data-bighint]").textContent = d.hint;
-    q("[data-stateline]").textContent = stateLine(s);
     if (d.phase !== lastPhase) { if (lastPhase !== null) say(S.phaseWord[d.phase] || d.phase); lastPhase = d.phase; }
 
     setMode(s.mode || "auto");
     setProf(s.profile || "fast");
+    setEngine(s.ai?.selected || "local");
+    const ek = q("[data-k-engine]");
+    ek.dataset.state = s.ai?.state || "local";           // fallback / no_key: amber ring
+    ek.classList.toggle("nokey", !!s.ai && !s.ai.available);
+    ek.title = s.ai && !s.ai.available ? S.engine.noKey : S.engine.title;
+    ek.setAttribute("aria-disabled", String(!!s.ai && !s.ai.available && s.ai.selected !== "ai"));
+    if (voiceWant !== null && voiceWant === voiceOn()) voiceWant = null;   // the setting has landed
+    const vOn = voiceWant ?? voiceOn();
+    setVoice(vOn ? "on" : "off");
+    const vk = q("[data-k-voice]");
+    vk.dataset.state = !vOn ? "off" : s.voice?.enabled && s.voice?.model === false ? "missing" : s.voice?.state || "starting";
 
     const hidden = !!s.paused;
     const hb = q("[data-hide]");
@@ -317,8 +369,11 @@ export function render(el, store) {
     dv.title = S.delayTitle(s.latency_last, s.latency_median);
 
     const pills = pillsFor(s, meter.key());
-    for (const [k, [cls, txt]] of Object.entries(pills)) {
+    for (const [k, pill] of Object.entries(pills)) {
       const p = q(`[data-pill="${k}"]`);
+      p.hidden = !pill;                                  // Live Voice off: no VOICE light at all
+      if (!pill) continue;
+      const [cls, txt] = pill;
       p.className = `pill ${cls}`;
       p.dataset.state = cls || "ok";
       if (p.lastChild.textContent !== txt) p.lastChild.textContent = txt;

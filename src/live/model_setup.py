@@ -158,7 +158,11 @@ def status(root: pathlib.Path = paths.REPO, lock=None) -> dict:
         {"id": "models", "ok": fast["ready"],
          "detail": "ready" if fast["ready"] else f"{fast['missing_bytes'] / GB:.1f} GB still to download"},
     ]
-    return {"profiles": profiles, "models": models, "recommended_profile": rec,
+    vitems = model_lock.subset(model_lock.VOICE, lock)
+    voice = {"size_bytes": sum(i["size"] for i in vitems),
+             "present": bool(vitems) and all(present(i, cache, root) for i in vitems),
+             "published": bool(vitems) and all(i["rev"] != model_lock.PLACEHOLDER for i in vitems)}
+    return {"profiles": profiles, "models": models, "recommended_profile": rec, "voice": voice,
             "disk": {"path": str(cache), "free_bytes": free}, "hardware": hw, "checks": checks,
             "needs_setup": not fast["ready"], "problem": None if fast["ready"] else "models_missing"}
 
@@ -402,7 +406,7 @@ def download(profile: str, root: pathlib.Path = paths.REPO, lock=None, out=None)
 # --- the orchestrator side -----------------------------------------------------------------
 def child_env(root: pathlib.Path = paths.REPO) -> dict:
     """Network on for the download child only; same model cache as the app's loaders."""
-    env = {k: v for k, v in os.environ.items() if k not in OFFLINE_VARS}
+    env = {k: v for k, v in paths.without_secrets(dict(os.environ)).items() if k not in OFFLINE_VARS}
     env.update(LIVE_ALLOW_NETWORK="1", HF_HOME=str(paths.hf_home(root)), HF_HUB_CACHE=str(paths.hf_cache(root)))
     return env
 
@@ -524,7 +528,7 @@ def _human(ev: dict, state={"t": 0.0}):   # noqa: B006 - progress for setup.sh, 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("cmd", choices=["status", "download", "verify"])
-    ap.add_argument("--profile", default="fast", choices=model_lock.TIERS)
+    ap.add_argument("--profile", default="fast", choices=model_lock.TIERS + (model_lock.VOICE,))
     ap.add_argument("--lock", type=pathlib.Path)
     ap.add_argument("--root", type=pathlib.Path, default=paths.REPO)
     ap.add_argument("--json", action="store_true", help="machine-readable progress lines on stdout")

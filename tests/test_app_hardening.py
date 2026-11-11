@@ -69,7 +69,8 @@ def test_root_opens_the_operator_ui_and_the_ui_is_never_cached(app):
 def test_the_packaged_engine_gets_its_own_home(tmp_path, monkeypatch):
     import paths
     monkeypatch.delenv("LIVE_ENGINE_PYTHONPATH", raising=False)
-    assert paths.engine_env() is None                              # dev: inherit everything
+    env = paths.engine_env()                                       # dev: inherit everything, bar the API key's variables
+    assert env is None or (not [k for k in env if k.startswith("ANTHROPIC_")] and "PATH" in env)
     monkeypatch.setenv("LIVE_ENGINE_PYTHONPATH", "/app/site/common:/app/site/nemo")
     monkeypatch.setenv("LIVE_CACHE_DIR", str(tmp_path / "Caches"))
     env = paths.engine_env()

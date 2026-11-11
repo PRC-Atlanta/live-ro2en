@@ -1,0 +1,88 @@
+{
+ "settings": {
+  "gap_s": 0.25,
+  "skip_pause_s": 0.6,
+  "limit_s": 10.0,
+  "skip_s": 20.0,
+  "speed": [
+   1.25,
+   1.5
+  ],
+  "step": 0.1,
+  "deadband": 0.05,
+  "grid": 0.05,
+  "lag": [
+   2.0,
+   6.0
+  ],
+  "min_in_words": 12,
+  "max_ratio": 0.6,
+  "min_ro_score": 0.15,
+  "ready": "ready_live",
+  "hold_s": 0.0
+ },
+ "stats": {
+  "items": 48,
+  "summaries": 1,
+  "sentences_summarized": 1,
+  "summary_requests": 2,
+  "summaries_accepted": 1,
+  "summaries_rejected": {
+   "scripture": 1
+  },
+  "skips": 0,
+  "sentences_skipped": 0,
+  "delay_after_end_median": 3.46,
+  "delay_after_end_p90": 9.0,
+  "delay_after_end_max": 11.47,
+  "share_within_10s": 0.958,
+  "voiced_share_within_10s": 0.974,
+  "final_delay_s": 3.83,
+  "speed_min": 1.25,
+  "speed_max": 1.5,
+  "speed_largest_step": 0.1,
+  "speed_median": 1.4,
+  "speed_counts": {
+   "1.25": 5,
+   "1.30": 6,
+   "1.35": 9,
+   "1.40": 17,
+   "1.45": 4,
+   "1.50": 7
+  },
+  "voice_audio_s": 269.3,
+  "english_span_s": 715.9,
+  "silence_between_s_median": 2.18
+ },
+ "summary_requests": [
+  {
+   "first": 34,
+   "last": 35,
+   "lag_est_s": 10.14,
+   "speed": 1.5,
+   "in": [
+    "Lasă moștenirea să trăiască. Să înțelegem ce treabă avem și să nu căutăm poziția lui. Să căutăm voia Domnului.",
+    "Slavă Domnului pentru viața pe care o trăiește omul ăsta."
+   ],
+   "in_words": 29,
+   "accepted": false,
+   "reason": "scripture"
+  },
+  {
+   "first": 38,
+   "last": 38,
+   "lag_est_s": 10.1,
+   "speed": 1.4,
+   "in": [
+    "Acest om a susținut financiar mulți, mulți, mulți să facă voia Domnului fără ca nimeni să știe."
+   ],
+   "in_words": 17,
+   "out": "Acest om a susținut financiar mulți să facă voia Domnului.",
+   "out_words": 10,
+   "gemma_s": 1.628,
+   "accepted": true,
+   "reason": null
+  }
+ ],
+ "scripture_sentences": 15
+}
