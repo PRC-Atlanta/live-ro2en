@@ -14,7 +14,26 @@
          display: flex; flex-direction: column; align-items: center; justify-content: center;
          padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom)); }
   main { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 14px; }
-  h1 { font-size: 22px; font-weight: 650; margin: 0 0 6px; text-align: center; }
+  .two span { display: block; }                        /* Romanian above, English below */
+  /* the top: the Romanian lines together, then the English lines together */
+  header { text-align: center; display: flex; flex-direction: column; gap: 2px; margin-bottom: 0; }
+  header h1, header .t { font-size: 22px; font-weight: 650; margin: 0; line-height: 1.2; }
+  header .lead { font-size: 18px; font-weight: 500; margin: 0; line-height: 1.25; }
+  header .en h1, header .en .t, header .en .lead { color: var(--dim); }
+  .two .en { color: var(--dim); }
+  /* the one-stream page: a large round play button, green while it plays */
+  #play { width: 148px; height: 148px; min-height: 0; padding: 0; margin: 18px auto 4px; border-radius: 50%;
+          border: 2px solid var(--line); justify-content: center; gap: 0; position: relative;
+          transition: background-color .2s, border-color .2s, box-shadow .2s, transform .1s; }
+  #play:active { transform: scale(.97); }
+  #play svg { width: 56px; height: 56px; fill: var(--text); }
+  #play .stop { display: none; }
+  #play[aria-pressed="true"] { background: var(--on); border-color: var(--on);
+                               box-shadow: 0 0 0 10px rgba(34,165,101,.18), 0 0 36px rgba(34,165,101,.35); }
+  #play[aria-pressed="true"] .go { display: none; }
+  #play[aria-pressed="true"] .stop { display: block; }
+  #playlabel { text-align: center; font-size: 18px; font-weight: 600; }
+  #playlabel .en { font-weight: 500; }
   button { appearance: none; border: 1px solid var(--line); background: var(--card); color: var(--text);
            border-radius: 16px; padding: 20px 18px; font: inherit; font-size: 20px; font-weight: 600;
            width: 100%; min-height: 76px; cursor: pointer; display: flex; align-items: center; gap: 14px;
@@ -25,20 +44,28 @@
   button[aria-pressed="true"] .dot { background: var(--on); box-shadow: 0 0 0 5px rgba(34,165,101,.22); }
   button:focus-visible { outline: 3px solid var(--go); outline-offset: 2px; }
   [hidden] { display: none !important; }
-  #status { min-height: 1.5em; text-align: center; color: var(--dim); font-size: 16px; margin-top: 4px; }
+  #status { min-height: 1.5em; text-align: center; color: var(--dim); font-size: 16px; margin-top: 4px; white-space: pre-line; }
   #status.on { color: var(--text); }
-  p.note { color: var(--dim); font-size: 14px; text-align: center; margin: 6px 0 0; }
+  p.note { color: var(--dim); font-size: 14px; line-height: 1.3; text-align: center; margin: 4px 0 0; }
 </style>
 </head>
 <body>
 <main>
-  <h1>Traducere audio · Audio translation</h1>
-  <button id="ro" type="button" aria-pressed="false"><span class="dot"></span>
+  <header>
+    <div lang="ro"><h1>Traducere audio</h1></div>
+    <div class="en" lang="en"><p class="t">Audio translation</p></div>
+  </header>
+  <p class="note two" id="note"><span>Folosiți căștile.</span><span class="en">Please use headphones.</span></p>
+  <button id="play" type="button" aria-pressed="false" aria-label="Ascultă · Listen" hidden>
+    <svg class="go" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>
+    <svg class="stop" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2"/></svg>
+  </button>
+  <div id="playlabel" class="two" hidden><span>Ascultă</span><span class="en">Listen</span></div>
+  <button id="ro" type="button" aria-pressed="false" hidden><span class="dot"></span>
     <span>Ascultă în română<small>Traducerea în română a vorbitorului englez</small></span></button>
-  <button id="en" type="button" aria-pressed="false"><span class="dot"></span>
+  <button id="en" type="button" aria-pressed="false" hidden><span class="dot"></span>
     <span>Listen in English<small>The English translation of the Romanian speaker</small></span></button>
   <div id="status" role="status" aria-live="polite"></div>
-  <p class="note" id="note">Folosiți căștile. · Please use headphones.</p>
 </main>
 <audio id="a" playsinline preload="none"></audio>
 <script>
@@ -49,9 +76,9 @@
           again: "Se reconectează…", stop: "Oprit. Apăsați pentru a asculta.", tap: "Apăsați din nou pentru a asculta." },
     en: { title: "English translation", artist: "Live RO2EN", on: "Playing", wait: "Connecting…",
           again: "Reconnecting…", stop: "Stopped. Tap to listen.", tap: "Tap again to listen." },
-    mix: { title: "Traducere · Translation", artist: "Live RO2EN", on: "Se aude · Playing",
-           wait: "Se conectează… · Connecting…", again: "Se reconectează… · Reconnecting…",
-           stop: "Oprit · Stopped", tap: "Apăsați din nou · Tap again" }
+    mix: { title: "Traducere · Translation", artist: "Live RO2EN", on: "Se aude\nPlaying",
+           wait: "Se conectează…\nConnecting…", again: "Se reconectează…\nReconnecting…",
+           stop: "Oprit\nStopped", tap: "Apăsați din nou\nTap again" }
   };
   var mixed = false;                             // the server plays one stream, both languages taking turns
   var audio = document.getElementById("a"), status = document.getElementById("status");
@@ -61,8 +88,12 @@
   function say(key, on) { status.textContent = lang ? T[lang][key] : ""; status.className = on ? "on" : ""; }
   function mark() {
     ["ro", "en"].forEach(function (l) {
-      document.getElementById(l).setAttribute("aria-pressed", String(l === lang || (l === "ro" && lang === "mix")));
+      document.getElementById(l).setAttribute("aria-pressed", String(l === lang));
     });
+    document.getElementById("play").setAttribute("aria-pressed", String(lang === "mix"));
+    var lab = document.getElementById("playlabel");
+    lab.firstChild.textContent = lang === "mix" ? "Oprește" : "Ascultă";
+    lab.lastChild.textContent = lang === "mix" ? "Stop" : "Listen";
   }
   function session() {
     if (!("mediaSession" in navigator) || !lang) return;
@@ -106,7 +137,8 @@
     lang = l; tries = 0;
     mark(); session(); connect(false);
   }
-  document.getElementById("ro").addEventListener("click", function () { choose(mixed ? "mix" : "ro"); });
+  document.getElementById("ro").addEventListener("click", function () { choose("ro"); });
+  document.getElementById("play").addEventListener("click", function () { choose("mix"); });
   document.getElementById("en").addEventListener("click", function () { choose("en"); });
   audio.addEventListener("playing", function () { tries = 0; lastMove = Date.now(); say("on", true); });
   audio.addEventListener("waiting", function () { if (lang) say("again", false); });
@@ -123,13 +155,17 @@
     if (!document.hidden && lang && audio.paused) connect(true);
   });
   // Rehearsal mode only (the server says so): how much audio the phone holds back, every 10 s.
+  // Which page: one stream (the big play button) or one per language (two buttons). Nothing shows until
+  // the server answers, so the page does not jump; if it does not answer, the two buttons.
+  function twoButtons() { ["ro", "en"].forEach(function (id) { document.getElementById(id).hidden = false; }); }
   fetch("/listen", { method: "HEAD", cache: "no-store" }).then(function (r) {
     rehearsal = r.headers.get("X-Voice-Rehearsal") === "1";
     if (r.headers.get("X-Voice-Mix") === "1") {   // one stream: one button, in both languages
-      mixed = true;
-      document.getElementById("en").hidden = true;
-      document.getElementById("ro").querySelector("span:last-child").innerHTML =
-        "Ascultă · Listen<small>Traducerea în română sau în engleză · The translation, in Romanian or English</small>";
+      mixed = true;                               // one stream: the text, then the big play button
+      ["ro", "en"].forEach(function (id) { document.getElementById(id).hidden = true; });
+      ["play", "playlabel"].forEach(function (id) { document.getElementById(id).hidden = false; });
+    } else {
+      twoButtons();
     }
     if (!rehearsal) return;
     statsTimer = setInterval(function () {
@@ -139,7 +175,7 @@
         ua: navigator.userAgent.slice(0, 160) });
       fetch("/stats", { method: "POST", body: body, cache: "no-store", keepalive: true }).catch(function () {});
     }, 10000);
-  }).catch(function () {});
+  }).catch(twoButtons);
 })();
 </script>
 </body>
