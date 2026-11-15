@@ -65,12 +65,102 @@ def dangling(text: str) -> bool:
     return words[-1] == "mai" and len(words) > 1 and words[-2] in NEGATION_END     # «nu mai.»
 
 
+# idea 35 (2026-11-15 morning): the meaning reversed because the object, the subject or the «nu»
+# came in the next piece: «pentru că iubește. | păcatul» → "because it loves Him.", «așa ne învață.
+# | stăpânitorul lumii acesteia» → "that is what He teaches us", «Nimicul … nu este forma. |
+# eșecului» → "Nothing … is the form.", «singurul mijlocitor. Maria. | nu Maria» → "Mary.".
+# A piece that ends like this waits for the next one when that one follows at once (OPEN_GAP_S).
+TRANSITIVE_END = frozenset(fold_diacritics(w) for w in (
+    "iubește iubesc iubim iubiți iubea urăște urăsc urâm urâți ura învață învăța învățăm "
+    "spune spun spunem spuneți spunea zice zic zicem zicea cere cerea caută căuta primește "
+    "aduce arată arăta poruncește cunoaște".split()))
+SAY_END = frozenset(fold_diacritics(w) for w in
+                    "învață învăța învățăm spune spunea zice zicea arată arăta cere cerea poruncește".split())
+_OBJECT_CLITIC = frozenset(fold_diacritics(w) for w in "îl il l o îi ii i le ne vă va te mă ma ți ti mi".split())
+_NU_ESTE = (("nu", "este"), ("nu", "e"), ("nu", "era"), ("nu", "sunt"))
+OPEN_GAP_S = 0.7
+
+
+def open_end(text: str) -> bool:
+    """A Romanian piece whose last words need the next piece to keep their meaning (idea 35):
+    a bare transitive verb with no object («pentru că iubește.»; a verb of saying or teaching also
+    after a clitic, its subject still to come: «așa ne învață.»), «nu este + noun» at the end («nu
+    este forma.»), or a last sentence of one capitalised word («… mijlocitor. Maria.»)."""
+    t = text.strip()
+    if not t or t.endswith(("?", "!")):
+        return False
+    words = [fold_diacritics(w) for w in tokens(t)]
+    if len(words) < 2:
+        return False
+    last, before = words[-1], words[-2]
+    if last in TRANSITIVE_END and (last in SAY_END or before not in _OBJECT_CLITIC):
+        return True
+    if len(words) >= 3 and tuple(words[-3:-1]) in _NU_ESTE and len(last) >= 4:
+        return True
+    sents = [s for s in re.split(r"(?<=[.!?])\s+", t) if s.strip()]
+    if len(sents) >= 2:
+        one = re.findall(r"[^\W\d_]+", sents[-1])
+        if len(one) == 1 and one[0][:1].isupper() and len(one[0]) >= 3 \
+                and fold_diacritics(one[0].lower()) not in _ALONE_FOLDED:
+            return True
+    return False
+
+
 # a Romanian piece of 1-2 words that is not a sentence: clitics and small words alone («să-l.» →
 # "call out.", 2026-11-08 evening) or a scrap of a word («rom.»). Words a whole utterance can be:
 _FUNCTION_RO = frozenset("să l il îl o i îi le se ne vă te mă și n a al ale de la cu pe în din că "
                          "care ca dar iar sau mai prin spre".split())
 _ALONE_RO = frozenset("da nu bun bine așa ok hai aha mda păi eu tu el ea noi voi ei ele ce cum cât cine "
                       "oh vai uite iată amin gata sigur".split())
+_ALONE_FOLDED = frozenset(fold_diacritics(w) for w in _ALONE_RO) | {"doamne", "aleluia", "osana", "isus", "hristos"}
+
+
+CUT_GAP_S = 0.7                # idea 25: the next piece follows at once (the word went on across the cut)
+_LAST_WORD = re.compile(r"([^\W\d_]+)[^\w]*$")
+_FIRST_WORD = re.compile(r"^[^\w]*([^\W\d_]+)")
+
+
+def cut_word(prev_src: str, src: str, lex: set) -> str | None:
+    """Idea 25 (2026-11-15 morning): the previous piece's last word is the recogniser's guess at the
+    start of this piece's first word: «parca.» | «parcurge», «autor.» | «autentică», «păstrat.» |
+    «păstor», «multe.» | «multiplice», «nepărere.» | «neprihănire». The previous piece without that
+    word, joined to this one; None when the words are not one cut word. A real word that is all of
+    the next one's start («bine.» | «binecuvântat») is a word of its own."""
+    m1, m2 = _LAST_WORD.search(prev_src or ""), _FIRST_WORD.search(src or "")
+    if not m1 or not m2 or len(tokens(prev_src)) < 2:
+        return None
+    w, v = fold_diacritics(m1.group(1).lower()), fold_diacritics(m2.group(1).lower())
+    if len(w) < 4 or v == w:
+        return None
+    cp = 0
+    while cp < min(len(w), len(v)) and w[cp] == v[cp]:
+        cp += 1
+    known = w in lex
+    one = (cp >= 3 and cp / len(w) >= 0.55 and len(v) >= len(w) - 1 and not (known and v.startswith(w))) \
+        or (not known and cp >= 2 and len(v) > cp)
+    if not one:
+        return None
+    return f"{prev_src[:m1.start(1)].rstrip()} {src.lstrip()}".strip()
+
+
+_CHRISTMAS = re.compile(r"\bChristmas\b(?!\s+Child)")
+
+
+def christmas_to_hristos(text: str, prev: str = "", info: dict | None = None) -> str:
+    """Idea 28 (2026-11-15): the Romanian recogniser wrote «Hristos» as the English "Christmas"
+    (the boost for "Operation Christmas Child" pulls it): "Christmas is risen!" on screen. In a
+    Romanian piece it is «Hristos», unless «Crăciun» is said here or just before."""
+    if "Christmas" not in text or re.search(r"cr[ăa]ciun", f"{prev} {text}", re.I):
+        return text
+    fixed = _CHRISTMAS.sub("Hristos", text)
+    if fixed != text and info is not None:
+        info["christmas"] = text
+    return fixed
+
+
+def _echo_key(word: str) -> str:
+    """A word without its ending or diacritics, for echo matching («mădularele» = «madularele»)."""
+    return fold_diacritics(word.lower())[:5]
 
 
 def scrap(text: str) -> bool:
@@ -87,6 +177,24 @@ def scrap(text: str) -> bool:
         return True
     return len(words) == 1 and len(words[0]) <= 3 and words[0] not in _ALONE_RO \
         and fold_diacritics(words[0]) not in {fold_diacritics(w) for w in _ALONE_RO}
+
+
+EN_FOREIGN_MAX = 2             # idea 12: an English piece with this many non-English words is not captioned EN→RO
+
+
+def non_english(text: str, names=frozenset()) -> int:
+    """Lower-case words of an English transcript that are not English («kut», «coborila», «cu»,
+    «tre»): the English recogniser writing Romanian speech. Capitalised words (names) don't count."""
+    lex = gate.lexicon()
+    en, known = lex["en"], lex["names"] | set(names)
+    n = 0
+    for w in re.findall(r"[^\W\d_]+(?:'[^\W\d_]+)?", text):
+        if w[:1].isupper() or "'" in w:
+            continue
+        f = fold_diacritics(w.lower())
+        if f not in en and f not in known:
+            n += 1
+    return n
 
 
 RO_IN_EN_MARGIN = 0.2          # idea 12: the Romanian transcript's real-word share must beat the English one's by this
@@ -213,7 +321,9 @@ def mask(text: str, pat: re.Pattern | None, sub: str = "***") -> tuple[str, int]
 
 KEEPALIVE_TICK_S = 15.0                  # how often idle translators are checked
 OVERLAP_GAP_S = 2.0
-ECHO_GAP_S = 1.5                         # a one-word echo of the last word comes right after it                      # a repeat across a longer pause was said twice, not heard twice
+ECHO_TAIL_WORDS = 5                      # idea 20: a 2-3 word echo is all in the previous piece's last 5 words
+ECHO_MAX_WORDS = 3
+ECHO_GAP_S = 1.5                        # a one-word echo of the last word comes right after it                      # a repeat across a longer pause was said twice, not heard twice
 
 class PipelineMixin:
     RESTART_KEYS = RESTART_KEYS
@@ -467,14 +577,22 @@ class PipelineMixin:
                 self._pending = None
                 self._submit(p)
                 p = None
+            if p and p.get("open_end") and ev["t_start"] - p["t_end"] > OPEN_GAP_S:
+                self._pending = None                   # idea 35: held for its object, but the next piece
+                self._submit(p)                        # came after a pause: a new thought, sent apart
+                p = None
             if p:
                 ev = merge_clauses(p, ev)
+                ev.pop("open_end", None)
             self._pending = None
             text = ev.get("multi") if self.lang.current == "en" else ev["ro"]
             text = text or ev["ro"] or ""
             n, final = len(text.split()), text.rstrip().endswith(("?", "!"))
+            opened = (self.lang.current != "en" and self.lc.get("hold_open_end", True) and open_end(text))
+            if opened:
+                ev["open_end"] = True
             slow = n > 0 and not final and (n < int(self.lc.get("phrase_min_words", 0) or 0)
-                                  or (self.lc.get("hold_dangling", True) and dangling(text)))
+                                  or (self.lc.get("hold_dangling", True) and dangling(text)) or opened)
             short = not final and n < self.lc.get("hold_min_words", 4)
             limit = max(cap, float(self.lc.get("hold_max_s", 10.0) or 0)) if slow and cap else cap
             if (slow or short) and not (limit and ev["t_end"] - ev.get("t_speech", ev["t_start"]) > limit):
@@ -617,8 +735,12 @@ class PipelineMixin:
         if ro.strip() or not multi.strip():
             return "ro", ro, {}
         s = lang_score(multi)
-        if auto and s <= 0 and self._gate_ok(english, "en") and not self._gate_ok(multi, "ro"):
-            return "en", english, {"fallback": "english"}   # an English sentence the RO model missed
+        if auto and s <= 0 and self._gate_ok(english, "en") and not self._gate_ok(multi, "ro") \
+                and not non_english(english, self._gate_names()):
+            # an English sentence the RO model missed; a lone one with no Romanian transcript to check
+            # it against must be all English words: fast Romanian read during Gen 26:24 came out as
+            # "She shall kut the children." → «Ea va tăia copiii.» on screen (2026-11-15, idea 12)
+            return "en", english, {"fallback": "english"}
         if s >= 0:
             return "ro", multi, {"fallback": "multi"}   # the RO model heard nothing ("binecuvinteze.")
         return "ro", "", {}
@@ -647,11 +769,19 @@ class PipelineMixin:
         import difflib
         words = re.findall(r"[^\W\d_]+", text)
         prev, prev_end = getattr(self, "_last_word", ("", None))
+        tail = getattr(self, "_last_tail", ())
         self._last_word = (fold_diacritics(words[-1].lower()) if words else "", ev["t_end"])
-        if len(words) != 1 or not prev or prev_end is None or ev["t_start"] - prev_end > ECHO_GAP_S:
+        self._last_tail = tuple(_echo_key(w) for w in words[-ECHO_TAIL_WORDS:])
+        if not words or not prev or prev_end is None or ev["t_start"] - prev_end > ECHO_GAP_S:
             return False
-        w = fold_diacritics(words[0].lower())
-        if len(w) < 4 or difflib.SequenceMatcher(None, w, prev).ratio() < 0.75:
+        if len(words) == 1:
+            w = fold_diacritics(words[0].lower())
+            if len(w) < 4 or difflib.SequenceMatcher(None, w, prev).ratio() < 0.75:
+                return False
+        # idea 20 (2026-11-15 morning): 2-3 words re-heard: «…de mădularele ei.» then «madularele ei.»
+        # → "her limbs." twice, «îmbolnăvești de inimă.» → "heart disease" twice
+        elif len(words) > ECHO_MAX_WORDS or not all(_echo_key(w) in tail for w in words) \
+                or not any(len(w) >= 4 for w in words):
             return False
         self._log_failure(ev, "echo_word", source=text)
         return True
@@ -713,6 +843,10 @@ class PipelineMixin:
                     self._ro_in_en = 0
                 return ro_text, "ro", info
             self._ro_in_en = 0
+            if non_english(src, names) >= EN_FOREIGN_MAX:   # "Get one coborila up cu tre de woman."
+                self._log_failure(ev, "low_confidence", lang=lang, source=src, reason="not_english",
+                                  features=gate.features(src, lang, gate.lexicon(), names))
+                return None, lang, {}
         kept, why, cut = gate.screen(src, lang, gate.lexicon(), names, min_real)
         if kept and not cut:
             return src, lang, {}
@@ -783,6 +917,8 @@ class PipelineMixin:
         src_info.update(trimmed)
         src_text = self._repair_names(src_text, lang, src_info)
         src_text = self._repair_numbers(ev, src_text, lang, src_info)
+        if lang == "ro":
+            src_text = christmas_to_hristos(src_text, getattr(self, "_prev_piece_src", ""), src_info)
         if self._echo_word(ev, src_text):               # "trecute." then "trecut." alone (logged)
             return
         if lang == "ro" and scrap(src_text):            # «să-l.» → "call out.", «rom.» (logged)
@@ -799,6 +935,21 @@ class PipelineMixin:
         tr = self._translator() if hasattr(self, "_translator") else self.tr   # AI or local (aimode.py)
         if hasattr(tr, "begin_phrase"):
             tr.begin_phrase()
+        prev_piece, self._prev_piece_src = getattr(self, "_prev_piece_src", ""), src_text
+        # idea 25: the previous caption's last word was the start of this piece's first word («înainte
+        # de a parca.» | «parcurge câteva versete» → "before we park."): both are translated again as one
+        # piece, without that word, in place of the previous caption
+        cut_redo = False
+        last_end = getattr(self, "_last_end", None)
+        if lang == "ro" and last_out and last_src and last_end is not None and self.lc.get("cut_word_redo", True) \
+                and ev.get("t_speech", ev["t_start"]) - last_end <= CUT_GAP_S:
+            joined = cut_word(last_src, src_text, gate.lexicon()["ro"])
+            if joined is not None:
+                src_info["cut_word"] = {"previous": last_src, "replaced_prev": " ".join(last_out)}
+                src_text, cut_redo = joined, True
+                ctx = getattr(tr, "context", None)
+                if isinstance(ctx, list) and ctx:
+                    tr.context = ctx[:-1]               # the previous piece is translated again, not context
         clauses, tail = split_clauses(src_text)
         parts = clauses + ([tail] if tail else [])        # at a pause everything is committed
         if _whole_phrase(tr, lang, tgt):             # an online translator: one round trip per phrase
@@ -806,13 +957,14 @@ class PipelineMixin:
         if ev.get("caught_up"):                           # catching up: few calls, each bounded
             parts = pack_parts(parts, int(self.lc.get("catchup_max_words", 60)))
         t0 = time.time()
-        out, truncated, verse, is_verse = [], False, [], []
+        out, truncated, verse, is_verse, vlogs = [], False, [], [], []
         for p in parts:
             out.append(tr.translate(p, lang, tgt, self.gloss, use_context=True)
                        if hasattr(tr, "context") else tr.translate(p, lang, tgt, self.gloss))
             truncated |= bool(getattr(tr, "last_truncated", False))
             verse += [getattr(tr, "last_verse", None)] if getattr(tr, "last_verse", None) else []
             is_verse.append(bool(getattr(tr, "last_verse", None)))
+            vlogs.append(getattr(tr, "last_verse", None) or {})
         # a published verse is not checked for numbers/negations ("nu voi duce lipsă" = "I shall
         # lack nothing"); the other parts of the same phrase still are
         if not verse:
@@ -825,13 +977,30 @@ class PipelineMixin:
                     out[i], g = guards.check(tr, p, o, lang, tgt, self.gloss,
                                              fallback=self._guard_fallback())
                     guard = guard or g
+            # idea 3 (2026-11-15): a verse matched one part late starts with the part before it, which
+            # the translator already did: "He said, “I am the door, I am the door. If anyone enters…"
+            # (John 10:9), Eph 1:3, Rev 2:4. That part goes when it says the verse again.
+            for i in range(1, len(out)):
+                if is_verse[i] and vlogs[i].get("replace_prev") and not is_verse[i - 1] and out[i - 1]:
+                    kept = translate.around_verse(out[i - 1], out[i])
+                    if kept != out[i - 1]:
+                        src_info.setdefault("verse_dropped", []).append(out[i - 1])
+                        out[i - 1] = kept
             translation = " ".join(o for o in out if o)
         # a verse matched one piece late (Daniel 3:18): its caption starts with the previous
         # phrase's last part, so it replaces that phrase's caption, keeping the parts before
+        # (but not one that says the verse again: "I am the living water," He said, out, “If anyone
+        # is thirsty…", John 7:37, 2026-11-15)
         redo = bool(is_verse and is_verse[0] and verse and verse[0].get("replace_prev") and last_out)
         if redo:
-            translation = " ".join(last_out[:-1] + [translation])
+            keep = [k for k in (translate.around_verse(x, out[0]) for x in last_out[:-1]) if k]
+            translation = " ".join(keep + [translation])
             src_info["replaced_prev"] = " ".join(last_out)
+        if lang == "ro" and tgt == "en" and not verse and self.lc.get("pronoun_check", True):
+            fixed = guards.lower_people(translation, src_text, prev_piece)
+            if fixed != translation:                    # idea 11: You/He for a person, no God word near
+                src_info["pronouns_lowered"] = translation
+                translation = fixed
         if guards.odd_figures(src_text):                # "1.271701 milion": never shown as a figure
             translation = guards.hide_odd(src_text, translation)
             src_info["odd_figure"] = True
@@ -863,6 +1032,7 @@ class PipelineMixin:
                 return
         translation, safety = self._safety(ev, f"{last_src} {src_text}" if redo else src_text, translation,
                                            lang, t_tr)
+        redo = redo or cut_redo
         if translation is None:                         # dropped by the safety filter (logged)
             return
         if truncated:                                   # shown (better than nothing), but counted
@@ -890,7 +1060,8 @@ class PipelineMixin:
                     self._state_failed(self._speech_mark)
         if shown:                                       # in the caption box: a late verse may replace it
             self._last_out = [translation] if redo else [o for o in out if o]
-            self._last_src = f"{last_src} {src_text}" if redo else src_text
+            self._last_src = f"{last_src} {src_text}" if redo and not cut_redo else src_text
+            self._last_end = ev["t_end"]
         t_disp = time.time()
         latency = t_disp - ev["t_end"]
         n_g, ok_g = self.gloss.adherence(src_text, translation, lang)

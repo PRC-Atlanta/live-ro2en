@@ -174,6 +174,17 @@ def find(text: str, books=None) -> Ref | None:
     return found
 
 
+def ending_book(text: str, books=None) -> Book | None:
+    """A book name that is the last word(s) of the text, with no chapter after it («în Geneza.»)."""
+    books = BOOKS if books is None else books
+    w, raw = _words(text), _WORD_RE.findall(fold_diacritics(fix_cedilla(text)))
+    for i in range(max(0, len(w) - 4), len(w)):
+        b, j = _match_book(w, raw, i, books)
+        if b is not None and j == len(w):
+            return b
+    return None
+
+
 def verse_only(text: str) -> tuple[int, int | None] | None:
     """'versetul 8' / 'verse eight' with no book: the next verse of the reading."""
     w = _words(text)
@@ -200,10 +211,18 @@ class Reading:
 
     def reset(self):
         self.ref, self.left, self.announced = None, 0, False
+        self.book_end = None
 
     def update(self, text: str) -> Ref | None:
         """Read one chunk; the reference in force for it (announced here or a few chunks back)."""
+        book_end, self.book_end = getattr(self, "book_end", None), ending_book(text, self.books)
         ref = find(text, self.books)
+        if ref is None and book_end is not None:
+            # the book at the end of the last piece, its numbers at the start of this one: «Domnul i
+            # s-a arătat în Geneza.» | «26 cu 24.» came out "26 with 24" (2026-11-15, idea 3)
+            ref = find(f"{book_end.ro} {text}", self.books)
+            if ref is not None and (ref.book is not book_end or ref.verse is None):   # «Ioan.» | «12 ucenici»
+                ref = None
         if ref is not None:
             if ref.book is None and self.ref is not None and self.ref.book is not None and self.left > 0 \
                     and ref.chapter == self.ref.chapter:
@@ -226,7 +245,8 @@ class Reading:
                 self.ref = dataclasses.replace(self.ref, chapter=int(w[0]), verse=int(w[2]), verse_end=None)
                 self.left, self.announced = self.chunks, True
                 return self.ref
-            if len(w) >= 2 and w[0] == "cu" and w[1].isdigit() and prev_announced and self.ref.verse is None:
+            if len(w) >= 2 and w[0] == "cu" and w[1].isdigit() and prev_announced \
+                    and (self.ref.verse is None or self.ref.verse == int(w[1])):   # «Ioan 1, 18» | «cu 18»
                 self.ref = dataclasses.replace(self.ref, verse=int(w[1]))
                 self.left, self.announced = self.chunks, True
                 return self.ref

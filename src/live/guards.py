@@ -311,9 +311,15 @@ def mismatches(src: str, out: str, lang: str, tgt: str) -> dict:
     a, b = numbers(src, lang), numbers(out, tgt)
     if a != b:
         issues["numbers"] = {"source": sorted(a), "translation": sorted(b)}
+    if lang == "ro" and tgt == "en" and invented_god(src, out):
+        issues["god"] = True
     na, nb = negated(src, lang), negated(out, tgt)
     if na != nb and not ambiguous_negation(src if lang == "ro" else out, "ro"):
         issues["negation"] = {"source": na, "translation": nb}
+        if na and lang == "ro" and tgt == "en" and tag_only(out):
+            issues["negation"]["tag"] = True            # "I defeated them…, didn't I?" for «n-a învins…, nu?»
+    elif na and nb and lang == "ro" and tgt == "en" and (q := question_for_statement(src, out)):
+        issues["negation"] = {"source": True, "translation": "question", "sentence": q}
     elif na and nb:
         # both say "not" somewhere, but one sentence lost its own: «n-are valoare. Soția a murit, n-a
         # putut…» → "have value. His wife died, and he couldn't…" (2026-11-08 evening, idea 35).
@@ -328,6 +334,32 @@ def mismatches(src: str, out: str, lang: str, tgt: str) -> dict:
     return issues
 
 
+_EN_TAG_ANY = re.compile(r",?\s*\b(?:is|are|was|were|do|does|did|have|has|had|can|could|will|wo|would|should|"
+                         r"must|ca|ai)n'?t\s+(?:it|he|she|they|we|you|i|there|that|this)\s*\?", re.I)
+_NEG_QUESTION = re.compile(r"^\W*(?:wouldn't|won't|don't|doesn't|didn't|isn't|aren't|can't|couldn't|shouldn't|"
+                           r"haven't|hasn't)\s+(?:you|we|he|she|it|they|i)\b", re.I)
+
+
+def tag_only(out: str) -> bool:
+    """The English says "not" only in a tag question ("…, didn't I?"): the source's «n-» is lost."""
+    t = fix_cedilla(out).replace("\u2019", "'")
+    return bool(_EN_TAG_ANY.search(t)) and not negated(t, "en")
+
+
+def question_for_statement(src: str, out: str) -> str:
+    """A Romanian statement with «n-» / «nu» turned into an English negative question: «N-ai vrea să
+    faci parte din Laodiceea» (you would not want to) → "Wouldn't you like to be part…" (2026-11-15,
+    idea 35). The Romanian sentence, or "" when there is none."""
+    sa, sb = _sentences(src), _sentences(fix_cedilla(out).replace("\u2019", "'"))
+    if len(sa) != len(sb):
+        sa, sb = [src], [" ".join(sb)]
+    for x, y in zip(sa, sb):
+        if not x.rstrip().endswith("?") and re.match(r"^\W*(?:n-|nu\b)", fix_cedilla(x).strip(), re.I) \
+                and _NEG_QUESTION.search(y):
+            return x
+    return ""
+
+
 def _sentences(text: str) -> list[str]:
     return [x for x in re.split(r"(?<=[.!?])\s+", text.strip()) if re.search(r"[^\W\d_]", x)]
 
@@ -335,6 +367,12 @@ def _sentences(text: str) -> list[str]:
 # --- warnings for the translator ---------------------------------------------------------------
 _MAI = re.compile(r"\bmai\b", re.I)
 _MAI_NEG = re.compile(r"\b(?:nu|n|nici|niciodat[ăa])\b[\s-]*(?:\w+[\s-]+){0,2}?mai\b", re.I)
+# a sentence that is only «Nu este / Nu e / Nu-i + one word» (2026-11-15: «Nu este extraordinar.» → "It is not
+# extraordinary."; the recogniser drops the "?"); «Nimicul … nu este forma» is a statement (not sentence-initial)
+_NU_ESTE_ADJ = re.compile(r"^\W*nu(?:\s+este|\s+e|-i)\s+(?:oare\s+)?(?:așa\s+de\s+|atât\s+de\s+)?[^\W\d_]+\s*[.?!]*\s*$", re.I)
+# «domnule» (sir) / «domnul B» / «domnul din America»: a man, not God (11:00-11:05, 2026-11-15)
+_DOMNUL_MAN = re.compile(r"\b[Dd]omnule\b|\b[Dd]omnul(?:ui)?\s+(?:din\s+(?!cer|ceruri|slav)[^\W\d_]+|[A-ZĂÂÎȘȚ]\b|[A-ZĂÂÎȘȚ]\.|"
+                         r"(?!Isus|Hristos|Dumnezeu|Domn|Iehova|Sfânt|Duh)[A-ZĂÂÎȘȚ][a-zăâîșț]+\b)|\bdomnul\s+doctor", re.U)
 _NUI_ASA = re.compile(r"\bnu-i a[șs]a\s+c[ăa]\b|\bnu\s+e(?:ste)?\s+a[șs]a\s+c[ăa]\b", re.I)
 
 
@@ -348,6 +386,14 @@ def notes(text: str, lang: str) -> list[str]:
     if _MAI.search(t) and not _MAI_NEG.search(t) and not negated(t, "ro"):
         out.append("«mai» here means more / again / another / still. There is no negation in this "
                    "piece: do not write not, no longer or any more.")
+    for x in re.split(r"(?<=[.!?])\s+", t.strip()):
+        if _NU_ESTE_ADJ.match(x):
+            out.append("«" + x.strip() + "» is the rhetorical question \"Isn't it …?\" (\"Isn't it wonderful?\"), "
+                       "also without a question mark: keep it a question, never \"It is not …\".")
+            break
+    if _DOMNUL_MAN.search(t):
+        out.append("«domnule», «domnul + a name or initial», «domnul din …», «domnule doctor» are a man: sir, "
+                   "Mr. …, the gentleman from …; never the Lord. Lower case you/he for him.")
     if _NUI_ASA.search(t):
         out.append("«nu-i așa că …?» means «isn't it true that …?»: keep it a question, it is not a "
                    "negation.")
@@ -377,10 +423,19 @@ def _note(issues: dict, src: str, lang: str) -> str:
     """What to tell the translator on the second retry."""
     parts = []
     neg = issues.get("negation")
-    if neg is not None:
+    if neg is not None and neg.get("translation") == "question":
+        parts.append("The source is a statement, not a question: «N-ai vrea să …» means \"You would not want "
+                     "to …\". Write a statement with not; do not turn it into a question.")
+    elif neg is not None and neg.get("tag"):
+        parts.append("The main verb of the source is negative («n-a învins» = did not win): put not in the "
+                     "main clause. The «nu?» at the end only means \"right?\".")
+    elif neg is not None:
         parts.append("The source has NO negation: the translation must not contain not, no, never "
                      "or no longer." if not neg["source"] else
                      "The source IS negative: keep the negation (not / no / never) in the translation.")
+    if issues.get("god"):
+        parts.append("The source does not name God: do not add God, the Lord, Jesus or Christ; translate only "
+                     "the words that are there.")
     if "numbers" in issues:
         want = issues["numbers"]["source"]
         parts.append("Numbers in the source: " + (", ".join(map(str, want)) if want else "none")
@@ -400,7 +455,7 @@ def _fallback_may_fix(issues: dict) -> bool:
     translation lacks is most often the recogniser's stray «nu» («Vă nu salută») or a "lest" said
     otherwise; NLLB put it back as "It does not greet you" and "Holy shit, let's not…" (bench on
     the corrected sermons, 2026-10-26), so Gemma's answer stays."""
-    return "numbers" in issues or _invented_not(issues)
+    return "numbers" in issues or _invented_not(issues) or bool((issues.get("negation") or {}).get("tag"))
 
 
 def check(tr, src: str, out: str, lang: str, tgt: str, gloss=None, fallback=None) -> tuple[str, dict]:
@@ -433,7 +488,7 @@ def check(tr, src: str, out: str, lang: str, tgt: str, gloss=None, fallback=None
     # a translator without context (NLLB) gives the same answer to the same text: no point asking
     plain = not (text == src and not hasattr(tr, "context"))
     got = attempt("retry", lambda: _retranslate(tr, text, lang, tgt, gloss)) if plain else None
-    if got is None and "negation" in issues and _takes_note(tr, lang, tgt):   # numbers alone: often a false alarm
+    if got is None and ("negation" in issues or "god" in issues) and _takes_note(tr, lang, tgt):   # numbers alone: often a false alarm
         got = attempt("note", lambda: _retranslate(tr, text, lang, tgt, gloss, note=_note(issues, src, lang)))
     if got is None and fallback is not None and fallback is not getattr(tr, "trs", {}).get((lang, tgt), tr) \
             and _fallback_may_fix(issues):
@@ -586,3 +641,56 @@ def hide_odd(src: str, out: str) -> str:
     if not odd_figures(src):
         return out
     return _ODD_OUT.sub("[amount unclear]", out)
+
+
+# --- You/He for a person (idea 11) ----------------------------------------------------------------
+# 2026-11-15 morning: ~13 lines capitalised a person after the 11-09 prompt rule ("what do You want…
+# You saved my life" said to the preacher, "serve Him" for a neighbour, "where He was not alive" for an
+# area of life). With no God word in this piece or the one before, the pronouns are a person's.
+_GOD_RO = re.compile(r"\b(?:dumnezeu\w*|doamne|isus\w*|iisus\w*|hristos\w*|cristos\w*|duhul\w*|duh\s+sfant\w*|"
+                     r"mantuitor\w*|creator\w*|atotputernic\w*|iehova|mielul\w*|preainalt\w*|prea\s+inalt\w*|"
+                     r"stapanul|emanuel|savaot|ziditor\w*)\b")
+_GOD_RO_CAP = re.compile(r"\b(?:Domnul(?:ui)?(?!\s+(?:din\b|[A-ZĂÂÎȘȚ]\b|[A-ZĂÂÎȘȚ][a-zăâîșț]+\b(?<!Isus)(?<!Hristos)))|"
+                         r"Tatăl(?:ui)?|Tată|Fiul|Cuvântul|Regele|Împăratul|"
+                         # the recogniser writes El / Lui / Său with a capital mid-sentence only for God
+                         r"(?<=[a-zăâîșț,] )(?:El|Lui|Său|Sale|Tu|Tău|Ta|Te|Ție))\b")
+_GOD_EN = re.compile(r"\b(?:God|Jesus|Christ|Holy Spirit|Spirit of God|Lord Jesus|Father in heaven|Savior|Saviour|"
+                     r"Almighty|Lamb|Most High)\b")
+_PRON = re.compile(r"\b(You|Your|Yours|Yourself|Yourselves|He|Him|His|Himself)\b")
+
+
+def names_god(text: str) -> bool:
+    t = fix_cedilla(text or "")
+    return bool(_GOD_RO.search(fold_diacritics(t.lower())) or _GOD_RO_CAP.search(t))
+
+
+def lower_people(out: str, src: str, prev_src: str = "") -> str:
+    """The translation with You/Your/He/Him/His in lower case where it is not the first word of a
+    sentence, when neither this Romanian piece nor the previous one names God (Dumnezeu, Domnul Isus,
+    Hristos, Tatăl, Duhul…) and the English doesn't either. Otherwise unchanged."""
+    if not _PRON.search(out) or names_god(src) or names_god(prev_src) or _GOD_EN.search(out):
+        return out
+
+    def sub(m):
+        before = out[:m.start()].rstrip()
+        if not before or before[-1] in ".!?:\"“‘«(" or before.endswith(("—", "–")):
+            return m.group(0)                           # starts a sentence or a quotation
+        return m.group(0).lower()
+    return _PRON.sub(sub, out)
+
+
+# --- God put into a sentence that doesn't name Him (idea 23, the narrow part of the coverage check) ----
+# 2026-11-15 09:35 «a avut cancer… tot trupul i-a oprit de cancer» (cancer had spread through her body) →
+# "God stopped the cancer in her entire body"; 11:48 «dacă nu-i f[all] e l[ove]» → "if it is not the will
+# of God". On the whole service ~1 % of phrases have God / Lord / Jesus / Christ in the English and no word
+# for them in the Romanian; a retry costs ~0.7 s, so < 0.01 s per phrase on average.
+_GOD_ALLOW_RO = re.compile(r"\b(?:domn\w*|thomn\w*|laud\w*|slav\w*|binecuv\w*|aleluia|osana|stapan\w*|"
+                           r"voievod\w*|sus|ceresc\w*|tale)\b")
+_GOD_WORD_EN = re.compile(r"\b(?:God|Lord|Jesus|Christ)\b")
+
+
+def invented_god(src: str, out: str) -> bool:
+    """The English names God (God, Lord, Jesus, Christ) and the Romanian has no word for Him."""
+    if not _GOD_WORD_EN.search(out or "") or names_god(src):
+        return False
+    return not _GOD_ALLOW_RO.search(fold_diacritics(fix_cedilla(src or "").lower()))

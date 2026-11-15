@@ -294,6 +294,20 @@ def _day_ts(day: str, hms: str) -> float:
     return _clock(day, hms)
 
 
+def on_screen(ph: list[dict]) -> list[dict]:
+    """The phrases as the screen ended up showing them: a caption taken back by the next one (a verse
+    matched one piece late, `replaced_prev`; a word cut in two, `cut_word`) is not counted as shown."""
+    out = [dict(r) for r in ph]
+    last_ok = None
+    for i, r in enumerate(out):
+        if r.get("outcome") != "ok":
+            continue
+        if last_ok is not None and (r.get("replaced_prev") or r.get("cut_word")):
+            out[last_ok]["outcome"], out[last_ok]["replaced_by"] = "replaced", r.get("id")
+        last_ok = i
+    return out
+
+
 def judge(err: dict, phrases: list[dict], day: str, window: float = 25.0) -> tuple[str, str]:
     """('fixed' | 'still' | 'missing', the text found) for one known error."""
     t = _day_ts(day, err["t"])
@@ -336,7 +350,7 @@ def score(arg: str, errors_path: str | None, quiet: bool = False) -> dict:
     log, info = _run_log(arg)
     recs = _records(log)
     errs = _errors(errors_path)
-    ph = [r for r in recs if r.get("outcome")]
+    ph = on_screen([r for r in recs if r.get("outcome")])
     if not ph:
         sys.exit(f"{log}: no phrases")
     day = dt.datetime.fromtimestamp(ph[0]["t_start"]).date().isoformat()

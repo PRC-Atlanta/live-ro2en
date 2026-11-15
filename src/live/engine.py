@@ -95,7 +95,12 @@ CHURCH_PHRASES = ["slăvit să fie Domnul", "slăviți să fie", "lăudat să fi
                   # English inside Romanian: «Hellker» (healthcare) → "legal" / "illegal", «Sandis» (Sunday
                   # school), «bas» (bus) → "the game"
                   "împărăția lui Dumnezeu", "imanența", "falimentul", "robiți și învinși", "sintagmă",
-                  "healthcare", "Sunday school", "bus", "outside"]
+                  "healthcare", "Sunday school", "bus", "outside",
+                  # 2026-11-15 morning: a speaker's catchphrase «mărit să fie numele Lui» heard «mărească, ei sunt
+                  # numele» ×6, «chipul» (Col 1:15) → "chip" / "face", «slavei» → "slave", «pocăită» heard
+                  # «păcălită» → "cheated on" (a boost only: «păcălit» is a real word and is never rewritten)
+                  "mărit să fie numele Lui", "chipul lui Hristos", "slava Domnului", "slavei Domnului",
+                  "pocăit", "pocăită", "pocăiți"]
 
 class NemoSTT:
     """NeMo hybrid TDT/CTC model called directly: preprocessor + encoder on the Apple GPU
