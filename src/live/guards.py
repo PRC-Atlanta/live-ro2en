@@ -656,6 +656,7 @@ _GOD_RO_CAP = re.compile(r"\b(?:Domnul(?:ui)?(?!\s+(?:din\b|[A-ZĂÂÎȘȚ]\b|[A
                          r"(?<=[a-zăâîșț,] )(?:El|Lui|Său|Sale|Tu|Tău|Ta|Te|Ție))\b")
 _GOD_EN = re.compile(r"\b(?:God|Jesus|Christ|Holy Spirit|Spirit of God|Lord Jesus|Father in heaven|Savior|Saviour|"
                      r"Almighty|Lamb|Most High)\b")
+_MID_STOP = re.compile(r"\b(?:because|that|and|but|so|if|when|for|of|to|the|with|than|as)\.$", re.I)
 _PRON = re.compile(r"\b(You|Your|Yours|Yourself|Yourselves|He|Him|His|Himself)\b")
 
 
@@ -673,6 +674,8 @@ def lower_people(out: str, src: str, prev_src: str = "") -> str:
 
     def sub(m):
         before = out[:m.start()].rstrip()
+        if before.endswith(".") and _MID_STOP.search(before):
+            return m.group(0).lower()                   # "because. You saved my life": the recogniser's stop
         if not before or before[-1] in ".!?:\"“‘«(" or before.endswith(("—", "–")):
             return m.group(0)                           # starts a sentence or a quotation
         return m.group(0).lower()

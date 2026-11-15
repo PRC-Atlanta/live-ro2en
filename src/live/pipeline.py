@@ -78,7 +78,8 @@ SAY_END = frozenset(fold_diacritics(w) for w in
                     "învață învăța învățăm spune spunea zice zicea arată arăta cere cerea poruncește".split())
 _OBJECT_CLITIC = frozenset(fold_diacritics(w) for w in "îl il l o îi ii i le ne vă va te mă ma ți ti mi".split())
 _NU_ESTE = (("nu", "este"), ("nu", "e"), ("nu", "era"), ("nu", "sunt"))
-OPEN_GAP_S = 0.7
+OPEN_GAP_S = 1.0               # «nu este forma.» | «eșecului» came 0.99 s apart (bench 2026-11-15)
+OPEN_EXTRA_S = 6.0             # such a piece may merge past hold_max_s by this much («…pentru că iubește.» was 6.8 s)
 
 
 def open_end(text: str) -> bool:
@@ -136,8 +137,10 @@ def cut_word(prev_src: str, src: str, lex: set) -> str | None:
     while cp < min(len(w), len(v)) and w[cp] == v[cp]:
         cp += 1
     known = w in lex
-    one = (cp >= 3 and cp / len(w) >= 0.55 and len(v) >= len(w) - 1 and not (known and v.startswith(w))) \
-        or (not known and cp >= 2 and len(v) > cp)
+    # a real word needs a long shared start and a longer word after it («multe.» | «multiplice»); two
+    # real words of the same length are two words («bogat sau sărac.» | «sărat», bench 2026-11-15)
+    one = (known and cp >= 4 and cp / len(w) >= 0.6 and len(v) > len(w) and not v.startswith(w)) \
+        or (not known and cp >= 3 and len(v) > len(w))      # the lexicon lacks many inflected forms
     if not one:
         return None
     return f"{prev_src[:m1.start(1)].rstrip()} {src.lstrip()}".strip()
@@ -595,6 +598,8 @@ class PipelineMixin:
                                   or (self.lc.get("hold_dangling", True) and dangling(text)) or opened)
             short = not final and n < self.lc.get("hold_min_words", 4)
             limit = max(cap, float(self.lc.get("hold_max_s", 10.0) or 0)) if slow and cap else cap
+            if opened and limit:
+                limit = max(limit, float(self.lc.get("hold_max_s", 10.0) or 0) + OPEN_EXTRA_S)
             if (slow or short) and not (limit and ev["t_end"] - ev.get("t_speech", ev["t_start"]) > limit):
                 self._pending, self._pending_cap = ev, limit
                 wait = float(self.lc.get("hold_slow_s", 6.5)) if slow else self.lc.get("hold_s", 1.2)

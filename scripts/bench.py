@@ -491,6 +491,10 @@ def ref_score(arg: str, window_s: float = 20.0, quiet: bool = False) -> dict:
     t0 = info["segment_start_wall"]
     ph = [r for r in _records(log) if r.get("outcome") and "t_start" in r
           and (end is None or r["t_start"] - t0 < end + 1.0)]
+    # a word-cut redo's source holds the previous piece again (idea 25): that piece's words count once
+    by_id = {r.get("id"): r for r in on_screen(ph)}
+    ph = [r for r in ph if not (by_id[r.get("id")].get("outcome") == "replaced"
+                                and by_id.get(by_id[r.get("id")]["replaced_by"], {}).get("cut_word"))]
     ro = [tokens(r.get("source") or r.get("ro") or "") for r in ph]
     ref_ro = [tokens(x["ro"]) for x in lines]
     ref_words = [w for ws in ref_ro for w in ws]

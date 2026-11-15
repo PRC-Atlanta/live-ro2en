@@ -239,6 +239,26 @@ def cu_reference(src: str, out: str, chapter: int | None = None, verse: int | No
     return out
 
 
+def keep_persons(text: str, out: str, glossary) -> str:
+    """The people's names persons() found, put back where the English still used the Bible form:
+    «fratele Iosif» → "brother Joseph" (bench 2026-11-15, after the prompt line) → "brother Iosif"."""
+    if glossary is None:
+        return out
+    bible = {fold_diacritics(r["ro"].casefold()): r["en"] for r in getattr(glossary, "rows", [])
+             if r["ro"][:1].isupper() and r["ro"].casefold() != r["en"].casefold()}
+    for p in persons(text, glossary):
+        first, *rest = p.split()
+        en = bible.get(fold_diacritics(first.casefold()))
+        if not en or "/" in en:
+            continue
+        if rest:
+            out = re.sub(rf"\b{re.escape(en)}(?=\s+{re.escape(rest[0])}\b)", first, out)
+        else:
+            out = re.sub(rf"\b(brother|sister|Brother|Sister)\s+{re.escape(en)}\b", rf"\1 {first}", out)
+            out = re.sub(rf"\b{re.escape(en)}(?=,\s+[A-ZĂÂÎȘȚ])", first, out)   # «pe Moise, Ilie <surname>»
+    return out
+
+
 def tiny(text: str) -> bool:
     """A 1-2 character fragment ("T."): with context, Gemma translated the context instead."""
     return sum(c.isalnum() for c in text) <= 2
@@ -716,6 +736,7 @@ class MLXLLMTranslator:
             out = ""                              # "T." -> two sentences: not a translation of it
         out = postedit(out, tgt)
         if src == "ro" and tgt == "en":
+            out = keep_persons(text, out, glossary)
             ref = getattr(reading, "ref", None) if reading is not None else None
             out = cu_reference(text, out, getattr(ref, "chapter", None), getattr(ref, "verse", None))
         if not small and ctx and echoes_previous(text, out, ctx[-1]):

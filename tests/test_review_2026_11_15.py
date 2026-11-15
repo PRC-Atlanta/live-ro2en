@@ -186,7 +186,7 @@ def test_you_and_he_for_a_person_are_lower_case():
     out = G.lower_people("he said, sir, but what do You want from me, what do You want me to give You because. You "
                          "saved my life", "a spus, domnule, dar ce vrei de la mine, ce vrei să-ți dau pentru că. "
                          "mi-ai salvat viața", "")
-    assert out == ("he said, sir, but what do you want from me, what do you want me to give you because. You "
+    assert out == ("he said, sir, but what do you want from me, what do you want me to give you because. you "
                    "saved my life")
     assert G.lower_people("but that you serve Him. And by doing so", "ci să-l slujești. Și făcând așa",
                           "să ierți pe aproapele tău.") == "but that you serve him. And by doing so"
@@ -378,15 +378,16 @@ def test_new_words_after_the_same_end_are_kept(tmp_path):
     ("înainte de a parca.", "parcurge câteva versete", "înainte de a parcurge câteva versete"),
     ("această nepărere.", "neprihănire, Noi suntem", "această neprihănire, Noi suntem"),
     ("o realitate viabilă autor.", "autentică, e un mediu.", "o realitate viabilă autentică, e un mediu."),
-    ("fiind ordinat și păstrat.", "păstor, evanghelist", "fiind ordinat și păstor, evanghelist"),
     ("cu un scop precis să se multe.", "multiplice această iubire", "cu un scop precis să se multiplice această iubire"),
-    ("Domnul mi-a dat Harusus.", "harul să o scriu", "Domnul mi-a dat harul să o scriu"),
 ])
 def test_a_cut_word_is_carried_by_the_next_piece(a, b, joined):
     assert cut_word(a, b, LEX["ro"]) == joined
 
 
 @pytest.mark.parametrize("a,b", [("Este bine.", "Binecuvântat să fie Domnul"), ("suntem credincioși.", "Credința noastră"),
+                                 ("că ești bogat sau sărac.", "sărat, tu lupți"), ("trăiesc cu un Dumnezeu mare.", "măriți, ei sunt"),
+                                 ("trebuie să învețe diferența.", "dintre vocea lui Dumnezeu"), ("era erezie.", "eretic la marginea"),
+                                 ("fiind ordinat și păstrat.", "păstor, evanghelist"),
                                  ("slavă Domnul.", "Domnului Isus"), ("Amin.", "Aleluia")])
 def test_two_real_words_are_left_alone(a, b):
     assert cut_word(a, b, LEX["ro"]) is None
@@ -441,3 +442,30 @@ def test_an_invented_god_is_flagged_and_retried_without_it():
 ])
 def test_god_named_in_the_source_is_not_flagged(src, out):
     assert not G.invented_god(src, out)
+
+
+@pytest.mark.parametrize("text,out,want", [
+    ("fratele Dani și fratele Iosif vor fi", "brother Dani and brother Joseph will be", "brother Dani and brother Iosif will be"),
+    ("eu și împreună cu Iosif Popescu.", "I and together with Joseph Popescu.", "I and together with Iosif Popescu."),
+    ("pe Moise, Ilie Popescu.", "to Moses, Elijah Popescu.", "to Moise, Ilie Popescu."),
+    ("Iosif a fost vândut de frații lui", "Joseph was sold by his brothers", "Joseph was sold by his brothers"),
+])
+def test_the_bible_form_of_a_kept_name_is_put_back(text, out, want):
+    assert T.keep_persons(text, out, T.Glossary()) == want
+
+
+def test_a_capital_after_the_recogniser_s_stop_in_mid_sentence_is_lowered():
+    assert G.lower_people("what do you want me to give you because. You saved my life",
+                          "ce vrei să-ți dau pentru că. mi-ai salvat viața", "") == \
+        "what do you want me to give you because. you saved my life"
+
+
+def test_a_long_open_piece_still_waits_and_merges(tmp_path):
+    live = _live(tmp_path)
+    live.lang.set_mode("ro-en")
+    live.lc.update(phrase_min_words=0, hold_slow_s=30, hold_max_s=10, max_chunk_s=5.5)
+    t = time.time() - 30
+    live._on_clause(_clause(1, t, t + 6.8, ro="adică lumea îl urăște pe Hristos pentru că iubește."))
+    live._on_clause(_clause(2, t + 7.1, t + 13.6, ro="păcatul. Și un om a spus adevărul lui Dumnezeu."))
+    live._drain()
+    assert len(_log(live)) == 1 and _log(live)[0]["source"].endswith("iubește. păcatul. Și un om a spus adevărul lui Dumnezeu.")
