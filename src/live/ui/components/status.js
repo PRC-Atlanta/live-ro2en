@@ -65,7 +65,7 @@ export function voicePill(s) {
   const v = s.voice;
   if (!v || !v.enabled || v.state === "off") return null;
   const ro = v.listeners?.ro ?? 0, en = v.listeners?.en ?? 0;
-  const n = S.pills.voice.listeners(ro, en, !!v.en);
+  const n = S.pills.voice.listeners(ro, en, !!v.en && !v.mix);   // one mixed stream: one number
   if (v.state === "stopped") return ["err", S.pills.voice.stopped];
   if (v.state === "starting") return ["warn", S.pills.voice.starting];
   if (v.state === "behind") return ["warn", S.pills.voice.behind(v.behind_s ?? 10, n)];

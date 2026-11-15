@@ -30,7 +30,7 @@ START_GRACE_S = 60.0                                   # the model loads and war
 STATE_EVERY_S = 1.0
 BEHIND_S = 10.0                                        # the light turns amber past this
 LOG_MAX = 20_000_000
-SENT_KEYS = ("enabled", "en", "voices", "steps", "threads", "port", "bitrate_kbps", "preroll_s", "gap_s", "speed", "per_addr",
+SENT_KEYS = ("enabled", "en", "mix", "voices", "steps", "threads", "port", "bitrate_kbps", "preroll_s", "gap_s", "speed", "per_addr",
              "speed_max", "speed_lag_lo_s", "speed_lag_hi_s", "speed_step", "speed_round", "limit_s", "skip_s",
              "summary_timeout_s", "summary_min_words", "rehearsal", "max_clients", "host")
 
@@ -509,7 +509,8 @@ class VoiceMixin:
             "enabled": self.voice_enabled(), "state": light, "behind_s": behind,
             "listeners": {"ro": int((langs.get("ro") or {}).get("listeners") or 0),
                           "en": int((langs.get("en") or {}).get("listeners") or 0)},
-            "en": en_on, "url": self.voice_url() if self.voice_enabled() else None,
+            "en": en_on, "mix": en_on and bool(self.voice_cfg().get("mix", True)),
+            "url": self.voice_url() if self.voice_enabled() else None,
             "port": self._voice_port or int(self.voice_cfg().get("port", 8767)),
             "model": self.voice_model_ready() if self.voice_enabled() else None,
             "summarizer": self._voice_can_summarize() if self.voice_enabled() else False,

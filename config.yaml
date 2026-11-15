@@ -143,7 +143,8 @@ voice:
   enabled: false
   port: 8767
   voices: {ro: M2, en: M2}   # Supertonic 3 preset voice per language
-  en: {enabled: true}        # the English stream (/listen/en) is on with Live Voice
+  en: {enabled: true}        # English is spoken too (the translation of a Romanian speaker)
+  mix: true                 # one stream at /listen, both languages taking turns (false: /listen/ro + /listen/en)
   steps: 8
   speed: 1.25           # normal speed
   speed_max: 1.5        # most it speeds up to when behind (§4.3)

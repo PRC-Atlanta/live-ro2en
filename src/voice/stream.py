@@ -1,5 +1,5 @@
-"""Live Voice streams (docs/live_voice_plan.md §4.2, §14): one continuous MP3 per language, served to
-phones on the church Wi-Fi.
+"""Live Voice streams (docs/live_voice_plan.md §4.2, §14): one continuous MP3 (both languages taking
+turns, the default) or one per language, served to phones on the church Wi-Fi.
 
   Channel   the ring of the last 30 s of MP3 bytes of one language
   Server    a small HTTP/1.1 server (asyncio, one thread): GET / (listener page), GET /listen,
@@ -40,6 +40,7 @@ CSP = ("Content-Security-Policy: default-src 'none'; media-src 'self'; connect-s
        "style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\r\n"
        "Referrer-Policy: no-referrer\r\n")
 ROUTES = {"/listen": "ro", "/listen/ro": "ro", "/listen/en": "en"}
+MIX = "mix"                        # the one mixed stream: every /listen route plays it
 
 
 def private(addr: str) -> bool:
@@ -206,14 +207,16 @@ class Server:
             if method in ("GET", "HEAD") and target == "/":
                 return await self._reply(writer, 200, b"" if method == "HEAD" else self.page,
                                          "text/html; charset=utf-8", length=len(self.page))
-            if method in ("GET", "HEAD") and target in ROUTES and ROUTES[target] in self.channels:
+            route = self._route(target)
+            if method in ("GET", "HEAD") and route is not None:
                 if method == "HEAD":
-                    return await self._reply(writer, 200, b"", "audio/mpeg", length=None,
-                                             extra="X-Voice-Rehearsal: 1\r\n" if self.rehearsal else "")
-                return await self._listen(reader, writer, addr, ROUTES[target])
+                    extra = ("X-Voice-Rehearsal: 1\r\n" if self.rehearsal else "") \
+                        + ("X-Voice-Mix: 1\r\n" if route == MIX else "")
+                    return await self._reply(writer, 200, b"", "audio/mpeg", length=None, extra=extra)
+                return await self._listen(reader, writer, addr, route)
             if method == "POST" and target == "/stats" and self.rehearsal:
                 return await self._stats(reader, writer, addr, headers)
-            if target == "/" or ROUTES.get(target) in self.channels or (target == "/stats" and self.rehearsal):
+            if target == "/" or route is not None or (target == "/stats" and self.rehearsal):
                 return await self._reply(writer, 405, b"method not allowed\n")
             return await self._reply(writer, 404, b"not found\n")
         except (ConnectionError, asyncio.CancelledError, OSError):
@@ -223,6 +226,14 @@ class Server:
                 writer.close()
             except Exception:                              # noqa: BLE001
                 pass
+
+    def _route(self, target: str) -> str | None:
+        """The channel a /listen path plays: the mixed one for all of them when there is one."""
+        if target not in ROUTES:
+            return None
+        if MIX in self.channels:
+            return MIX
+        return ROUTES[target] if ROUTES[target] in self.channels else None
 
     async def _reply(self, writer, code: int, body: bytes, ctype: str = "text/plain; charset=utf-8",
                      length: int | None = -1, extra: str = ""):

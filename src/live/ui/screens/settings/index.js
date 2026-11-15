@@ -208,7 +208,7 @@ export function render(el, store) {
         if (app) app.postMessage({}); else window.print();
       });
       const addrBox = h("div.fx-sec.fx-voicecard", h("span.fx-label", "Address for listeners"),
-        h("p.fx-text", "Listeners join the church Wi-Fi, scan this code (or type the address) and tap Ascultă în română or Listen in English. No app and no password."),
+        h("p.fx-text", "Listeners join the church Wi-Fi, scan this code (or type the address) and tap Ascultă · Listen. One stream: the Romanian translation when English is spoken, the English one when Romanian is. No app and no password."),
         h("div.fx-row", qr, h("div", addr, h("p.fx-hint", "Give this Mac a fixed address on the church router, or the code stops working when the address changes."))),
         h("div.fx-row.noprint", print));
       const testMsg = note();
@@ -229,7 +229,8 @@ export function render(el, store) {
                       speaking: "Speaking", behind: "Behind the speaker: speaking faster and shortening", stopped: "Stopped" };
       onState = s => {
         const v = s.voice || {};
-        const n = v.listeners ? `${v.listeners.ro} listening in Romanian, ${v.listeners.en} in English` : "";
+        const n = !v.listeners ? "" : v.mix || !v.en ? `${v.listeners.ro + v.listeners.en} listening`
+          : `${v.listeners.ro} listening in Romanian, ${v.listeners.en} in English`;
         const missing = v.enabled && v.model === false;
         status.textContent = missing ? "The voice is not downloaded yet."
           : v.state === "stopped" ? `Stopped${v.error ? `: ${v.error}` : ""}. Captions are not affected.`

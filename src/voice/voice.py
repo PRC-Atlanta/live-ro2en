@@ -152,9 +152,14 @@ class Voice:
         self.cfg = dict(cfg)
         self.clock_error: str | None = None
         self.langs = [l for l in LANGS if l == "ro" or (cfg.get("en") or {}).get("enabled", True)]
+        # One mixed stream (default): only one direction is spoken at a time, so both languages take
+        # turns in one MP3 at /listen. Each language keeps its own queue and pacing; the play clock gives
+        # the stream to one of them at a time (_floor). mix false = one stream per language (§14).
+        self.mix = bool(cfg.get("mix", True)) and len(self.langs) > 1
         self.pace = {l: pacing.Pace(cfg) for l in self.langs}
         self.players = {l: Player(l, self._played) for l in self.langs}
-        self.channels = {l: stream.Channel(l, int(cfg.get("bitrate_kbps", 64))) for l in self.langs}
+        outs = [stream.MIX] if self.mix else self.langs
+        self.channels = {o: stream.Channel(o, int(cfg.get("bitrate_kbps", 64))) for o in outs}
         self.encoders = {}
         self.server: stream.Server | None = None
         self.synth = synth
@@ -223,7 +228,7 @@ class Voice:
 
     def on_config(self, cfg: dict):
         self.cfg.update({k: v for k, v in cfg.items() if k not in ("port", "threads", "voices", "steps", "en",
-                                                                   "bitrate_kbps")})
+                                                                   "bitrate_kbps", "mix")})
         for p in self.pace.values():
             p.configure(self.cfg)
         if self.server is not None:
@@ -408,7 +413,7 @@ class Voice:
             return
         with player.lock:
             queued = list(player.queue)
-        d = pace.plan(s, now, player.play_free(now), [q.view() for q in queued],
+        d = pace.plan(s, now, self._play_free(lang, now), [q.view() for q in queued],
                       summarizer=bool(self.state.get("summarizer")))
         pause, item, summarize_s = pace.c["gap_s"], None, 0.0
         if d["lag"] > pace.c["limit_s"]:
@@ -491,6 +496,36 @@ class Voice:
         with self.wake:
             return self.current_stale
 
+    def _play_free(self, lang: str, now: float) -> float:
+        """When `lang`'s next item could start. In the mixed stream the other language's item playing and
+        its queue come first (one stream, one voice at a time)."""
+        free = self.players[lang].play_free(now)
+        if not self.mix:
+            return free
+        for other in self.langs:
+            if other == lang:
+                continue
+            p = self.players[other]
+            with p.lock:
+                waiting = sum(q.audio_s for q in p.queue)
+            free = max(free, p.play_free(now)) + waiting
+        return free
+
+    def _floor(self) -> Player:
+        """Mixed stream: which language's play clock runs now. The one already speaking keeps it to the
+        end of its item; otherwise the language whose next item was ready first (a switch lets the old
+        language's queue finish before the new one starts, in the order they were generated)."""
+        players = [self.players[l] for l in self.langs]
+        best, best_t = None, None
+        for p in players:
+            with p.lock:
+                if p.cur is not None:
+                    return p
+                t = getattr(p.queue[0], "gen_end", 0.0) if p.queue else None
+            if t is not None and (best_t is None or t < best_t):
+                best, best_t = p, t
+        return best or players[0]
+
     # --- play clocks and streams --------------------------------------------------------------------
     def _played(self, it: Item, played_s: float):
         """Called by the play clock when an item ends: only noted here. Writing to the orchestrator and
@@ -536,13 +571,14 @@ class Voice:
                 t0, n = now, 0
                 due = now
             wall = time.time() - (now - due)
-            for lang in self.langs:
+            for out in self.channels:
                 try:
-                    pcm = self.players[lang].frame(wall)
-                    data = self.encoders[lang].encode(pcm)
-                    self.channels[lang].put(data, stream.FRAME)
+                    player = self._floor() if self.mix else self.players[out]
+                    pcm = player.frame(wall)
+                    data = self.encoders[out].encode(pcm)
+                    self.channels[out].put(data, stream.FRAME)
                     if data and self.server is not None and n % NOTIFY_EVERY == 0:
-                        self.server.notify(lang)
+                        self.server.notify(out)
                 except Exception as e:                      # noqa: BLE001
                     self.errors += 1
                     self.clock_error = f"{type(e).__name__}: {e}"[:200]
@@ -557,7 +593,8 @@ class Voice:
             waiting = [j[1] for j in self.inbox if j[0] == "sentence"]
         making = self.current                           # the sentence being generated counts as queued:
         for lang in self.langs:                         # "nothing to say" must not be true while one is on its way
-            p, ch = self.players[lang], self.channels[lang]
+            p = self.players[lang]
+            ch = self.channels[stream.MIX if self.mix else lang]
             with p.lock:
                 cur, queue = p.cur, list(p.queue)
             behind = None
@@ -568,7 +605,8 @@ class Voice:
                     (s.get("spk_end") for s in waiting if s.get("lang") == lang), None)
                 if nxt:
                     behind = now - nxt
-            langs[lang] = {"listeners": ch.listeners, "peak": ch.peak,
+            first = not self.mix or lang == self.langs[0]   # mixed: the one stream's listeners count once
+            langs[lang] = {"listeners": ch.listeners if first else 0, "peak": ch.peak if first else 0,
                            "queue_n": len(queue) + sum(1 for s in waiting if s.get("lang") == lang)
                            + (1 if making is not None and making.get("lang") == lang else 0),
                            "queue_s": round(sum(q.audio_s for q in queue), 1),
@@ -583,6 +621,7 @@ class Voice:
                 "behind_s": max(behind) if behind else None,
                 "playing_sid": next((v["playing_sid"] for v in langs.values() if v["playing_sid"] is not None), None),
                 "rtf_recent": round(gen / aud, 3) if aud else None, "errors": self.errors, "langs": langs,
+                "mix": self.mix,
                 "clock_age_s": round(now - self.clock_t, 2),
                 "counts": dict(self.counts)}
 
@@ -603,7 +642,7 @@ class Voice:
                                      voices={l: (cfg.get("voices") or {}).get(l, "M2") for l in self.langs},
                                      steps=int(cfg.get("steps", 8)))
             self.synth.warm_up(self.langs)
-        self.encoders = {l: stream.Encoder(int(cfg.get("bitrate_kbps", 64))) for l in self.langs}
+        self.encoders = {o: stream.Encoder(int(cfg.get("bitrate_kbps", 64))) for o in self.channels}
         self.server = stream.Server(self.channels, host=str(cfg.get("host", "0.0.0.0")), port=int(cfg.get("port", 8767)),
                                     preroll_s=float(cfg.get("preroll_s", 1.0)),
                                     max_clients=int(cfg.get("max_clients", 300)),
@@ -615,9 +654,9 @@ class Voice:
         for fn, name in ((self.clock_loop, "voice-clock"), (self.gen_loop, "voice-gen"),
                          (self.status_loop, "voice-status"), (self.report_loop, "voice-report")):
             threading.Thread(target=fn, daemon=True, name=name).start()
-        self.log({"event": "start", "port": self.server.port, "langs": self.langs,
+        self.log({"event": "start", "port": self.server.port, "langs": self.langs, "mix": self.mix,
                   "cfg": {k: v for k, v in cfg.items() if k != "log"}})
-        emit({"type": "ready", "port": self.server.port, "langs": self.langs})
+        emit({"type": "ready", "port": self.server.port, "langs": self.langs, "mix": self.mix})
         return True
 
 

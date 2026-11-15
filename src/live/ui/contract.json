@@ -12,7 +12,7 @@
                                  "summaries_refused": "int", "cut": "int", "peak_listeners": {"object": {"ro": "int", "en": "int"}}}},
     "no_key": {"object": {"error": {"enum": ["no_key"]}, "detail": "str"}},
     "voice": {"object": {"enabled": "bool", "state": {"enum": ["off", "starting", "ready", "speaking", "behind", "stopped"]},
-                         "behind_s": "num|null", "listeners": {"object": {"ro": "int", "en": "int"}}, "en": "bool",
+                         "behind_s": "num|null", "listeners": {"object": {"ro": "int", "en": "int"}}, "en": "bool", "mix": "bool",
                          "url": "str|null", "port": "int", "model": "bool|null", "summarizer": "bool", "error": "str|null",
                          "session": "@voice_summary"}},
     "phase": {"enum": ["needs_setup", "loading", "ready", "starting", "listening", "captioning", "stopping", "stopped", "unloading", "error"]},

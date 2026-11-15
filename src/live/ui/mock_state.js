@@ -30,7 +30,7 @@ export function baseState() {
     ai: { selected: "local", state: "local", available: true, key_source: "keychain", model: "claude-haiku-5-5",
           reason: null, down_s: null, latency_median_s: null,
           used: { ai: { phrases: 0, s: 0 }, local: { phrases: 0, s: 0 }, local_fallback: { phrases: 0, s: 0 } } },
-    voice: { enabled: false, state: "off", behind_s: null, listeners: { ro: 0, en: 0 }, en: true, url: null, port: 8767,
+    voice: { enabled: false, state: "off", behind_s: null, listeners: { ro: 0, en: 0 }, en: true, mix: true, url: null, port: 8767,
              model: null, summarizer: false, error: null,
              session: { items: 0, delay_median_s: null, within_10s_pct: null, summaries: 0, summaries_refused: 0, cut: 0,
                         peak_listeners: { ro: 0, en: 0 } } },
