@@ -94,8 +94,9 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   A standing list (fundraiser, bake sale, hallway, loan, shoebox, Samaritan's Purse, Operation
   Christmas Child, B3, the church's group names) for the decoder boost and the glossary would end
   the repeats; they come every few weeks.
+- **Seen again after done (2026-11-15 morning, logs `2026-11-15_081707` / `_094327` / `_102255`, P1): a standing names list would have fixed the guest's home.** «<city>, **<US state>**» heard as a Romanian woman's name 3× (10:25:30 "brother <surname> comes from **<name>**", 10:42:23 "the church in <city>, <name>", 11:41:32 "<name>'s pineapple"); Bible-name and people's-name slips are under idea 6. Places the guests come from could go in Names & words with the guests' names.
 
-## 3. Bible references: show the published verse — `done` — stream D: announced references tell Gemma the verse (step 1); stream H: verses recognised by their words are captioned with WEB / Cornilescu (step 2) · 2026-10-25: paraphrase not spliced, short verse words held, a verse matched one piece late redoes the previous caption, trailing mis-heard verse words dropped · 2026-11-09: no verse twice within ~30 pieces, tail completed, «N cu M»
+## 3. Bible references: show the published verse — `done` — stream D: announced references tell Gemma the verse (step 1); stream H: verses recognised by their words are captioned with WEB / Cornilescu (step 2) · 2026-10-25: paraphrase not spliced, short verse words held, a verse matched one piece late redoes the previous caption, trailing mis-heard verse words dropped · 2026-11-09: no verse twice within ~30 pieces, tail completed, «N cu M» · 2026-11-15: a verse matched one part late replaces it, caption ends at the speaker's break, «N cu M» across a stop or a piece
 
 - **Evidence:** readings are announced ("Evrei, capitolul 6, versetul 10", "Proverbe,
   capitolul 19, versetul 22", "2 Corinteni 5 cu 7") and then read slowly in fragments, the case
@@ -226,6 +227,8 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   last captioned verse span and never caption it again within ~2 min unless re-announced; a verse fragment under 4 words
   needs an announced reference; map «X cu Y» to X:Y also when X ends the previous piece. Effort: small.
 - **Done 2026-11-09 (branch `fix/2026-11-08-evening`):** a verse shown in the last ~30 pieces is not captioned again (unless the reference is announced again); when a verse match ends 1-3 words before the verse's end, the caption takes the verse to its end and those words are dropped from the next piece; «N cu M» after the book = chapter N verse M, «cu M» after an announced chapter = verse M; a fragment under 4 words is captioned only inside the announced reference. **Bench** (19:13:55 clips, 39 marked errors): still wrong 17 → 16 (Heb 11:2 tail no longer repeated; Proverbe 24 cu 10 still uncertain, the replay starts after the book was named); luigi-mitoi chrF++ 62.56 → 62.51, BLEU 35.11 → 35.15 (noise); Gemma 0.64/1.04 → 0.64/1.05 s, recogniser 0.23/0.26 s.
+- **Seen again after done (2026-11-15 morning, logs `2026-11-15_081707` / `_094327` / `_102255`, P1): verses doubled, spliced or mis-referenced ~16 times** (full list in "Rest of Sunday 2026-11-15" below). Doubled: 09:54:12 John 7:37-38 ("I am the living water," He said, … “If anyone is thirsty…”), 09:55:50 John 10:9 "I am the door, I am the door", 10:41:57 Eph 1:3 "the Father of our Lord Jesus Christ, be the God and Father of our Lord Jesus Christ", 11:51:56 Jer 31:3, 11:55:12 John 1:18, 11:59:59 Rev 2:4 "But what I have against you is that But I have this against you". Spliced: 09:12:39 / 09:32:32 Isa 56:1 "…do what is right, **for my**" (verse tail where the speaker stopped), 09:15:53 "who holds it fast; **who keeps** And may God help…", 09:54:52 "John 6:35 **to them,** “I am the bread of life". References: 09:33:37 «26 cu 24» → "26 with 24", 10:41:36 «Coloseni 1 cu. 13 și 14» → "1 with. 13 and 14", 11:55:07 «cu 18» → "with 18", 11:51:10 «Romani 2 cu 4» heard «Romani 4, 2 cu 4» → "**Romans 4:2, 4**" (the wrong verse), 11:49:36 «Efeseni 5» → "**FS 5**". The doubles look like Gemma translating the verse from the source and the matcher then adding the published text: the published verse should *replace* Gemma's caption of the same words, not follow it; and «N cu M» needs to survive a full stop or a piece break between the numbers.
+- **Done 2026-11-15 (branch `fix/2026-11-15-morning`):** a verse matched one part late (`replace_prev` on a later part of the same phrase) drops the translator's caption of the part before it when that part says the verse again (John 10:9, Eph 1:3, Rev 2:4); a redo across phrases keeps only the previous parts that don't repeat the verse (John 7:37); a caption ends at the published text's break when the speaker stopped there and never on my/your/his… ("for my", "who keeps"), and doesn't start on a 1-2 word fragment ("out, “If anyone"); «Geneza.» | «26 cu 24» and «Ioan 1, 18» | «cu 18» keep the reference, «1 cu. 13» loses the recogniser's stop, "N with M" in the English becomes N:M. The bench now scores a caption a redo replaced as not shown (it was counted twice). **Bench** (11-15 clips, 61 marked errors, still wrong on main → branch: 40 → 10; luigi-mitoi chrF++ 62.62 → 62.44, BLEU 35.36 → 35.15, WER 4.82 → 4.82 %; Gemma 0.68/1.23 → 0.69/1.21 s, recogniser 0.29/0.49 → 0.29/0.44 s median/p90). Still wrong 6 → 0: no doubled verse, "Genesis 26:24".
 
 ## 4. Give Gemma its own previous translations as context — `done` — stream D: Gemma sees its own previous (source, translation) pairs and continues cut sentences · 2026-11-09: an echo of the previous caption is retranslated without context
 
@@ -423,7 +426,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   A day-month range («13-27 noiembrie» → "November 13-27") and a day repeated after the month need a
   rule before the digits are joined; "a hundred and fifty" should become 150 before NLLB.
 
-## 6. Words that are also names — `done` — stream D: today's names and glossary names are kept as written · 2026-10-25: «Fratele» alone no longer brings in saved names; «fratele Ilie Puha» kept; Iacov = Jacob in Old Testament context
+## 6. Words that are also names — `done` — stream D: today's names and glossary names are kept as written · 2026-10-25: «Fratele» alone no longer brings in saved names; «fratele Ilie Puha» kept; Iacov = Jacob in Old Testament context · 2026-11-15: a Bible first name after fratele/sora or before a surname kept, put back where the English used the Bible form
 
 - **Evidence:** "Dragoș" (name, also "dear") → "Sweetie"; "Casa Dânșiilor" (their house,
   capitalised by the recogniser) → "the House of Dancers"; "Hayomin".
@@ -453,6 +456,8 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   "**for** / **on** brother pastor…" (the accusative «pe» translated as a preposition), and «următorii
   **frați**» → "the following **brothers and sisters**" (only men were named). The list itself
   is good material for a standing names file (12 full names; kept in the local log, not here).
+- **Seen again after done (2026-11-15 morning, logs `2026-11-15_081707` / `_094327` / `_102255`, P1): people's names turned into Bible names again, ~14 times.** «Iosif <surname>» / «cu Iosif» → "**Joseph**" 3× (10:42:48, 10:46:08, 11:10:09; the same name kept as Iosif at 10:25:24 and 11:18:28, so it was known), «fratele Ilie» → "brother **Elijah**" (10:45:02), a child «Moise, Ilie <surname>» → "**Moses, Elijah**" (10:44:18), «Iulian» → "Julian" once (10:45:56, kept elsewhere). Invented or misheard names: 11:57:39 «pe tata» → "**Doru**", 12:02:15 «a transformat apa» (P…) → "**Pamphil**", 09:34:54 «Ghedeon» → "**Cheon**", 09:57:52 Charlie Kirk → "Charlie **Crick**", 09:50:33 / 09:51:08 a quoted preacher "Raal" / "Rael". **Change (still open from the 11-01 entry):** a first name after «fratele / sora / pe / cu» or before a capitalised surname stays as said; the welcome's names (guests named at 10:25) could be learned for the rest of the service like idea 26's repair, but only to keep them, never to rewrite other words.
+- **Done 2026-11-15 (branch `fix/2026-11-15-morning`):** a Bible first name after «fratele / sora» (also alone: «fratele Ilie,»), before a capitalised surname anywhere («cu Iosif <surname>»), or listed just before such a person («pe Moise, Ilie <surname>») goes on the Names line, and is put back where the English still has the Bible form ("brother Joseph" → "brother Iosif"); a surname ending -ul/-lui (Tișbitul) is an epithet. **Bench** (11-15 clips, 61 marked errors, still wrong on main → branch: 40 → 10; luigi-mitoi chrF++ 62.62 → 62.44, BLEU 35.36 → 35.15, WER 4.82 → 4.82 %; Gemma 0.68/1.23 → 0.69/1.21 s, recogniser 0.29/0.49 → 0.29/0.44 s median/p90). Still wrong 3 → 0: "brother Ilie", "Iosif <surname>", "brother Iosif".
 
 ## 7. Glossary misses in Quickest — `done` — via the glossary rows (stream D) and NLLB only where it is good
 
@@ -486,7 +491,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   decode with special tokens skipped. Add a test.
 - **Effort:** tiny.
 
-## 9. Church terms the translator gets wrong: add them to the glossary — `done` — stream D: glossary rows + `data/bible_books.csv` · 2026-10-25: inflected forms matched (after exact ones); rows fiori, cântare, minister, Gosen, împărat · 2026-11-09: evening rows (rânduit, trimitere, cauze, între gratii…)
+## 9. Church terms the translator gets wrong: add them to the glossary — `done` — stream D: glossary rows + `data/bible_books.csv` · 2026-10-25: inflected forms matched (after exact ones); rows fiori, cântare, minister, Gosen, împărat · 2026-11-09: evening rows (rânduit, trimitere, cauze, între gratii…) · 2026-11-15: rows răstignește, firesc, ferească Domnul de, înviora, s-au săturat de, cultul + gen., patimi, cursă, răpire, nefăcându-ți parte, chip, slavei
 
 - **Evidence:** "slujbă de priveghi" (the wake / vigil service; the recogniser writes
   "privechi") → "the service of the elders" (2026-10-23 20:43 and 2026-10-24 11:39, both in
@@ -588,6 +593,8 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   ca și (rol) = as, a-și pironi ochii, rânduit = ordained/appointed, robi = slaves, trimitere = commission, a avea viitor,
   până la liman, cauze = prayer requests. Effort: tiny.
 - **Done 2026-11-09 (branch `fix/2026-11-08-evening`):** idioms între gratii, ca și (părinți…), a-și pironi ochii, a avea viitor, până la liman; glossary rânduit = ordained / appointed (scheduled only for people on a list), robi / robii, trimitere = commission, cauze / cauzele = prayer requests. **Bench:** evening still wrong 16 → 12 (ne-a rânduit ×2, Biserica are viitor, trimitere now right; tot felul de, robii logicii, are clopotul lui, citim 5 versete still wrong); luigi-mitoi chrF++ 62.65 → 62.62, BLEU 35.38 → 35.36 (noise); Gemma 0.64/1.03 → 0.64/1.04 s (evening 0.64/1.07 → 0.65/1.07), recogniser 0.23/0.26 s.
+- **Seen again after done (2026-11-15 morning, logs `2026-11-15_081707` / `_094327` / `_102255`, P1): church words and idioms read the opposite way, heard right, ~11 times.** 11:59:28 «aceiași oameni… să zică **răstignește**» (Crucify!) → "**repent**"; 12:05:19 «biserica **firească**» (the carnal church, Laodicea) → "the church, **the faithful**"; 12:04:37 «te voi păzi… **nefăcându-ți parte**» (sparing you from it) → "by **making you a part**"; 11:56:21 «**ferească** Domnul de predicatori care…» (God save us from) → "May the Lord **protect** the preacher"; 11:29:24 «ne mai **înviorăm**» (we're refreshed) → "we get **discouraged** again"; 11:40:38 «s-au **săturat** oamenii de vopsele» (people are fed up with) → "have **fed** people with paint"; 11:42:27 «Nu este extraordinar?» → "It is **not** extraordinary."; 12:06:59 «s-a dus vremea **cultelor** importanței» (the cult of importance) → "the time of **worship** has passed"; 10:59:54 «în **patimile** lor» (their vices) → "in their **sorrows** and in their joys"; 12:01:17 Prov 29:25 «o **cursă**» → "a **race**" again (row from 11-01 not yet in); 11:49:12 «o **răpire** sufletească» (rapture) → "a spiritual **kidnapping**". **Rows:** răstignește = crucify; firesc / firească (church) = carnal / worldly; a feri / ferească Domnul de = God forbid / God save us from; a se înviora = to be refreshed / revived; s-au săturat de = are fed up with; cultul (+ genitive) = the cult of; patimi = passions / vices; cursă = snare; răpire (church) = rapture; a nu face parte / nefăcându-ți parte = sparing you; prompt line: a «Nu este…?» question stays a question.
+- **Done 2026-11-15 (branch `fix/2026-11-15-morning`):** glossary răstignește = crucify, firesc / firească / firești = carnal, worldly, patimi(le) = passions, vices, cursă = snare, răpire(a) = rapture, chip(ul) = image, likeness, slavei = of the glory; idioms ferească Domnul de = God save us from, a se înviora = to be refreshed, s-au săturat de = are fed up with, cultul + genitive = the cult of, nefăcându-ți parte = sparing you, domnule doctor, Cel Prea Înalt = the Most High; a «Nu este …?» question stays a question (prompt line + a note for a sentence that is only «Nu este + word»). **Bench** (11-15 clips, 61 marked errors, still wrong on main → branch: 40 → 10; luigi-mitoi chrF++ 62.62 → 62.44, BLEU 35.36 → 35.15, WER 4.82 → 4.82 %; Gemma 0.68/1.23 → 0.69/1.21 s, recogniser 0.29/0.49 → 0.29/0.44 s median/p90). Still wrong 13 → 1: crucify, carnal, God forbid, refreshed, tired of, vices, snare, rapture, image ×2, glory ×2 now right; «vremea cultelor.» still "worship" (the replay's recogniser dropped «importanței», so the row didn't apply).
 
 ## 10. Empty-phrase fallback misses short Romanian words — `done` — stream B
 
@@ -598,7 +605,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   unless it scores as English (< 0).
 - **Effort:** tiny.
 
-## 11. Prayer language: idioms and the pronoun for God — `done` — stream D: `data/idioms.csv` injected when present; one rule for You/you · 2026-11-09: capital only when about God, speaker's person kept (prompt; evening cases not yet fixed)
+## 11. Prayer language: idioms and the pronoun for God — `done` — stream D: `data/idioms.csv` injected when present; one rule for You/you · 2026-11-09: capital only when about God, speaker's person kept (prompt; evening cases not yet fixed) · 2026-11-15: domnule / domnul + name = sir, Mr.; You/He lower-cased with no God word near
 
 - **Evidence (2026-10-24 11:41, prayer, Best):** "te rugăm frumos" (we humbly / earnestly pray)
   → "we ask beautifully"; "fiorul Duhului Tău" (the stirring/touch of Your Spirit) → "the
@@ -653,8 +660,10 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   He/You only when the referent is God in this sentence; a «mai există» after a demonstrative refers to the thing, not
   God. Bench on these pairs. Effort: small.
 - **Done 2026-11-09 (branch `fix/2026-11-08-evening`):** prompt rule: capital You/He only when the sentence speaks of or to God; keep the speaker's person (I stays I). **Bench:** evening unchanged at 16 still wrong (the four person-as-God lines still capitalised: the rule alone is not enough, a post-check is the next step); luigi-mitoi chrF++ 62.51 → 62.64, BLEU 35.15 → 35.36 (best of the series); Gemma 0.64/1.05 → 0.64/1.04 s, recogniser 0.23/0.26 s.
+- **Seen again after done (2026-11-15 morning, logs `2026-11-15_081707` / `_094327` / `_102255`, P1): «domnul / domnule» (sir, Mr.) as "Lord" and capital You/He for people, ~13 times, most in one story.** 11:00:32 «Domnule <initial>…» → "**the Lord**", 11:00:48 "but why, **Lord** B?", 11:04:21 "the **Lord** B", 11:05:00 «Sunați-l pe domnul din America» (call the gentleman in America) → "**Hear the Lord from America**", 11:01:58 «Domnule, te-ai ținut de cuvânt» (said to the preacher) → "**Lord, You** are a man of **Your** word"; a drunk man speaking to the preacher gets "You" at 10:58:38, 10:58:42, 10:59:26, 11:03:43; 09:16:30 the devil → "that is what **He** teaches us"; 09:26:28 hands → "we do not lift **Him** up"; 09:06:51 the brother praying → "accompany **Him**". **Change:** «domnule», «domnul + name/initial», «domnul din…», «domnule doctor» = sir / Mr. (idiom rows + prompt line); capital You/He only when the sentence names God (the 11-09 prompt rule isn't enough: a post-check that lower-cases You/He when the piece has no God word and the previous piece didn't either).
+- **Done 2026-11-15 (branch `fix/2026-11-15-morning`):** «domnule», «domnul + name/initial», «domnul din …» (not cer/ceruri), «domnule doctor» = sir / Mr. (prompt line + a note in the piece); post-check: You/Your/He/Him/His lower-cased (not at a sentence start, but after the recogniser's "because.") when neither this Romanian piece nor the previous one names God (Dumnezeu, Doamne, Domnul not before a name, Isus, Hristos, Tatăl, Duhul, a mid-sentence capital El / Lui…) and the English doesn't either (`live.pronoun_check`). **Bench** (11-15 clips, 61 marked errors, still wrong on main → branch: 40 → 10; luigi-mitoi chrF++ 62.62 → 62.44, BLEU 35.36 → 35.15, WER 4.82 → 4.82 %; Gemma 0.68/1.23 → 0.69/1.21 s, recogniser 0.29/0.49 → 0.29/0.44 s median/p90). Still wrong 8 → 4: "Mr. B", "the gentleman from America", the drunk man's "you" throughout now right; the four left all have a God word in the piece or the one before ("serve Him" next to «Cuvântul lui Dumnezeu», "lift Him up before God", "grow up with Him" after «Tată», "where He was not alive" after «Hristos a înviat»), as the rule allows. Risk: a prayer that goes two pieces without naming God gets lower-case "you".
 
-## 12. Language detection: check the Romanian recogniser before switching — `done` — stream B: the Romanian transcript as a second vote, English heard only by Parakeet translated, length floor back home · 2026-11-10: Romanian said in English mode is captioned from the Romanian transcript, two in a row switch back
+## 12. Language detection: check the Romanian recogniser before switching — `done` — stream B: the Romanian transcript as a second vote, English heard only by Parakeet translated, length floor back home · 2026-11-10: Romanian said in English mode is captioned from the Romanian transcript, two in a row switch back · 2026-11-15: no EN→RO caption from a piece with 2+ non-English words (a lone fallback piece: any)
 
 - **Evidence (2026-10-24 11:42:5x, all-Romanian service, auto):** during a prayer the
   multilingual model wrote Romanian speech as "Family PUV, the most as court and the first
@@ -687,6 +696,8 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   Effort: medium.
 - **Plan (2026-11-09, not built):** the gate already switches to the Romanian transcript when the English piece fails the gate (`gate_switched`), but these pieces passed it: Parakeet's romanised words (FSN, capitolopatru, Parinsi) are not in the English lexicon yet are few enough. (1) In `Pipeline._screen`, when lang = en and `ev["ro"]` exists, compute the English lexicon share of Parakeet's text and the Romanian share of the Romanian text; take the Romanian text (log `gate_switched`) when Romanian's share is ≥ 0.2 higher and its `lang_score` > 0.15, even if the English text was kept. (2) Count two such switches in a row as a vote for Romanian in `lang.update`, so the way back from English takes seconds, not a minute (19:17). (3) Tests from the evening lines (Efeseni 4:17, voi părinții, Praise the Lord); replay the log offline (it holds both transcripts) for the false-switch count on English pieces of the 10-24, 10-25 and 11-08 logs, then bench the English part of the 19:13:55 clips. Effort: medium (1 day).
 - **Built 2026-11-10 (branch `live-voice`):** parts (1) and (2) of that plan, in `pipeline._gate` (`romanian_inside_english`, log fields `gate_switched` + `ro_inside_en`, count `ro_inside_en`) and `LangTracker.go_home`. In auto mode with Romanian as the home language, an English-mode phrase is captioned from the Romanian recogniser's transcript when that transcript has ≥ 3 words, reads as Romanian (`lang_score` > 0.15) and its real-word share beats the English text's by ≥ 0.2; two such phrases in a row switch the language back to Romanian. `live.ro_inside_en: false` turns it off; a locked language never second-guesses. **Offline replay** (`scripts/idea12_replay.py`, both transcripts are in each log record): on the pure-English Alex sermon 0 of 104 phrases switched, in two runs (0 false switches of 208); on the 2026-10-24 eulogy 4 of 70, all four Romanian said in English mode («Oamenii lui Dumnezeu e greu de înțeles», «Dragoș Puha a finanțat… evanghelizări», «Slavă lui Dumnezeu că mai simțim»). One of the four is half English ("It's okay to cry because you loved your dad"), and that half is lost with the switch: a phrase is one language. **Not done from part (3):** the 2026-11-08 evening log and the 19:13:55 clips are not on this Mac (`logs/services/2026-11-08_173244.jsonl`, `logs/recordings/2026-11-08_191355.wav`), so the Efeseni 4:17 / «voi, părinții» / "Prashisa Lord" lines were not replayed; run `scripts/idea12_replay.py <that log>` where they are. «That chair pent through Voi Parinsi» would not switch (the phrase is mostly real English). For Live Voice this is the fix for the first known limit of `docs/live_voice_plan.md` §12 (Romanian inside an English chunk voiced as English), and the two-in-a-row vote shortens the second (the voice talking on over the speaker's Romanian).
+- **Seen again after done (2026-11-15 morning, logs `2026-11-15_081707` / `_094327` / `_102255`, P1): two Romanian pieces taken as English and captioned in Romanian.** 09:33:37 Gen 26:24 read in fast Romanian, heard by Parakeet as "She shall kut the children." → «**Ea va tăia copiii.**» (she will cut the children, during Scripture); 09:37:14 «Ghedeon a coborât la apă cu 300…» → "Get one coborila up cu tre de woman." → «Ia un coborila în sus cu femeia.». Both a lone piece between Romanian ones, both with non-English tokens («kut», «coborila», «cu», «tre»); the app switched back at once. **Change:** a lone switch piece is captioned from the Romanian transcript when that reads as Romanian (the 11-10 `romanian_inside_english` rule, applied to the *first* English piece too), and never EN→RO from a piece with ≥ 2 non-English tokens.
+- **Done 2026-11-15 (branch `fix/2026-11-15-morning`):** both wrong switches came through the "English the Romanian model missed" fallback with an empty Romanian transcript, so the 11-10 rule had nothing to compare (it already runs on the first English piece otherwise): that lone piece must now be all English words («kut» was the only foreign word in "She shall kut the children."), and in English mode a piece with 2+ lower-case non-English words is not captioned (`low_confidence`, reason `not_english`). Tests cover both live lines; the replay didn't switch on either, on main or the branch, so the bench can't show it. **Bench** (11-15 clips, 61 marked errors, still wrong on main → branch: 40 → 10; luigi-mitoi chrF++ 62.62 → 62.44, BLEU 35.36 → 35.15, WER 4.82 → 4.82 %; Gemma 0.68/1.23 → 0.69/1.21 s, recogniser 0.29/0.49 → 0.29/0.44 s median/p90).
 
 ## 13. English → Romanian: grammar, wrong-language words, idioms — `done` — stream E: translator per direction; Best uses NLLB for EN→RO (bench: 21/22 vs 20/22, 1.45 s vs 2.25 s)
 
@@ -972,6 +983,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   sentence. **Change:** drop a piece of ≤ 2 tokens that is not a sentence on its own (no verb, ends in «-l.» or is a
   letter scrap), and gate per clause (morning note). Effort: small.
 - **Done 2026-11-09 (branch `fix/2026-11-08-evening`):** Romanian scraps dropped before translation (logged `scrap`): ≤ 2 words that are all function words, or a single word of ≤ 3 letters not on a short list (da, nu, amin…); questions, exclamations and numbers kept. **Bench:** evening still wrong 12 → 11 («să-l.» → "call out." gone; «Appius în creiere» has 3 words, still shown); 448 → 447 shown; luigi-mitoi unchanged (chrF++ 62.62, BLEU 35.36, 431 shown); Gemma 0.64/1.04 s, recogniser 0.23/0.26 s.
+- **Seen again after done (2026-11-15 morning, logs `2026-11-15_081707` / `_094327` / `_102255`, P2), with idea 20: echoes and scraps shown, ~12.** Scraps: 10:42:32 «col.» → "col.", 10:52:59 «Lorenbl.» → "Lorenbl.", 11:05:16 «La primul botez de la Ag.» → "of the Ag.", 12:10:38 «orașase.» (ora șase) → "**cities.**", 11:56:24 «9, Matter what» → "9, Whatever happens", 11:58:33 «Gua». Echoes (idea 20) below.
 
 ## 18. Songs: don't caption garbled lyrics — `done` — stream C: Song key; automatic detection available but off (no measurable gain on the bench) · 2026-10-25: an «odd capitalised words» gate was tried and dropped (it passed the garbled song, "Baba" is a known name, and blocked a real list of names)
 
@@ -1048,7 +1060,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   speaker: freeze or ignore frames while a song is detected/keyed. Small; bench on the
   09:39 clip (mark below) and a quiet-then-loud rehearsal.
 
-## 20. Cut phrases by words, not seconds, for slow speakers — `done` — stream C: `phrase_min_words` 6 in Best, no phrase ending on a preposition · 2026-10-25: a one-word echo of the previous phrase's last word is dropped (`echo_word`)
+## 20. Cut phrases by words, not seconds, for slow speakers — `done` — stream C: `phrase_min_words` 6 in Best, no phrase ending on a preposition · 2026-10-25: a one-word echo of the previous phrase's last word is dropped (`echo_word`) · 2026-11-15: 2-3 word echoes of the previous piece's last 5 words dropped
 
 - **Evidence (2026-10-24 12:43, an emotional speaker with long pauses):** "dragă comunitate
   din." | "Atlanta, frați și surori…" | "aduc condoleanțe din." | "partea familiei mele…" |
@@ -1071,6 +1083,8 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   "**suferința.** Când noi…" → "…more than suffering" | "**suffering.** When we think…": the
   title word echoed into the next piece with a different ending (ă/a), so `echo_word` missed
   it. Compare the echo without the final vowel / article.
+- **Seen again after done (2026-11-15 morning, logs `2026-11-15_081707` / `_094327` / `_102255`, P2): multi-word echoes pass `echo_word`.** 09:38:26 «madularele ei.» → "her limbs." (after "…her body and her limbs."); 10:00:07 «îmbolnăvești de inimă.» → "you will suffer from heart disease." (after "…fall ill from your heart."); 12:04:05 «a eclesia.» → "the church."; 12:05:57 «cu toate.» → "with everything."; 12:03:52 «toate» → "all". **Change:** drop a piece of ≤ 3 words whose words (without endings/diacritics) are all in the last 5 words of the previous piece.
+- **Done 2026-11-15 (branch `fix/2026-11-15-morning`):** a piece of 2-3 words, right after the previous one, whose words (first 5 letters, no diacritics) are all in that piece's last 5 words is dropped as `echo_word`. **Bench** (11-15 clips, 61 marked errors, still wrong on main → branch: 40 → 10; luigi-mitoi chrF++ 62.62 → 62.44, BLEU 35.36 → 35.15, WER 4.82 → 4.82 %; Gemma 0.68/1.23 → 0.69/1.21 s, recogniser 0.29/0.49 → 0.29/0.44 s median/p90). Still wrong 1 → 0 ("you will suffer from heart disease" twice).
 
 ## 21. Smoother caption flow: reveal words at speaking pace — `done` — word-paced reveal + smooth roll-up (2026-10-24); the display window also lays out its own lines
 
@@ -1108,7 +1122,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   1-2 character fragments to the translator at all (idea 17).
 - **Effort:** tiny.
 
-## 23. Meaning slips in Quality: a dropped word, a misread time phrase, a wrong person — `idea` · 2026-10-25: idiom rows (de două zile, după-masa, ani de zile, te rog frumos = please); the coverage check (b) not done
+## 23. Meaning slips in Quality: a dropped word, a misread time phrase, a wrong person — `idea` · 2026-10-25: idiom rows (de două zile, după-masa, ani de zile, te rog frumos = please); the coverage check (b) not done · 2026-11-15: narrow coverage check (God named in the English, not in the source) built; the full check (b) planned
 
 - **Evidence (2026-10-25, Quality, sermon on the ten virgins; marked in the recording):**
   - 09:09:24 "Celelalte nechibzuite ce spune Biblia, plecați că nu vă cunosc." → "The others, as
@@ -1191,6 +1205,8 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
 - **Effort:** (a) tiny; (b) medium (needs a RO→EN word map or Gemma self-check, watch latency);
   (c) small but risky (false fixes when the speaker really speaks in the 1st person). Bench on
   the marked clips.
+- **More evidence (2026-11-15 morning, logs `2026-11-15_081707` / `_094327` / `_102255`, P1): Gemma writes a sentence of its own over a garbled or cut piece, ~5 times, twice about God.** 09:35:22 «tot trupul i-a [cuprins] de cancer» (cancer had spread through her whole body) → "**God stopped the cancer** in her entire body" (the next pieces say God healed her later: the caption ran ahead and invented); 10:48:15 «[să-i dea] puteri **nemaipomenite** care vin de sus» (extraordinary strength from above) → "**let us remember those** who come from above"; 12:03:17 «**dor**, Dor. D.» (longing, the sermon's point) → "**crown, crown**" (2 Tim 4:8 was just named; Gemma took the verse's word); 11:48:12 «dacă nu-i f[all] e l[ove]» (English *fall in love*) → "if it is not **the will of God**"; 09:34:26 «Domnul s-a… [arătat]. Isa, i-a zis fii pe pace» (Judg 6:23) → "**Isaiah**, he said to **the sons of peace**". The coverage check (b) would flag the first two (content words with no source); the third needs the Scripture hint not to override the source word.
+- **Done (narrow part) 2026-11-15 (branch `fix/2026-11-15-morning`):** God / Lord / Jesus / Christ in the English with no word for Him in the Romanian (and no domn-/laud-/slav-/binecuv- word) is retried without context with a note, like a negation. Flags 0.1 % of this morning's phrases (exactly "God stopped the cancer" and "the will of God") and 0-0.2 % of the 11-08 logs: < 0.01 s per phrase. **The full coverage check (b), planned, not built:** an English content word with no Bible-lexicon link or cognate in the source flags 20-41 % of phrases (3+ / 4+ such words), i.e. +0.15-0.3 s per phrase in retries, over the 0.1 s budget; it needs a better word lexicon than the Bible one first. The replay didn't reproduce either invented line on main, so the bench can't show the effect; tests cover it.
 
 ## 24. Translation got slower with the richer prompt: cache the fixed part — `done` (2026-10-25): prompt-prefix KV cache, median 2.18 → 1.68 s on 14 phrases, identical output
 
@@ -1213,7 +1229,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   spent on the longer prompts (notes, more glossary rows) and the extra guard tries; recognition
   varied ±0.15 s between runs (not the new phrase boost: the same without it).
 
-## 25. A Romanian word cut in two at a piece boundary is translated as two words — `idea`
+## 25. A Romanian word cut in two at a piece boundary is translated as two words — `partly done` (2026-11-15): the previous caption is redone when its last word was the start of this piece's first
 
 - **Evidence (2026-10-25 evening, Quality; marked in the recording):**
   - 18:11:09 "…vrea să ne păzim și noi de **auto**." | "**autoînșelare**. Ne putem înșela…" →
@@ -1267,6 +1283,8 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   «omul lui Dumnezeu» → "the man of God", «cartea omului lui Dumnezeu X» → "the book of X".
 - **Effort:** (a) small (string check on the last/first word, both are in hand before the
   translation); (b) small, segmentation rule, watch delay; (c) tiny. Bench on the marked clips.
+- **More evidence (2026-11-15 morning, logs `2026-11-15_081707` / `_094327` / `_102255`, P2): words cut at a piece boundary, ~10.** 10:49:44 «înainte de a **parca.** | **parcurge** câteva versete» → "before we **park**"; 09:59:46 «poate să se **cuplu.** | **cutremure**» → "can be **joined**. | shake"; 11:06:16 «această **nepărere.** | **neprihănire**» → "this **helplessness**"; 11:39:31 «viabilă **autor.** | **autentică**» → "a viable reality, **author**"; 11:09:12 «ordinat și **păstrat.** | **păstor**» → "ordained and **kept**"; 11:43:44 «să se **multe.** | **multiplice**» → "to be **many**"; 10:58:59 «hanul de **poposire.** | **popostire**» → "inn" twice; 11:53:38 «Harusus. | harul» → "Harusus." | "**the spring**"; 11:56:03 «muncă din asta **orcoolică.** | **alcoolică**» (workaholic) → "enters into a work of this kind of..." | "**alcoholic**"; 12:01:26 «**Dul** nu poate» (Duhul) → "**The world** cannot". The (a) rule (a last word that the next piece's first word starts with, or not in the lexicon, is dropped and carried) covers 8 of the 10.
+- **Done (a) 2026-11-15 (branch `fix/2026-11-15-morning`):** when the next piece follows within 0.7 s and its first word continues the previous caption's last word (4+ shared letters and a longer word for a known word, 3+ for an unknown one), the previous piece without that word and this one are translated again as one, in place of the previous caption (`live.cut_word_redo`). The first rule (2+ letters) fired on real word pairs on the sermons («bogat sau sărac.» | «sărat», «Dumnezeu mare.» | «măriți»), so it was tightened: 9 of the first run's 24 redos remain, 5 clear fixes, 4 harmless repeats. **Bench** (11-15 clips, 61 marked errors, still wrong on main → branch: 40 → 10; luigi-mitoi chrF++ 62.62 → 62.44, BLEU 35.36 → 35.15, WER 4.82 → 4.82 %; Gemma 0.68/1.23 → 0.69/1.21 s, recogniser 0.29/0.49 → 0.29/0.44 s median/p90). Still wrong 3 → 1: "authentic", "multiply" now right; «cuplu.» | «cutremure» (a real word, 2 shared letters) still "joined"; «păstrat.» | «păstor» is no longer caught.
 
 ## 26. Name repair turns a real word into today's name: «înșeală» → «Ionela» — `done` (2026-10-25): a lower-case word with no cue needs sound ratio ≥ 0.85 and is never a name after nu/ne/te/se/să…; bench on all 14 logs with the saved names: 12 → 6 repairs, the 6 false ones gone (Ionela ×4, Barbu, Dragoș), the 6 real kept · **reopened `next` 2026-11-01**: correct names repaired into saved ones (a man's first name → a woman's saved name)
 
@@ -1412,7 +1430,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   app gets its own feed: the speaking mics only, no effects, summed to one channel. Auto gain is
   judged again on a recording of that feed before its default changes.
 
-## 28. Romanian recogniser mishears common sermon words — `partly done` (2026-11-09): evening words boosted + English loanwords kept; imanența / falimentul still misheard
+## 28. Romanian recogniser mishears common sermon words — `partly done` (2026-11-09): evening words boosted + English loanwords kept; imanența / falimentul still misheard · 2026-11-15: «Christmas» → «Hristos» in Romanian; mărit să fie numele Lui, chipul lui Hristos, slava/slavei Domnului, pocăit/ă/i boosted
 
 - **Evidence (2026-11-01 morning, Quality, log `2026-11-01_090734`; captions paused, so
   recognition only; marked in the recording):**
@@ -1505,6 +1523,8 @@ this morning": 4× today, systematic for this speaker. `CHURCH_PHRASES` row:
   glossary keeps them in English, morning's done item); an unknown capitalised word next to «considerat» should go to
   the translator as unknown, not guessed. Effort: tiny.
 - **Partly done 2026-11-09 (branch `fix/2026-11-08-evening`):** `CHURCH_PHRASES` + glossary: împărăția lui Dumnezeu, imanența, falimentul, robiți și învinși, sintagmă; healthcare, Sunday school, bus, outside kept in English. **Bench:** evening still wrong 21 → 20 («bas» → bus now uncertain instead of "the game"); imanența → "His Eminence" and falimentul → "the thread" still misheard (the boost isn't enough against a closer word; needs acoustic adaptation or a repair rule); WER luigi-mitoi 4.79 → 4.82 %, br-random-1 6.42 → 6.47 %, nelu-suciu 5.37 → 5.37 % (+1-2 words, noise); chrF++ 62.55 → 62.56; Gemma 0.64/1.05 s, recogniser 0.23/0.26 s.
+- **More evidence (2026-11-15 morning, logs `2026-11-15_081707` / `_094327` / `_102255`, P1): the recogniser's misses this Sunday, each a wrong line (details in the live notes below).** A speaker's catchphrase «**mărit să fie numele Lui în veci**» heard «mărească, ei sunt numele în veci» / «Măria că ei sunt…» ×6 (09:33:08 "great, they are the names forever", 09:35:54 "**Mary**, for that is the name forever", 09:37:52 "Increase, for they are the old names"); the sermon's key word «**chip**» (Col 1:15, image) → "what **a face**", "what **chip**", "this **chip** of Christ", "**the face** of Christ" (11:33:00, 11:33:39, 11:34:18, 12:01:30); «**slavei**» → "**the slave** of the Lord Jesus Christ" ×2 (09:59:09, 10:00:51); «**Hristos**» → «Christmas» ×2 shown (09:10:19 "Christmas.", 11:29:00 "**Christmas is risen!**": the side effect of keeping English loanwords, 11-09); «**pocăit/pocăită**» → «păcălit» ×2 (10:55:45 "an old man who had been **deceived**", 11:02:22 "his wife was being **cheated on**"); 09:10:11 «aude» → "**dare**". English inside Romanian (guest pastor): 11:47:50 / 11:48:12 *fall in love* → "F. in **the lava**", "**the will of God**"; 11:49:31 *cheating* → "**citing**"; 09:51:11 *small sparks will kindle fire* → "Smalls Park, Will Kindle, fire." (shown as is); 09:52:17 *fail and destruction* → "Fal and Destruction". **Change:** «Christmas» is never kept in Romanian mode (→ «Hristos» unless «Crăciun» is near); `CHURCH_PHRASES`: mărit să fie numele Lui, chipul lui Hristos, slavei / slava Domnului, pocăit / pocăită / pocăiți (boost only; never rewrite «păcălit», idea 2's lesson); glossary chip (church) = image / likeness; English idioms a bilingual preacher uses (fall in love, cheating, fail) for the loanword list.
+- **Done 2026-11-15 (branch `fix/2026-11-15-morning`):** «Christmas» in a Romanian piece is «Hristos» unless «Crăciun» is in it or the piece before ("Operation Christmas Child" kept); `CHURCH_PHRASES` + mărit să fie numele Lui, chipul lui Hristos, slava / slavei Domnului, pocăit / pocăită / pocăiți (boost only). **WER phrase by phrase** (the recogniser alone on the three corrected sermons, each phrase group added to the stock list): luigi-mitoi 5.25 %, br-random-1 6.87 %, nelu-suciu 6.78 % for the stock list and for every group and all of them (not one word changed; the replay's full-pipeline WER 4.82 / 6.49 / 5.37 % → 4.82 / 6.38 / 5.20 %). On this morning's audio the boost turns «păcăită / păcăliți» into «pocăită / pocăiți»; «mărit să fie numele Lui» needs weight 2 (one of three then right), which writes names into garbled audio, so it stays at 1; «slavei» and «chip» were heard right (their errors were translation, idea 9). **Bench** (11-15 clips, 61 marked errors, still wrong on main → branch: 40 → 10; luigi-mitoi chrF++ 62.62 → 62.44, BLEU 35.36 → 35.15, WER 4.82 → 4.82 %; Gemma 0.68/1.23 → 0.69/1.21 s, recogniser 0.29/0.49 → 0.29/0.44 s median/p90). Still wrong 3 → 2: "Christ is risen!" now right; the catchphrase still "old names".
 
 ## 29. The empty-phrase fallback let Portuguese through: «churrasco» in the communion prayer — `next`
 
@@ -1843,7 +1863,7 @@ Captions mostly on Hide during readings and songs; notes from the captioned stre
 - **Clips:** recording from 19:13:55 only; 17:35-19:13 (Romanian exhortation with most reversed meanings)
   exists only in the log.
 
-## 35. Meaning reversed at Romanian piece boundaries and in negative idioms (Best, Gemma) — `done` (2026-11-09): hold on «nu», idioms, negation per sentence; bench: 5 of its 7 marked evening errors right, was 2
+## 35. Meaning reversed at Romanian piece boundaries and in negative idioms (Best, Gemma) — `done` (2026-11-09): hold on «nu», idioms, negation per sentence; bench: 5 of its 7 marked evening errors right, was 2 · 2026-11-15: open pieces held (bare transitive verb, «nu este + noun», one-word last sentence); tag-question negation
 
 - **Evidence (2026-11-08 evening, log `2026-11-08_173244`, Best, shown; the 17:35-19:13 part has no recording, 19:13:55 on is in
   `logs/recordings/2026-11-08_191355.wav`):**
@@ -1867,6 +1887,8 @@ Captions mostly on Hide during readings and songs; notes from the captioned stre
   starts with «n-» / «nu». Bench on the corrected sermons and the 19:13+ clip.
 - **Effort:** small (a, b), medium (c).
 - **Done 2026-11-09 (branch `fix/2026-11-08-evening`):** (a) a Romanian piece ending on «nu / nici / n-» or «nu mai» is held for the next piece; (b) idioms nu de puține ori, nu se cade, uitați-vă / uitați ce zice, uităm, trăim, nu mai; (c) the negation guard compares sentence by sentence when source and translation have the same number of sentences (with (a), «nu» no longer sits across two pieces, so the cross-pair check wasn't needed). **Bench:** evening still wrong 23 → 21 (Job 2:10 «nu se cade», «uităm», «uitați ce zice» now right; «ne face să uităm» → "let us forget" still wrong, «trăim» uncertain); luigi-mitoi chrF++ 62.54 → 62.55, BLEU 35.12 → 35.12, WER 4.79; Gemma 0.64/1.04 → 0.64/1.03 s (evening 0.63/1.04 → 0.64/1.06), recogniser 0.23/0.26 → 0.23/0.25 s.
+- **Seen again after done (2026-11-15 morning, logs `2026-11-15_081707` / `_094327` / `_102255`, P1): meaning reversed when the negation or the object arrives in the next piece, ~9 times.** 09:56:47 / 09:56:50 «singurul mijlocitor. **Maria.** | **nu Maria**, nu toți sfinții» → "He is the mediator, the only mediator. **Mary.**" (Mary on screen as the mediator, the «nu» in the next piece); 09:57:40 / 09:57:52 «lumea îl urăște pe Hristos pentru că **iubește.** | **păcatul**» → "because it **loves Him**." (the object «păcatul» next); 11:44:45 / 11:44:56 «Nimicul în împărăție **nu este forma.** | **eșecului**» → "Nothing in the kingdom **is** the form."; 09:16:30 / 09:16:33 «așa ne învață. | stăpânitorul lumii acesteia» → "that is what **He** teaches us" (the devil as God); 09:16:39 «**nu face** bine, nu face [ce] e drept» (the tempter: don't do good) → "**it is not good, it is not right**"; 09:06:19 / 09:06:23 «lăudat. | să fie Domnul» → "may the Lord be His"; 09:09:49 / 09:09:53 «să. | fim aici» → "**finish** here"; 09:27:24 «[Eram] poate plecați în veșnicie nepregătiți» (we might have gone into eternity unprepared) → "**He can take you away** forever". And a lost «n-»: 09:37:00 «[Ghedeon] **n-a** învins cu 22.000 de persoane, nu?» (he did *not* win with 22,000) → "**I defeated them** with 22,000 people, didn't I?" (the tag "didn't I" satisfied the guard). **Change:** 35(a) holds only a *trailing* «nu»; also hold a piece that ends on a bare transitive verb (iubește, urăște, învață, spune) or «nu este + noun» when the next piece starts within ~0.7 s, or give Gemma the next piece's first 3-4 words as look-ahead before committing; the guard counts «n-» in the source against a tag question in the English as no negation.
+- **Done 2026-11-15 (branch `fix/2026-11-15-morning`):** a Romanian piece that ends on a bare transitive verb (iubește, urăște, învață, spune…), on «nu este + noun» or on a one-word last sentence («… mijlocitor. Maria.») waits for the next piece when it starts within 1.0 s (0.99 s seen), merging up to hold_max_s + 6 s (`live.hold_open_end`); the guard (idea 5) counts «n-» answered only by an English tag question as a lost negation (a sharper note, then NLLB) and flags a negative statement turned into a question («N-ai vrea…» → "Wouldn't you like"). **Bench** (11-15 clips, 61 marked errors, still wrong on main → branch: 40 → 10; luigi-mitoi chrF++ 62.62 → 62.44, BLEU 35.36 → 35.15, WER 4.82 → 4.82 %; Gemma 0.68/1.23 → 0.69/1.21 s, recogniser 0.29/0.49 → 0.29/0.44 s median/p90). This idea's marked errors still wrong 4 → 2: "didn't I?" now "I did not defeat 22,000 people, right?", «Nu este extraordinar» "Isn't it wonderful?", «N-ai vrea» "You would not want"; «iubește. | păcatul» and «nu este forma. | eșecului» are now merged but Gemma keeps the recogniser's full stop at the join ("loves Him. sin."): next step, drop that stop when merging. Cost: 1.5 % of pieces held, ~5 s more for those (median), 0.08 s averaged over all pieces (from the live log).
 
 ## 36. A sermon's key phrase is wrong every time it is said: «puțin credincioșilor», «sintagmă» — (a, b) `done` (2026-11-09), (c) `idea`
 
@@ -1882,3 +1904,104 @@ Captions mostly on Hide during readings and songs; notes from the captioned stre
   to the operator as a suggested Names & words entry.
 - **Effort:** (a, b) tiny; (c) medium.
 - **Done (a, b) 2026-11-09 (branch `fix/2026-11-08-evening`):** glossary rows puțin credincios / credinciosule / credincioșilor / credincioși / credinciosului = of little faith; a verse match that stops 1-3 words before the verse's end is completed (idea 3); sintagmă in `CHURCH_PHRASES` (idea 28). (c) open. **Bench:** evening still wrong 20 → 17 (three «puțin credincioșilor» lines now "you of little faith"; 19:50:59 uncertain); luigi-mitoi unchanged (chrF++ 62.56, BLEU 35.11); Gemma 0.64/1.05 → 0.64/1.04 s, recogniser 0.23/0.26 s.
+
+## Live notes, Sunday 2026-11-15 (installed app 0.1.3, Best, log `2026-11-15_081707`)
+
+The service started at 09:04. The first recording (`2026-11-15_074054.wav`) stopped at 08:33 while the band rehearsed, so
+09:04-09:22 was read from the log afterwards and has **no audio**; recording again from 09:22:21 (`2026-11-15_092221.wav`).
+Placeholders: `<name>` for people.
+
+- **«Christmas» from the Romanian recogniser (idea 28, side effect of keeping English loanwords):** 09:10:19 «ne cheamă pe
+  fiecare. **Christmas.** Fiul lui Dumnezeu» → "calls each one of us. **Christmas.**" (meant «Hristos»); the rehearsal
+  songs had «doar **Christmas**» / «doar Cristos» too (08:18:42). Change: never keep "Christmas" as a loanword in Romanian
+  mode (or map it to «Hristos» unless «Crăciun» context); a Christmas sermon in December would also want this checked.
+- **Bible verse doubled / spliced (idea 3), three times in 10 minutes:** 09:12:39 «Păziți ce este drept. și faceți ce este
+  bine.» → "**the Word of God speaks.** The Lord says: “Maintain justice and do what is right, for my" (the previous
+  caption's "the Word of God speaks" repeated, verse cut on "for my"); 09:14:23 → "is near **and my righteousness** will
+  soon be revealed" (previous caption already ended "and my righteousness"); 09:15:53 «care rămâne statornic în el. Și
+  Dumnezeu să ne ajute…» → "who holds it fast; **who keeps** And may God help…" (verse tail spliced onto the preacher's
+  own words: Isa 56:2 quoted only up to «statornic în el»).
+- **God's capital on the devil (idea 11), meaning reversed:** 09:16:30 «să fim egoiști, așa ne învață / stăpânitorul lumii
+  acesteia» → "to be selfish, that is what **He** teaches us" — the subject («the ruler of this world») came in the next
+  piece, so Gemma assumed God. 09:06:51 «să **îl** însoțim» (the brother praying) → "to accompany **Him**". Change: no
+  capital He when the subject isn't named yet; hold a piece ending on «ne învață / ne spune» without a subject (idea 35a).
+- **Imperatives / person changed:** 09:12:23 «faceți!» → "**Come!**" (echo of the previous "Come, come…"); 09:16:39
+  «nu face bine, nu face e drept» (the whisper: don't do good) → "**it is not good, it is not right**"; 09:16:16
+  «dă-ne, Doamne» → "give **me**, Lord"; 09:17:07 «fă așa, așa, așa» dropped; 09:05:27 «N-am făcut nimic» (we) → "**I** have
+  done nothing".
+- **Boundary cuts (idea 25 / 35):** 09:06:23 «lăudat. / să fie Domnul Lui» → "**may the Lord be His**"; 09:09:53 «să. / fim
+  în dimineața aceasta aici» → "**finish** here this morning".
+- **Word meanings / recogniser:** 09:10:11 «aude și ascultă» → "**dare** and listen"; 09:11:27 «într-o **amorțeală**»
+  (numbness) → "in a state of **death**"; 09:10:51 «C e mare ne-a făcut Hristos» (Ce chemare mare, misheard) → "It is great
+  that Christ has made us"; 09:12:50 «fiecare în dreptul lui» (each one personally) → "each in **his own right**" (literal,
+  twice); 09:21 «celui **prea înalt**» (the Most High) → "the One who is **too high**" (idea 9 row: Cel Prea Înalt = the
+  Most High).
+- **Rehearsal (08:17-08:31, paused):** 1-2 word song pieces took 9-10 s each («pe. veci.» 9.2 s → "neighbor», «Hristos,
+  speră.» 10.0 s) while longer lines took ~1.7 s, raising "captions behind" alerts every few minutes. Not seen (Hide),
+  but the cause is worth finding (a hold that waits for more words and times out?).
+
+### Rest of Sunday 2026-11-15 (09:22-12:10, marked in `2026-11-15_092221.wav`)
+
+Three speakers before the sermon, a guest preacher's 30-minute word (10:39-11:09) and a guest pastor's sermon (11:28-12:07,
+Col 1:13-15). Placeholders: `<name>`, `<surname>`, `<state>` for people and places.
+
+- **Meaning reversed (idea 35), the worst kind, ~20 times:** 09:56:39 «El este… singurul mijlocitor. Maria. / nu Maria, nu
+  toți sfinții» → "He is the only mediator. **Mary.**" (the «nu» came after the word, in the next piece); 09:57:31 «lumea îl
+  urăște pe Hristos pentru că iubește. / păcatul» → "because it **loves Him**." (object in the next piece); 11:44:40
+  «Nimicul în împărăție nu este forma. / eșecului» → "Nothing in the kingdom **is** the form."; 12:05:13 «N-ai vrea să faci
+  parte din Laodiceea» → "**Wouldn't you like** to be part of the odiceea"; 11:56:21 «ferească Domnul de predicatori care…»
+  (God save us from) → "May the Lord **protect** the preacher…"; 11:42:22 «Nu este extraordinar?» → "It is **not**
+  extraordinary."; 11:29:23 «ne mai înviorăm» → "we get **discouraged** again"; 11:40:31 «s-au săturat oamenii de vopsele»
+  (fed up with) → "have **fed** people with paint"; 10:01:20 «prietenii… vă zic contrariul» → "**I** tell you the opposite";
+  09:36:52 «n-a învins cu 22.000» → "I defeated them with 22,000"; 09:35:13 «tot trupul i-a [cuprins] de cancer» → "**God
+  stopped** the cancer"; 09:31:55 (song) «și-a întins mâna» → "He did **not** stretch out His hand"; 11:59:28
+  «Răstignește-l!» → "**repent**"; 12:06:49 «s-a dus vremea cultelor importanței» → "the time of **worship** has passed".
+  New shape: the negation or the object arrives **after** the word in the next piece («X. / nu X», «iubește. / păcatul»,
+  «nu este forma. / eșecului»), so 35a's hold on a trailing «nu» doesn't catch it. Change: hold a piece that ends on a bare
+  transitive verb or a predicate noun and starts the next with «nu»/an object (or let Gemma see the next piece's first
+  3-4 words before committing, the lookahead idea); a rhetorical «Nu este…?» stays a question.
+- **«domnul / domnule» (sir, Mr.) → "Lord", capital You/He for people (idea 11), 15+ times in one story:** 11:00:26
+  "the Lord", 11:00:41 / 11:04:14 "Lord B", 11:04:56 «Sunați-l pe domnul din America» → "Hear **the Lord** from America",
+  11:01:52 «Domnule, te-ai ținut de cuvânt» → "Lord, You are a man of Your word", 10:58:27-11:03:37 a drunk man talking
+  to the preacher gets "You" throughout; 09:16:30 the devil gets "He teaches us"; 09:26:23, 11:07:17, 11:38:24, 11:29:15
+  "Him/He" for hands, a neighbour, a model, an area of life. Change: «domnule» / «domnul + name» / «domnul din…» is
+  "sir / Mr." (rule + idiom row); capital only when the referent is God (11, still open from the 11-08 evening).
+- **Bible verses doubled / spliced / not matched (idea 3), 12+:** doubled 09:54:08 (John 7:37), 09:55:43 John 10:9 ("I am
+  the door, I am the door"), 10:41:47 Eph 1:3, 11:51:50 Jer 31:3, 11:54:55 John 1:18, 11:59:49 Rev 2:4; spliced 09:32:19
+  Isa 56:1 ("…for my"), 09:54:38 John 6:35 ("to them, “I am…"); not matched 09:34:12 Judg 6:23 ("Isaiah… sons of peace"),
+  11:36:13 John 12:21, 11:49:30 «Efeseni 5» → "FS 5", 11:51:04 Rom 2:4 → "Romans 4:2, 4", 12:03:27 2 Tim 4:8. «N cu M»
+  still literal when the numbers sit in another piece than the book or the recogniser puts a full stop inside: 09:33:23
+  «Geneza. / 26 cu 24» → "26 with 24", 10:41:25 «Coloseni 1 cu. 13 și 14» → "1 with. 13 and 14", 11:54:55 «cu 18» →
+  "with 18". The doubling seems to come from Gemma already having translated the verse from the source when the matcher
+  then also shows it: a matched verse should replace, not follow, Gemma's caption of the same words.
+- **Wrong language switch (idea 12), 2 shown:** 09:33:34 Gen 26:24 reading «…» heard as English "She shall kut the
+  children." → «**Ea va tăia copiii.**» on screen; 09:37:10 «Ghedeon a coborât…» → "Get one coborila up cu tre de woman."
+  → «Ia un coborila în sus cu femeia.». Both a single piece with a Bible name in fast Romanian; both switched back at once.
+  Change: a lone switch piece that the Romanian recogniser reads as fluent Romanian (≥ 60 % lexicon) stays Romanian; never
+  caption EN→RO from a piece whose English has ≥ 2 non-English words («kut», «coborila», «cu», «tre»).
+- **Recurring words heard wrong every time (idea 36 / 28):** «mărit să fie numele (Lui) în veci», a speaker's catchphrase,
+  ×6 never right ("great, they are the names forever", "**Mary**, for that is the name forever", "Increase, for they are
+  the old names"); «chip» (image, likeness, Col 1:15 — the sermon's key word) ×6: "this **chip** of Christ", "what chip",
+  "a face", "that face"; «slavă / slavei» (glory) → "**slave**" ×2 (09:58:59, 10:00:45 "the light of the slave of the Lord
+  Jesus"); «Christmas» for «Hristos» ×3 (09:10:19, 11:28:49 "**Christmas is risen!**"); «pocăită / pocăiți» (born-again)
+  heard «păcălită» → "his wife was being **cheated on**" (11:02:16); «răpire» (rapture) → "kidnapping"; «cursă» (snare,
+  Prov 29:25) → "race"; «întoarce» (bring back) → "turn over" ×2; «rânduit» → "as He has ordained" (09:27:42, still).
+  Rows: chip = image/likeness; slavă = glory; răpire = rapture; Christmas → Hristos in RO mode; pocăit boost; mărit să fie.
+- **Names (idea 6 / 26):** people's names translated into Bible names: «fratele Ilie» → "brother **Elijah**", «Iosif
+  <surname>» → "**Joseph** <surname>" ×2, a child «Moise, Ilie» → "Moses, Elijah", «Iulian» → "Julian" once (kept
+  elsewhere); invented names: «pe tata» → "Doru", «a transformat apa» → "Pamphil", «Cheon» for Gideon; a guest family heard
+  two ways. A first name after «fratele / sora / pe» is a person: keep it as said.
+- **Words cut at piece boundaries (idea 25), 12+:** parca/parcurge → "before we **park**", cuplu/cutremure → "can be
+  joined", nepărere/neprihănire → "**helplessness**", autor/autentică → "author", păstrat/păstor → "kept", multe/multiplice →
+  "to be many", minut/minunat, poposire/popostire ("inn" twice), Harusus/harul ("the spring"), «Du-/hul» → "the world",
+  orcoolică/alcoolică (workaholic) → "alcoholic". Change (25): when a piece ends on a word that isn't in the lexicon or is
+  a prefix of the next piece's first word, merge them before translating.
+- **English inside Romanian (12 / 28):** the guest pastor mixed English often: "fall in love" → "F. in **the lava**" and
+  "if it is not **the will of God**" (invented), "Fail and Destruction" → "Fal", "the Father's attention" → "they seek the
+  **truth**", "No matter what" → "9, Whatever happens", "reels" → "real friends", "cheating" → "citing", "shoe boxes" →
+  "Sub Axis". Gemma recovered "Divine providence", "Heavenly Connections", "Samaritan's Purse Operation Christmas Child".
+- **Echoes shown twice (idea 20):** 2-3 word echoes pass `echo_word` (1 word): "her limbs." ×2, "heart disease" ×2,
+  "thieves," ×2, "all", "the church.", "cities." (ora șase). Extend `echo_word` to the last 1-3 words.
+- **Recurring scraps shown (idea 17):** "Lorenbl.", "col.", "the sorcerer.", "Oh, lion", "Harusus.", "D.", "9,", "cities.".
+- **Timing:** first word median 5-7 s (up to 13.9 s in a song), translation 0.8-1.2 s; "captions behind ~9-10 s" alerts
+  came from 1-2 word song pieces during the rehearsal (8-10 s each), not from load.
