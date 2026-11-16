@@ -265,6 +265,7 @@ def merge_clauses(a: dict, b: dict) -> dict:
     English texts lose a start that repeats a's end (idea 16: recognised twice)."""
     b = {**b, **{k: overlap.trim(a.get(k) or "", b.get(k) or "")[0] for k in ("multi", "en")
                  if a.get(k) and b.get(k) and b["t_start"] - a["t_end"] < OVERLAP_GAP_S}}
+    b = {**b, "ro_wait": bool(a.get("ro_wait") and b.get("ro_wait"))}    # only when neither part has its words
     return {**b, **{k: f"{a.get(k) or ''} {b.get(k) or ''}".strip() for k in ("ro", "multi", "en")},
             "t_start": a["t_start"], "t_speech": a.get("t_speech", a["t_start"]),
             # stt_s stays b's (what delayed b's t_emit, so vad_wait_s stays right); total kept apart

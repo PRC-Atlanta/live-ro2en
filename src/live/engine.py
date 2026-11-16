@@ -175,7 +175,7 @@ class NemoSTT:
         before where its sound stops. The word list is empty when the times cannot be had (the
         TDT decoder, another NeMo's internals, words that do not join back to the text): the
         caller then stitches by text."""
-        if not self.ctc:
+        if not self.ctc or self._words_failed:
             return self(audio), []
         torch, m = self.torch, self.m
         dec = m.ctc_decoding
@@ -199,10 +199,9 @@ class NemoSTT:
                 self._sec = float(m.cfg.preprocessor.window_stride) * int(m.encoder.subsampling_factor)
             return text, _path_words(path, dec.blank_id, m.tokenizer, dec, self._sec, text)
         except Exception as e:                           # noqa: BLE001  NeMo internals moved: text only
-            if not self._words_failed:
-                self._words_failed = True
-                emit({"type": "warn", "msg": f"no word times from the recogniser ({type(e).__name__}: {e}); "
-                                             "phrases are stitched by text"})
+            self._words_failed = True                    # not tried again: every try costs a second pass
+            emit({"type": "warn", "msg": f"no word times from the recogniser ({type(e).__name__}: {e}); "
+                                         "phrases are stitched by text"})
             return self(audio), []
 
 

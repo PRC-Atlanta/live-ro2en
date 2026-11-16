@@ -308,9 +308,47 @@ def test_context_stt_says_late_a_clause_the_last_chunk_lost():
         [("mesajul", 0.0, 0.2), ("acela,", 0.4, 0.9), ("mi-a", 1.2, 1.4), ("dat", 1.5, 1.8), ("curaj.", 5.2, 5.6)])
     c = ContextSTT(stt, ctx_s=5.0)
     assert c(_sec(2), final=True) == "lăudat să fie Domnul"
-    assert c(_sec(4), final=True) == "Domnul acesta."
+    assert c(_sec(4), final=True) == "acesta."                # «Domnul», stretched over the clause, is the old word
     assert c(_sec(1), final=True) == "care s-a cântat înainte de mesajul mi-a dat."
     assert c(_sec(4), final=True) == "curaj."
+
+
+def test_context_stt_words_found_again_later_are_not_a_lost_clause():
+    from live.context_stt import ContextSTT
+    # «bb cc dd» committed from the end of the audio, heard 0.45 s later next time (the anchor skips
+    # them): the call after that must not take them for words the last chunk lost
+    stt = _TimedSTT(
+        [("aa", 0.5, 0.8), ("zz.", 3.0, 3.4)],
+        [("aa", 0.5, 0.8), ("zz", 3.0, 3.4), ("bb", 4.3, 4.5), ("cc", 4.8, 5.0), ("dd", 5.3, 5.5), ("ee", 6.1, 6.4)],
+        [("zz", 3.0, 3.4), ("bb", 4.75, 4.95), ("cc", 5.25, 5.45), ("dd", 5.75, 5.95), ("ee", 6.3, 6.5),
+         ("ff", 7.0, 7.3), ("gg", 8.1, 8.4)],
+        [("bb", 2.75, 2.95), ("cc", 3.25, 3.45), ("dd", 3.75, 3.95), ("ee", 4.3, 4.5), ("ff", 5.0, 5.3),
+         ("gg", 6.1, 6.4), ("hh.", 7.0, 7.4)])
+    c = ContextSTT(stt, ctx_s=6.0)
+    assert c(_sec(4), final=True) == "aa zz."
+    assert c(_sec(2), final=False, ahead=_sec(0.5)) == "bb cc dd"
+    assert c(_sec(2), final=False, ahead=_sec(0.5)) == "ee ff"
+    assert c(_sec(2), final=True) == "gg hh."
+
+
+def test_context_stt_words_wholly_in_the_audio_ahead_are_not_waiting():
+    from live.context_stt import ContextSTT
+    stt = _TimedSTT([("a", 0.2, 0.4), ("b.", 1.0, 1.4)],
+                    [("a", 0.2, 0.4), ("b", 1.0, 1.4), ("c", 2.7, 2.9), ("d", 3.1, 3.3)])   # chunk 2.0-2.5: nothing in it
+    c = ContextSTT(stt, ctx_s=2.0)
+    c(_sec(2), final=True)
+    assert c(_sec(0.5), final=False, ahead=_sec(1)) == "" and c.waiting == 0
+
+
+def test_context_stt_a_waiting_word_survives_a_call_that_hears_nothing():
+    from live.context_stt import ContextSTT
+    stt = _TimedSTT([("a", 0.2, 0.4), ("b", 1.0, 1.4), ("c", 1.9, 2.5)],        # cut at 2.0: «c» waits
+                    [],
+                    [("c", 1.9, 2.5), ("d.", 3.0, 3.4)])                         # all 2.5 s are still the context
+    c = ContextSTT(stt, ctx_s=3.0)
+    assert c(_sec(2), final=False, ahead=_sec(0.6)) == "a b"
+    assert c(_sec(0.5), final=False) == ""
+    assert c(_sec(2), final=True) == "c d."
 
 
 def test_context_stt_without_word_times_stitches_by_text():

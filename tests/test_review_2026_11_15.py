@@ -541,3 +541,8 @@ def test_a_chunk_whose_words_wait_does_not_fall_back_on_the_other_recogniser(tmp
     ev = {"ro": "", "multi": "nu e nevoie de o biserică"}
     assert live._source(dict(ev))[1:] == ("nu e nevoie de o biserică", {"fallback": "multi"})
     assert live._source({**ev, "ro_wait": True})[1:] == ("", {})
+    from live.pipeline import merge_clauses
+    part = {"ro": "", "multi": "binecuvinteze", "t_start": 0.0, "t_end": 1.0, "stt_s": 0.1, "audio_s": 1.0}
+    wait = {**part, "multi": "", "t_start": 1.0, "t_end": 2.0, "ro_wait": True}
+    assert not merge_clauses(part, wait).get("ro_wait")      # the first part's text is still wanted
+    assert merge_clauses(wait, {**wait, "t_start": 2.0, "t_end": 3.0}).get("ro_wait")

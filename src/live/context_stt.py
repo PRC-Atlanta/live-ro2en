@@ -76,7 +76,8 @@ class ContextSTT:
         self.last: tuple[str, float] | None = None
         self.tail: list[str] = []           # the last committed words (keys)
         self.waiting = 0                    # words heard past the cut, left for the next chunk
-        self.prev: tuple[list[str], float] | None = None    # the last chunk's words (keys), where its span began
+        self.prev: tuple[list[str], float] | None = None    # the words heard in the last chunk's audio (keys), its length
+        self.untimed = 0                    # calls in a row without word times
         self.debug: dict | None = None
 
     def __call__(self, chunk: np.ndarray, final: bool = False, ahead: np.ndarray | None = None) -> str:
@@ -89,7 +90,7 @@ class ContextSTT:
         self.seam = None
         self.debug = None
         self.waiting = 0
-        if self.timed and hasattr(self.stt, "words"):
+        if self.timed and self.untimed < 3 and hasattr(self.stt, "words"):   # no times three times: stop asking
             new = self._by_time(chunk, final, ahead)
             if new is not None:
                 return new
@@ -123,8 +124,8 @@ class ContextSTT:
             return k
         best, run = k, 0
         for j in range(max(1, k - ANCHOR_WORDS), min(len(words), k + ANCHOR_WORDS) + 1):
-            if abs(words[j - 1][2] - t0) > ANCHOR_S:
-                continue
+            if words[j - 1][1] > t0 + ANCHOR_S or words[j - 1][2] < t0 - ANCHOR_S:
+                continue                            # (a word stretched over a silence still counts)
             n = 0
             while n < len(self.tail) and j - 1 - n >= 0 and _wkey(words[j - 1 - n][0]) == self.tail[-1 - n]:
                 n += 1
@@ -142,7 +143,7 @@ class ContextSTT:
         A changed word or two is left alone: that text is already on screen."""
         if self.prev is None or not self.prev[0]:
             return []
-        lo = b0 + self.prev[1]                      # where the last chunk's words began, in this audio
+        lo = b0 - self.prev[1]                      # where the last chunk began, in this audio
         if lo < 0.3:
             return []                               # not all of it is in the context any more
         heard = [i for i in range(k) if mid[i] >= lo]
@@ -181,10 +182,21 @@ class ContextSTT:
         audio = np.concatenate(parts) if len(parts) > 1 else parts[0]
         text, words = self.stt.words(audio)
         if not words and (text or "").strip():
+            self.untimed += 1
             return None
+        self.untimed = 0
         b0 = len(ctx) / SR                         # the chunk in the audio heard: [b0, b1]
         b1 = b0 + len(chunk) / SR
         end = len(audio) / SR
+        if not words:
+            # nothing heard at all: the boundary stays where it was (a word waiting past the last
+            # cut is still to come), unless this chunk ended at a pause
+            self.ctx_audio = (np.concatenate([ctx, chunk]) if len(ctx) else chunk)[-self.ctx_n:]
+            moved = len(chunk) / SR
+            self.bound = 0.0 if final else max(self.bound - moved, -len(self.ctx_audio) / SR)
+            self.last = (self.last[0], self.last[1] - moved) if self.last is not None else None
+            self.prev, self.prev_final = None, final
+            return ""
         t0 = b0 + self.bound                       # the committed text ends here
         mid = [(s + e) / 2 for _, s, e in words]
         k = self._first_new(words, mid, t0)
@@ -208,9 +220,11 @@ class ContextSTT:
                       "k": k, "m": m, "words": [[w, s, e] for w, s, e in words],
                       **({"late": [words[i][0] for i in late]} if late else {})}
         out = " ".join([words[i][0] for i in late] + [w for w, _, _ in new])
-        self.waiting = len(words) - m
+        # words that begin in this chunk and wait for the next one (not those wholly in the audio ahead)
+        self.waiting = 0 if final else sum(1 for i in range(m, len(words)) if words[i][1] < b1)
         self.tail = (self.tail + [x for x in (_wkey(w) for w, _, _ in new) if x])[-TAIL_N:]
-        self.prev = ([_wkey(w) for w, _, _ in new], t0 - b1)
+        first = next((i for i, x in enumerate(mid) if x >= b0), len(words))
+        self.prev = ([_wkey(w) for w, _, _ in words[min(first, k):m]], b1 - b0)
         self.ctx_audio = (np.concatenate([ctx, chunk]) if len(ctx) else chunk)[-self.ctx_n:]
         self.bound = max(tb - b1, -len(self.ctx_audio) / SR)
         self.last = (key, min(last_end, b1) - b1 if final else last_end - b1) if key else None
