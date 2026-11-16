@@ -531,3 +531,13 @@ def test_the_bench_judges_a_seam_pair_only_where_it_was_reproduced():
     assert bench.judge_pair(keep, recs(("replaced", "pe lângă culoar.", "pe lângă culoar."),
                                        ("ok", "culoare n-a avut", "pe lângă culoare n-a avut")))[0] == "still"
     assert bench.judge_pair(keep, recs(("ok", "pe lângă culoare n-a avut", "pe lângă culoare n-a avut")))[0] == "missing"
+
+
+# idea 25: no Romanian text because the recogniser keeps the words for the next chunk is not
+# "heard nothing": Parakeet's text of the same audio would say them twice
+def test_a_chunk_whose_words_wait_does_not_fall_back_on_the_other_recogniser(tmp_path):
+    live = _live(tmp_path)
+    live.lang.set_mode("auto")
+    ev = {"ro": "", "multi": "nu e nevoie de o biserică"}
+    assert live._source(dict(ev))[1:] == ("nu e nevoie de o biserică", {"fallback": "multi"})
+    assert live._source({**ev, "ro_wait": True})[1:] == ("", {})

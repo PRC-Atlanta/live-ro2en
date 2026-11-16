@@ -265,6 +265,35 @@ def test_context_stt_a_word_at_the_edge_of_the_audio_waits():
     assert c(_sec(2), final=True) == "importantă b."
 
 
+def test_context_stt_finds_the_committed_words_again_when_their_times_moved():
+    from live.context_stt import ContextSTT
+    # «în mod» was committed at the end of the audio; heard again, both sit 0.24 s later than the clock says
+    stt = _TimedSTT([("se", 0.4, 0.5), ("maturizează", 0.6, 1.1), ("în", 1.4, 1.48), ("mod", 1.48, 1.56),
+                     ("constant.", 1.64, 2.0)],
+                    [("se", 0.5, 0.6), ("maturizează", 0.7, 1.3), ("în", 1.64, 1.72), ("mod", 1.72, 1.8),
+                     ("constant", 2.0, 2.4), ("și.", 3.0, 3.2)])
+    c = ContextSTT(stt, ctx_s=2.0)
+    assert c(_sec(1.6), final=False, ahead=_sec(0.4)) == "se maturizează în mod"
+    assert c(_sec(2), final=True) == "constant și."
+    # a word really said twice stays twice
+    stt = _TimedSTT([("este", 0.4, 0.5), ("foarte", 1.2, 1.6)],
+                    [("este", 0.4, 0.5), ("foarte", 1.2, 1.6), ("foarte", 2.1, 2.5), ("bine.", 2.6, 3.0)])
+    c = ContextSTT(stt, ctx_s=2.0)
+    assert c(_sec(2), final=True) == "este foarte"
+    assert c(_sec(2), final=True) == "foarte bine."
+
+
+def test_context_stt_tells_when_it_keeps_all_the_words_for_the_next_chunk():
+    from live.context_stt import ContextSTT
+    stt = _TimedSTT([("a", 0.2, 0.4), ("b.", 1.0, 1.4)],
+                    [("a", 0.2, 0.4), ("b", 1.0, 1.4), ("importantă", 2.3, 2.9)],     # cut at 2.5, inside the word
+                    [("b", 0.5, 0.9), ("importantă", 1.8, 2.4), ("c.", 2.6, 3.0)])
+    c = ContextSTT(stt, ctx_s=2.0)
+    assert c(_sec(2), final=True) == "a b." and c.waiting == 0
+    assert c(_sec(0.5), final=False, ahead=_sec(0.5)) == "" and c.waiting == 1
+    assert c(_sec(2), final=True) == "importantă c." and c.waiting == 0
+
+
 def test_context_stt_says_late_a_clause_the_last_chunk_lost():
     from live.context_stt import ContextSTT
     stt = _TimedSTT(

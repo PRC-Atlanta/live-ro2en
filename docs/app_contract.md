@@ -122,8 +122,12 @@ listed here.
 
 - `ready {stt, multi, source}`
 - `partial {text}`
-- `clause {id, ro, multi, t_start, t_speech, t_end, t_emit, stt_s, audio_s}` (`multi` = Parakeet's
-  transcript: language detection and the English text)
+- `clause {id, ro, multi, t_start, t_speech, t_end, t_emit, stt_s, audio_s, final}` (`multi` = Parakeet's
+  transcript: language detection and the English text; `final` = the chunk ended at a pause, false
+  after a forced cut in mid-speech). Optional: `ro_wait: true` (no Romanian text because the
+  Romanian recogniser keeps this chunk's words for the next one: they lie past the cut; the app
+  must not take Parakeet's text for it), `seam: [stub, word]` (text stitching only: the last
+  chunk's last word was the cut-off start of this chunk's first)
 - `eof`
 - `warn {msg}`
 - `error {where: transcribe|audio input|engine, msg}`

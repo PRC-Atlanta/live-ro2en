@@ -132,7 +132,8 @@ def live(a) -> None:
     def emit(obj):
         if obj.get("type") == "clause":
             rec = getattr(eng.stt_ctx, "rec", None) or {}
-            clauses.append({**obj, "trace": rec})
+            # t_cut: the audio clock when the chunk was cut (the last frame the engine had taken)
+            clauses.append({**obj, "t_cut": round(t0 + len(eng.vad.p) * FRAME / SR, 3), "trace": rec})
         elif obj.get("type") in ("error", "warn"):
             print(obj, file=sys.stderr, flush=True)
     engine.emit = emit
@@ -168,7 +169,7 @@ def live(a) -> None:
          "set": a.set, "terms": a.terms, "wall_s": round(wall, 1), "audio_s": round(len(x) / SR, 1),
          "git": _git(), "cfg": {k: lc.get(k) for k in ("context_s", "lookahead_words", "min_commit_s", "max_commit_s",
                                                          "max_clause_s", "min_pause_ms", "vad_threshold", "timed_commit",
-                                                         "commit_edge_s")}}, indent=1))
+                                                         "commit_edge_s", "cut_ahead_s")}}, indent=1))
     print(f"{out}: {len(clauses)} clauses, {len(x) / SR / 60:.1f} min of audio in {wall:.0f} s")
 
 
@@ -229,8 +230,12 @@ def wer(names: list[str]) -> None:
         hyp = " ".join(r.get("ro") or "" for r in recs)
         s = score(tokens(ref), tokens(hyp), free_ends=False)
         k = score(key_tokens(ref, numbers=True), key_tokens(hyp, numbers=True), free_ends=False)
-        print(f"{name:28s} {sermon:12s} WER {s['wer'] * 100:5.2f}% (S{s['sub']} D{s['del']} I{s['ins']} / {s['n_ref']})"
-              f"   phonetic key {k['wer'] * 100:5.2f}% (S{k['sub']} D{k['del']} I{k['ins']})   {len(recs)} clauses")
+        wait = sorted(r["t_cut"] - r.get("t_speech", r["t_start"]) for r in recs if r.get("t_cut") and (r.get("ro") or "").strip())
+        lat = (f"   first word waits for the cut: median {wait[len(wait) // 2]:.2f} s, p90 {wait[int(len(wait) * 0.9)]:.2f} s, "
+               f"> 5 s {sum(w > 5 for w in wait) / len(wait) * 100:.0f}%") if wait else ""
+        forced = sum(not (r.get("trace") or {}).get("final", True) for r in recs)
+        print(f"{name:24s} {sermon:12s} WER {s['wer'] * 100:5.2f}% (S{s['sub']} D{s['del']} I{s['ins']} / {s['n_ref']})"
+              f"   key {k['wer'] * 100:5.2f}%   {len(recs)} clauses, {forced} forced{lat}")
 
 
 def main() -> None:

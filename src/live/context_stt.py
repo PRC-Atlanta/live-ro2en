@@ -33,7 +33,13 @@ def _word_spans(text: str) -> tuple[list[str], list[int]]:
     return words, [wi for wi, w in enumerate(words) for _ in tokens(w)]
 
 
-JITTER_S = 0.25           # the same word heard again with the next chunk may sit a few frames off
+# The same word heard again with the next chunk does not sit at the same time: at the end of the
+# audio the recogniser fires its pieces early, and up to ~0.25 s later once more audio follows
+# (luigi-mitoi 03:40: «în mod» committed at 6.40-6.56, heard again at 6.00-6.16 on a clock 0.64 s
+# on). So the boundary is anchored on the last committed words, looked for near their time.
+ANCHOR_WORDS = 3          # ... at most this many words before or after where the time says
+ANCHOR_S = 0.8            # ... and this far from it
+TAIL_N = 6                # committed words remembered for it
 MISSED_MIN = 3            # words in a row the last chunk's text lacks, heard now in its audio: said late
 
 
@@ -68,6 +74,8 @@ class ContextSTT:
         # last committed word (its key, where it ended on the same clock)
         self.bound = 0.0
         self.last: tuple[str, float] | None = None
+        self.tail: list[str] = []           # the last committed words (keys)
+        self.waiting = 0                    # words heard past the cut, left for the next chunk
         self.prev: tuple[list[str], float] | None = None    # the last chunk's words (keys), where its span began
         self.debug: dict | None = None
 
@@ -80,6 +88,7 @@ class ContextSTT:
         self.held = 0
         self.seam = None
         self.debug = None
+        self.waiting = 0
         if self.timed and hasattr(self.stt, "words"):
             new = self._by_time(chunk, final, ahead)
             if new is not None:
@@ -100,7 +109,30 @@ class ContextSTT:
         self.ctx_audio = audio[-self.ctx_n:]
         self._keep_text(new)
         self.bound, self.last, self.prev = 0.0, None, None   # by text, all up to the chunk's end is committed
+        self.tail = [k for k in (_wkey(w) for w in new.split()) if k][-TAIL_N:] or self.tail
         return new
+
+    def _first_new(self, words: list, mid: list[float], t0: float) -> int:
+        """The first word after the committed text: by time, then moved to where the last
+        committed words are found again when they sit a little off. Two or more of them in a row
+        may be up to ANCHOR_WORDS words away; a single word only next to where the time says («nu»,
+        «și» come too often to trust further off). A word said twice stays twice: the longer run
+        of committed words wins, then the place nearest in time."""
+        k = next((i for i, x in enumerate(mid) if x >= t0), len(words))
+        if not self.tail:
+            return k
+        best, run = k, 0
+        for j in range(max(1, k - ANCHOR_WORDS), min(len(words), k + ANCHOR_WORDS) + 1):
+            if abs(words[j - 1][2] - t0) > ANCHOR_S:
+                continue
+            n = 0
+            while n < len(self.tail) and j - 1 - n >= 0 and _wkey(words[j - 1 - n][0]) == self.tail[-1 - n]:
+                n += 1
+            if n == 0 or (n == 1 and abs(j - k) > 1):
+                continue
+            if n > run or (n == run and abs(j - k) < abs(best - k)):
+                best, run = j, n
+        return best
 
     def _missed(self, words: list, mid: list[float], k: int, b0: float) -> list[int]:
         """Words heard now in the last chunk's audio that its committed text lacks, MISSED_MIN or
@@ -155,14 +187,7 @@ class ContextSTT:
         end = len(audio) / SR
         t0 = b0 + self.bound                       # the committed text ends here
         mid = [(s + e) / 2 for _, s, e in words]
-        k = next((i for i, x in enumerate(mid) if x >= t0), len(words))
-        if self.last is not None:
-            # the last committed word, heard again a frame or two off, stays the last old word
-            key, was = self.last[0], b0 + self.last[1]
-            for j in (k, k + 1, k - 1):
-                if 1 <= j <= len(words) and _wkey(words[j - 1][0]) == key and abs(words[j - 1][2] - was) <= JITTER_S:
-                    k = j
-                    break
+        k = self._first_new(words, mid, t0)
         if final:
             m = len(words)
         else:
@@ -183,6 +208,8 @@ class ContextSTT:
                       "k": k, "m": m, "words": [[w, s, e] for w, s, e in words],
                       **({"late": [words[i][0] for i in late]} if late else {})}
         out = " ".join([words[i][0] for i in late] + [w for w, _, _ in new])
+        self.waiting = len(words) - m
+        self.tail = (self.tail + [x for x in (_wkey(w) for w, _, _ in new) if x])[-TAIL_N:]
         self.prev = ([_wkey(w) for w, _, _ in new], t0 - b1)
         self.ctx_audio = (np.concatenate([ctx, chunk]) if len(ctx) else chunk)[-self.ctx_n:]
         self.bound = max(tb - b1, -len(self.ctx_audio) / SR)

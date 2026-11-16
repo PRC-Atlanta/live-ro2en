@@ -756,6 +756,10 @@ class PipelineMixin:
             return "en", english or ro, {}
         if ro.strip() or not multi.strip():
             return "ro", ro, {}
+        if ev.get("ro_wait"):
+            # idea 25: the Romanian recogniser keeps this chunk's words for the next one; Parakeet's
+            # text of the same audio would say them twice (luigi-mitoi 24:59, 17 words, bench 2026-11-15)
+            return "ro", "", {}
         s = lang_score(multi)
         if auto and s <= 0 and self._gate_ok(english, "en") and not self._gate_ok(multi, "ro") \
                 and not non_english(english, self._gate_names()):
