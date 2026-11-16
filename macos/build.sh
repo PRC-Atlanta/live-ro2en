@@ -37,6 +37,7 @@ otool -l "$APP/Contents/MacOS/Live RO2EN" | awk '/cmd LC_RPATH$/ {r=1; next} r &
 cp "$HERE/Info.plist" "$APP/Contents/Info.plist"
 cp "$HERE/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"   # packaging/icons/make_icons.swift
 printf 'APPL????' > "$APP/Contents/PkgInfo"
+"$HERE/../packaging/embed_sparkle.sh" "$APP" "$(dirname "$BIN")"      # software updates
 
 codesign --force --sign - --options runtime --entitlements "$HERE/LiveRO2EN.entitlements" \
   --timestamp=none "$APP"

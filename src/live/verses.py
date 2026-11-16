@@ -88,7 +88,7 @@ _CONJ = {"ro": {"si", "dar", "ci", "caci", "iar", "ca", "sa", "pentru", "care", 
 _LEAD = {"ro": set("si de la in pe cu din ca sa ca care dar ci iar pentru prin un o al ale ai cel cea "
                    "cei cele spre dupa catre".split()),
          "en": set("the a an of in on to and or if for by with from at as that which who but so into "
-                   "upon than".split())}
+                   "upon than my your his her our their its this these those whose".split())}
 # a paraphrase, not a quote: "că el ascultă rugăciunea" (that He hears prayer) is not Psalm 65:2
 # starting mid-sentence; with no announced reference a match after these words is refused
 _INTO = {"ro": set("ca el ea ei ele noi voi tu eu care ce de si cum cel cea cei spunea zice spune "
@@ -651,6 +651,8 @@ class Matcher:
         if i1 == len(piece) - 1 and 0 < vhi - 1 - p1 <= TAIL_WORDS and int(st.verse[vhi - 1]) == int(st.verse[p1]):
             ahead, p1 = (st, p1 + 1, vhi), vhi - 1
         out, done, ends, shown_to = [], self.done, False, []
+        after_text = text[piece[i1][2]:]
+        stops = i1 == len(piece) - 1 and bool(re.match(r"\s*[,;:.!?…]", after_text) or not after_text.strip())
         for v in range(va, vz + 1):
             f, n = int(st.first[v]), int(st.first[v + 1] - st.first[v])
             s = p0 - f if v == va else 0
@@ -671,6 +673,13 @@ class Matcher:
                         and not (done is not None and done[0] == v and t0 <= done[1]):
                     t0 -= 1
             ends = t1 >= len(ws)
+            # the speaker stopped at a break but the caption runs 1-2 words past the published text's
+            # break: "who holds it fast; who keeps" (Isa 56:2), "do what is right, for my" (Isa 56:1,
+            # 2026-11-15): end at the break
+            if not ends and v == vz and ahead is None and stops:
+                cut = next((q for q in (t1 - 1, t1 - 2) if t0 < q < t1 and _BREAK.search(ws[q - 1][-1:])), None)
+                if cut is not None:
+                    t1 = cut
             for _ in range(2):                              # never end on "… In the"
                 if not ends and t1 - 1 > t0 and ks[t1 - 1] and ks[t1 - 1] <= _LEAD[tgt] \
                         and not _BREAK.search(ws[t1 - 1][-1:]):
@@ -681,6 +690,12 @@ class Matcher:
             if seen and self.n - seen[1] <= RECENT_PIECES and t0 < seen[0]:
                 t0 = seen[0]                            # already on screen (Ps 121:3 "to be moved. He who
                 #                                         keeps you" again 36 s later, 2026-11-08 evening)
+            # a caption that starts mid-sentence with 1-2 words before a break: "out, “If anyone is
+            # thirsty" (John 7:37, «cried out» not said): start after the break
+            if v == va and t0 > 0 and not _END.search(ws[t0 - 1]):
+                lead_cut = next((q for q in (t0 + 1, t0 + 2) if q < t1 - 2 and _BREAK.search(ws[q - 1][-1:])), None)
+                if lead_cut is not None and not any(s <= i < e and t0 <= j < lead_cut for i, j, _ in cands):
+                    t0 = lead_cut
             if t1 > t0:
                 out.append(" ".join(ws[t0:t1]))
                 done = (v, t1)

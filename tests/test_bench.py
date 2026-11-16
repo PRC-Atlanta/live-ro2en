@@ -88,3 +88,33 @@ def test_windows_keep_whole_lines_and_place_phrases_by_their_middle():
     assert [x["lines"] for x in w] == [[0, 1, 2], [3, 4], [5]]
     assert [x["phrases"] for x in w] == [[0, 1], [2], [3]]       # middles 2.5, 20.5 | 42.5 | 48
     assert [(x["t0"], x["t1"]) for x in w] == [(0, 21), (21, 45), (45, 50.0)]
+
+
+def _seams():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    sys.path.insert(0, str(ROOT / "src"))
+    import seam_catalogue
+    return seam_catalogue
+
+
+def test_joint_census_finds_the_word_lost_at_a_cut():
+    sc = _seams()
+    recs = [{"ro": "cât un munte", "t_start": 0.0, "t_end": 2.0},
+            {"ro": "", "t_start": 2.0, "t_end": 2.0},                       # empty: no joint of its own
+            {"ro": "activitatea lui pentru că", "t_start": 2.1, "t_end": 4.0, "reheard": "un munte de",
+             "joints": [{"at": 2, "gap": 0.0, "reheard": "activitatea"}]}]
+    hyp, owner, joints = sc.ro_stream(recs)
+    assert hyp == ["cât", "un", "munte", "activitatea", "lui", "pentru", "că"]
+    assert owner == [0, 0, 0, 2, 2, 2, 2]
+    assert joints == {3: {"gap": 0.1, "reheard": "un munte de", "kind": "piece", "rec": 2},
+                      5: {"gap": 0.0, "reheard": "activitatea", "kind": "chunk", "rec": 2}}
+    ref = ["cât", "un", "munte", "de", "activitatea", "lui", "pentru", "că"]
+    m = sc.ref_map(ref, hyp)
+    assert m[3] == (None, 3) and m[4] == (3, 3)                             # «de» deleted at the cut
+    assert sc.near_joint(3, joints, deleted=True) == 3
+    assert sc.near_joint(0, joints, deleted=False) is None                  # «cât»: two words away
+    assert sc.near_joint(2, joints, deleted=False) == 3                     # «munte»: the cut's last word
+    assert sc.short("de") and sc.short("lui") and sc.short("să") and not sc.short("munte")
+    # «la odicea» said, «laodicea» heard: spacing, not a lost word
+    assert sc._spacing(["din", "la", "odicea"], 1, ["din", "laodicea"], 1)
+    assert not sc._spacing(ref, 3, hyp, 3)

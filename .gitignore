@@ -39,3 +39,6 @@ user/
 
 # packaging/build_runtime.sh output
 build/
+
+# scripts/audit_transcript.py output: church-private audio inside
+*.audit.html

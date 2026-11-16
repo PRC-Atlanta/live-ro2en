@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let discovery = Discovery()
     private let hotKeys = HotKeys()
     private let toolbar = ToolbarController()
+    private let updates = Updates()
     private var status: NSStatusItem!
     private var connectWindow: ConnectWindow?
     private var namesWindow: NamesWindow?
@@ -31,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ n: Notification) {
         d.register(defaults: ["port": 8766, "vertical": false, "peek": true, "onTop": true, "full": false])
+        updates.start()
         toolbar.vertical = d.bool(forKey: "vertical")
         toolbar.showPeek = d.bool(forKey: "peek")
         toolbar.panel.level = d.bool(forKey: "onTop") ? .floating : .normal
@@ -233,6 +235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         m.addItem(item("Today's names & words…", #selector(openNames)))
         m.addItem(.separator())
         m.addItem(item("Keyboard shortcuts…", #selector(openShortcuts), key: ","))
+        if updates.isOn { m.addItem(item("Check for Updates…", #selector(checkForUpdates))) }
         m.addItem(item("Quit Live Remote", #selector(quit), key: "q"))
     }
 
@@ -246,6 +249,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toolbar.vertical = sender.tag == 1
         d.set(toolbar.vertical, forKey: "vertical")
     }
+    @objc private func checkForUpdates() { updates.check() }
     @objc private func togglePeek() { toolbar.showPeek.toggle(); d.set(toolbar.showPeek, forKey: "peek") }
     @objc private func toggleOnTop() {
         let on = toolbar.panel.level != .floating

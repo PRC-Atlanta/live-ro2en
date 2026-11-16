@@ -33,6 +33,7 @@ cp "$HERE/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"   # packaging/ico
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 if [ "$ID" = "-" ]; then TS=--timestamp=none; else TS=--timestamp; fi
+"$HERE/../packaging/embed_sparkle.sh" "$APP" "$(dirname "$BIN")" "$ID"   # software updates
 codesign --force --sign "$ID" --options runtime --entitlements "$HERE/LiveRemote.entitlements" $TS "$APP"
 codesign --verify --strict "$APP"
 
