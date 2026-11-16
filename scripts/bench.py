@@ -539,8 +539,11 @@ def ref_score(arg: str, window_s: float = 20.0, quiet: bool = False) -> dict:
         sys.exit(f"{arg}: not a corrected-sermon run (audio {info.get('audio')}); known: {', '.join(SERMONS)}")
     lines, end = reference(name)
     t0 = info["segment_start_wall"]
+    # where the corrected stretch ends before the recording does, a phrase counts when its middle
+    # lies before that end. (Until 2026-11-15 every phrase that started up to 1 s after it counted,
+    # whole: nelu-suciu carried ~9 extra words from the first uncorrected phrase, 0.8 points.)
     ph = [r for r in _records(log) if r.get("outcome") and "t_start" in r
-          and (end is None or r["t_start"] - t0 < end + 1.0)]
+          and (end is None or (r["t_start"] + r.get("t_end", r["t_start"])) / 2 - t0 < end)]
     # a word-cut redo's source holds the previous piece again (idea 25): that piece's words count once
     by_id = {r.get("id"): r for r in on_screen(ph)}
     ph = [r for r in ph if not (by_id[r.get("id")].get("outcome") == "replaced"

@@ -187,8 +187,9 @@ def report(res: dict, list_path: str | None) -> None:
                     words.append("‖" if fa[owner[i - 1]] else "|")
                 words.append(f"[{lt[i]}]" if i == e["hi"] and e["kind"] != "D" else lt[i])
             t = res["live"][owner[hi]]["t_start"]
+            after = e["ri"] + (0 if e["kind"] == "I" else 1)      # an extra word stands before ref[ri]
             out.append(f"{e['cls']:12s} {e['kind']} {e['how']:6s} ref «{' '.join(ref[max(0, e['ri'] - 5):e['ri']])} "
-                       f"[{e['r'] or '∅'}] {' '.join(ref[e['ri'] + 1:e['ri'] + 5])}»\n"
+                       f"[{e['r'] or '∅'}] {' '.join(ref[after:after + 4])}»\n"
                        f"{'':21s} live «{' '.join(words)}»  @{bench._mmss(t - res["t0"])}")
         pathlib.Path(list_path).write_text("\n".join(out) + "\n")
         print(f"  live-only errors listed in {list_path}")
@@ -201,7 +202,7 @@ def app_side(run: str) -> None:
     lines, end = bench.reference(sermon)
     t0 = info["segment_start_wall"]
     ph = [r for r in bench._records(log) if r.get("outcome") and "t_start" in r
-          and (end is None or r["t_start"] - t0 < end + 1.0)]
+          and (end is None or (r["t_start"] + r.get("t_end", r["t_start"])) / 2 - t0 < end)]
     by_id = {r.get("id"): r for r in bench.on_screen(ph)}
     kept = [r for r in ph if not (by_id[r.get("id")].get("outcome") == "replaced"
                                   and by_id.get(by_id[r.get("id")]["replaced_by"], {}).get("cut_word"))]
