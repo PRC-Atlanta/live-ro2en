@@ -34,6 +34,7 @@ def _word_spans(text: str) -> tuple[list[str], list[int]]:
 
 
 JITTER_S = 0.25           # the same word heard again with the next chunk may sit a few frames off
+MISSED_MIN = 3            # words in a row the last chunk's text lacks, heard now in its audio: said late
 
 
 def _wkey(word: str) -> str:
@@ -67,6 +68,7 @@ class ContextSTT:
         # last committed word (its key, where it ended on the same clock)
         self.bound = 0.0
         self.last: tuple[str, float] | None = None
+        self.prev: tuple[list[str], float] | None = None    # the last chunk's words (keys), where its span began
         self.debug: dict | None = None
 
     def __call__(self, chunk: np.ndarray, final: bool = False, ahead: np.ndarray | None = None) -> str:
@@ -97,8 +99,41 @@ class ContextSTT:
         # roll the context: keep the last ctx_s seconds and the text committed for them
         self.ctx_audio = audio[-self.ctx_n:]
         self._keep_text(new)
-        self.bound, self.last = 0.0, None         # by text, everything up to the chunk's end is committed
+        self.bound, self.last, self.prev = 0.0, None, None   # by text, all up to the chunk's end is committed
         return new
+
+    def _missed(self, words: list, mid: list[float], k: int, b0: float) -> list[int]:
+        """Words heard now in the last chunk's audio that its committed text lacks, MISSED_MIN or
+        more in a row: the recogniser had lost a whole clause there and finds it with the audio
+        that followed («lăudat să fie Domnul» | «Domnul acesta.» for «…cântarea care s-a cântat
+        înainte de mesajul acesta», bench 2026-11-15). They are said now, late, rather than never.
+        A changed word or two is left alone: that text is already on screen."""
+        if self.prev is None or not self.prev[0]:
+            return []
+        lo = b0 + self.prev[1]                      # where the last chunk's words began, in this audio
+        if lo < 0.3:
+            return []                               # not all of it is in the context any more
+        heard = [i for i in range(k) if mid[i] >= lo]
+        if len(heard) < MISSED_MIN:
+            return []
+        # a committed stub and the whole word heard now («Domnul» / «Domnultarea») are one word here
+        keys = [next((c for c in self.prev[0] if c == h or same_word(c, h)), h)
+                for h in (_wkey(words[i][0]) for i in heard)]
+        a = align(self.prev[0], keys, free_ends=False)
+        out, run, hi = [], [], 0
+        for c, h in a.pairs:
+            if h is None:
+                continue
+            if c is None:
+                run.append(heard[hi])
+            else:
+                if len(run) >= MISSED_MIN:
+                    out += run
+                run = []
+            hi += 1
+        if len(run) >= MISSED_MIN:
+            out += run
+        return out
 
     def _keep_text(self, new: str) -> None:
         kept = (self.ctx_text + " " + new).split()
@@ -134,6 +169,7 @@ class ContextSTT:
             m = next((i for i in range(k, len(words)) if mid[i] >= b1), len(words))
             while m > k and words[m - 1][2] > end - self.edge_s:
                 m -= 1                             # at the edge of the audio: it may not be over
+        late = self._missed(words, mid, k, b0)
         new = words[k:m]
         if new:
             last_end, key = new[-1][2], _wkey(new[-1][0])
@@ -144,8 +180,10 @@ class ContextSTT:
         else:
             tb = (last_end + words[m][1]) / 2 if last_end <= words[m][1] else words[m][1]
         self.debug = {"b0": round(b0, 3), "b1": round(b1, 3), "end": round(end, 3), "t0": round(t0, 3),
-                      "k": k, "m": m, "words": [[w, s, e] for w, s, e in words]}
-        out = " ".join(w for w, _, _ in new)
+                      "k": k, "m": m, "words": [[w, s, e] for w, s, e in words],
+                      **({"late": [words[i][0] for i in late]} if late else {})}
+        out = " ".join([words[i][0] for i in late] + [w for w, _, _ in new])
+        self.prev = ([_wkey(w) for w, _, _ in new], t0 - b1)
         self.ctx_audio = (np.concatenate([ctx, chunk]) if len(ctx) else chunk)[-self.ctx_n:]
         self.bound = max(tb - b1, -len(self.ctx_audio) / SR)
         self.last = (key, min(last_end, b1) - b1 if final else last_end - b1) if key else None

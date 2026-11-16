@@ -32,7 +32,7 @@ from translate import WARMUP, assemble, direction_specs, make_translator, member
 HERE = pathlib.Path(__file__).resolve().parent
 ENGINE_SCRIPT = HERE / "engine.py"       # tests point this at an engine without models
 ENGINE_CFG_KEYS = ("vad_threshold", "min_pause_ms", "max_clause_s", "partial_every_s", "min_commit_s",
-                   "max_commit_s", "context_s", "lookahead_words", "timed_commit", "commit_edge_s", "audio_watchdog_s",
+                   "max_commit_s", "context_s", "lookahead_words", "timed_commit", "commit_edge_s", "cut_ahead_s", "audio_watchdog_s",
                    "digital_silence_s", "stt_backlog_s", "catchup_max_s", "level_hz", "input_gain_db",
                    "input_gain_auto", "input_gain_target_db", "ro_name_boost")
 RESTARTS, RESTART_WINDOW_S = 2, 600.0    # automatic engine restarts allowed per window (long
