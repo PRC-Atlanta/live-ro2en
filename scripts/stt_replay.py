@@ -169,7 +169,7 @@ def live(a) -> None:
          "set": a.set, "terms": a.terms, "wall_s": round(wall, 1), "audio_s": round(len(x) / SR, 1),
          "git": _git(), "cfg": {k: lc.get(k) for k in ("context_s", "lookahead_words", "min_commit_s", "max_commit_s",
                                                          "max_clause_s", "min_pause_ms", "vad_threshold", "timed_commit",
-                                                         "commit_edge_s", "cut_ahead_s")}}, indent=1))
+                                                         "commit_edge_s")}}, indent=1))
     print(f"{out}: {len(clauses)} clauses, {len(x) / SR / 60:.1f} min of audio in {wall:.0f} s")
 
 

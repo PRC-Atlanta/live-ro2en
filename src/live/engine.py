@@ -665,8 +665,6 @@ class Engine:
         # idea 25: words are committed by when they were heard, with the audio past a forced cut
         # heard too (the Romanian recogniser gives word times; Parakeet is stitched by text)
         timed, edge = bool(cfg.get("timed_commit", True)), float(cfg.get("commit_edge_s", 0.16))
-        # a forced cut leaves at least this much audio after it (heard, not committed)
-        self.cut_ahead = max(1, int(float(cfg.get("cut_ahead_s", 0.3)) * SR / FRAME))
         self.stt_ctx = ContextSTT(self.stt, ctx, hold_words=hold, timed=timed, edge_s=edge)
         self.multi_ctx = ContextSTT(self.multi, ctx, hold_words=hold, timed=timed, edge_s=edge) \
             if self.multi is not None and self.multi is not self.stt else None
@@ -716,8 +714,6 @@ class Engine:
                 elif k == "commit_edge_s":
                     for c in ctxs:
                         c.edge_s = float(v)
-                elif k == "cut_ahead_s":
-                    self.cut_ahead = max(1, int(float(v) * SR / FRAME))
                 elif k == "context_s":
                     for c in ctxs:
                         c.ctx_n, c.max_ctx_words = int(float(v) * SR), max(1, int(float(v) * 3))
@@ -959,7 +955,7 @@ class Engine:
             elif ev == "force":
                 # cut at the least-voiced frame in the last 2.5 s (never mid-word if avoidable)
                 lo = max(1, len(probs) - int(2.5 * SR / FRAME))
-                hi = max(lo + 1, len(probs) - getattr(self, "cut_ahead", int(0.3 * SR / FRAME)))
+                hi = max(lo + 1, len(probs) - int(0.3 * SR / FRAME))
                 cut = lo + int(np.argmin(probs[lo:hi]))
                 self.transcribe(np.concatenate(frames[:cut]), times[0], times[cut - 1], first_voiced, final=False,
                                 ahead=np.concatenate(frames[cut:]))
