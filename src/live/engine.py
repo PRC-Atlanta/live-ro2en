@@ -118,6 +118,8 @@ class NemoSTT:
         self.lock = threading.Lock()                     # a names change swaps the beam search's models
         self.names: list[str] = []
         self._fusion = None                              # the beam search's own models (the 4-gram LM)
+        self._sec = None                                 # seconds per encoder frame (words())
+        self._words_failed = False
         self(np.zeros(SR, dtype=np.float32))            # warm-up (MPS kernels compile)
 
     def set_names(self, names: list[str], alpha: float = NAME_BOOST) -> bool:
@@ -163,6 +165,73 @@ class NemoSTT:
             h = h[0] if isinstance(h, tuple) else h
             h = h[0]
             return h if isinstance(h, str) else h.text
+
+    def words(self, audio: np.ndarray) -> tuple[str, list[tuple[str, float, float]]]:
+        """(text, [(word, start_s, end_s)]): the same text as __call__, and when each word was heard,
+        in seconds into `audio` (idea 25: ContextSTT commits and stitches by time). The CTC beam
+        search keeps one label per encoder frame (80 ms) for its best path, so the times cost
+        nothing: a word runs from its first piece's first frame to its last piece's last frame.
+        CTC fires each piece on a short spike, so a word's end is the end of that spike, at or
+        before where its sound stops. The word list is empty when the times cannot be had (the
+        TDT decoder, another NeMo's internals, words that do not join back to the text): the
+        caller then stitches by text."""
+        if not self.ctc:
+            return self(audio), []
+        torch, m = self.torch, self.m
+        dec = m.ctc_decoding
+        search = getattr(getattr(dec, "decoding", None), "search_algorithm", None)
+        if search is None:
+            return self(audio), []
+        try:
+            with self.lock, torch.inference_mode():
+                sig = torch.from_numpy(np.ascontiguousarray(audio, dtype=np.float32)).unsqueeze(0).to(self.dev)
+                ln = torch.tensor([len(audio)], device=self.dev)
+                p, pl = m.preprocessor(input_signal=sig, length=ln)
+                e, el = m.encoder(audio_signal=p, length=pl)
+                e, el = e.float().cpu(), el.cpu()
+                lp = m.ctc_decoder(encoder_output=e)
+                bh = search(lp, el)                                   # what BeamBatchedCTCInfer.forward does
+                hyp = bh.to_hyps_list(score_norm=False)[0]            # sorts the beams: row 0 is the best path
+                fold = getattr(dec.decoding, "override_fold_consecutive_value", None)
+                text = dec.decode_hypothesis([hyp], True if fold is None else fold)[0].text
+                path = bh.transcript_wb[0, 0, :int(el[0])].tolist()
+            if self._sec is None:
+                self._sec = float(m.cfg.preprocessor.window_stride) * int(m.encoder.subsampling_factor)
+            return text, _path_words(path, dec.blank_id, m.tokenizer, dec, self._sec, text)
+        except Exception as e:                           # noqa: BLE001  NeMo internals moved: text only
+            if not self._words_failed:
+                self._words_failed = True
+                emit({"type": "warn", "msg": f"no word times from the recogniser ({type(e).__name__}: {e}); "
+                                             "phrases are stitched by text"})
+            return self(audio), []
+
+
+def _path_words(path: list[int], blank: int, tokenizer, dec, sec: float, text: str) -> list[tuple[str, float, float]]:
+    """The beam's frame-by-frame path as words with times; [] when they do not join back to the text."""
+    toks, prev = [], blank                               # [piece id, first frame, last frame]
+    for t, lab in enumerate(path):
+        if lab < 0:
+            break
+        if lab != blank:
+            if lab == prev and toks:
+                toks[-1][2] = t
+            else:
+                toks.append([lab, t, t])
+        prev = lab
+    if not toks:
+        return []
+    groups: list[list] = []
+    for tk, piece in zip(toks, tokenizer.ids_to_tokens([t[0] for t in toks])):
+        if piece.startswith("▁") or not groups:
+            groups.append([tk])
+        else:
+            groups[-1].append(tk)
+    words = []
+    for g in groups:
+        w = dec.decode_tokens_to_str_with_strip_punctuation([t[0] for t in g]).strip()
+        if w:
+            words.append((w, round(g[0][1] * sec, 3), round((g[-1][2] + 1) * sec, 3)))
+    return words if " ".join(w for w, _, _ in words) == " ".join(text.split()) else []
 
 
 class ParakeetSTT:
@@ -586,8 +655,12 @@ class Engine:
         from context_stt import ContextSTT
         ctx = float(cfg.get("context_s", 6.0))
         hold = int(cfg.get("lookahead_words", 1))
-        self.stt_ctx = ContextSTT(self.stt, ctx, hold_words=hold)
-        self.multi_ctx = ContextSTT(self.multi, ctx, hold_words=hold) if self.multi is not None and self.multi is not self.stt else None
+        # idea 25: words are committed by when they were heard, with the audio past a forced cut
+        # heard too (the Romanian recogniser gives word times; Parakeet is stitched by text)
+        timed, edge = bool(cfg.get("timed_commit", True)), float(cfg.get("commit_edge_s", 0.16))
+        self.stt_ctx = ContextSTT(self.stt, ctx, hold_words=hold, timed=timed, edge_s=edge)
+        self.multi_ctx = ContextSTT(self.multi, ctx, hold_words=hold, timed=timed, edge_s=edge) \
+            if self.multi is not None and self.multi is not self.stt else None
         self._held_t = None                              # when the held word(s) were spoken
         from concurrent.futures import ThreadPoolExecutor
         self._pool = ThreadPoolExecutor(max_workers=1)
@@ -628,6 +701,12 @@ class Engine:
                 elif k == "lookahead_words":
                     for c in ctxs:
                         c.hold_words = int(v)
+                elif k == "timed_commit":
+                    for c in ctxs:
+                        c.timed = bool(v)
+                elif k == "commit_edge_s":
+                    for c in ctxs:
+                        c.edge_s = float(v)
                 elif k == "context_s":
                     for c in ctxs:
                         c.ctx_n, c.max_ctx_words = int(float(v) * SR), max(1, int(float(v) * 3))
@@ -673,11 +752,12 @@ class Engine:
               "msg": f"{mode} needs the multilingual model, which is unavailable: running RO→EN only"})
 
     def transcribe(self, audio: np.ndarray, t_start: float, t_end: float, t_speech: float | None = None,
-                   final: bool = True) -> None:
+                   final: bool = True, ahead: np.ndarray | None = None) -> None:
         """One failed chunk (model/MPS error) is reported as an error event; the engine keeps
-        listening instead of dying mid-service."""
+        listening instead of dying mid-service. ahead: the audio already held past the chunk
+        (ContextSTT hears it too, so a word at the cut is heard whole)."""
         try:
-            self._transcribe(audio, t_start, t_end, t_speech, final)
+            self._transcribe(audio, t_start, t_end, t_speech, final, ahead)
         except Exception as e:                   # noqa: BLE001
             import traceback
             traceback.print_exc(file=sys.stderr)
@@ -685,7 +765,7 @@ class Engine:
                   "t_start": t_start, "t_end": t_end, "audio_s": round(len(audio) / SR, 3)})
 
     def _transcribe(self, audio: np.ndarray, t_start: float, t_end: float, t_speech: float | None = None,
-                    final: bool = True) -> None:
+                    final: bool = True, ahead: np.ndarray | None = None) -> None:
         t = time.time()
         need_ro = self.mode != "en-ro" or self.multi is None
         need_multi = self.multi is not None and self.mode != "ro-en"
@@ -693,13 +773,13 @@ class Engine:
         if need_ro and need_multi and self.multi_ctx is not None:
             # Auto mode: Jackrabbit (torch, helper thread) and Parakeet (MLX, must stay on this
             # thread) run at the same time instead of one after the other
-            fut = self._pool.submit(self.stt_ctx, audio, final)
-            multi = self.multi_ctx(audio, final)
+            fut = self._pool.submit(self.stt_ctx, audio, final, ahead)
+            multi = self.multi_ctx(audio, final, ahead)
             ro = fut.result()
         else:
-            ro = self.stt_ctx(audio, final) if need_ro else ""
+            ro = self.stt_ctx(audio, final, ahead) if need_ro else ""
             if need_multi:
-                multi = ro if self.multi is self.stt else self.multi_ctx(audio, final)  # language detection / English
+                multi = ro if self.multi is self.stt else self.multi_ctx(audio, final, ahead)  # language detection / English
         # look-ahead: words held from the previous (mid-speech) cut appear now, so the delay
         # clock starts when they were spoken (~0.4 s per held word before that cut)
         t_first = t_speech or t_start
@@ -712,7 +792,7 @@ class Engine:
         seam = getattr(self.stt_ctx, "seam", None) if need_ro else None   # idea 25: a word cut by the last chunk
         emit({"type": "clause", "id": self._next_id(), "ro": ro.strip(), "multi": multi.strip(),
               "t_start": t_start, "t_speech": t_first, "t_end": t_end, "t_emit": time.time(), "stt_s": round(time.time() - t, 4),
-              "audio_s": round(len(audio) / SR, 3), **({"seam": list(seam)} if seam else {})})
+              "audio_s": round(len(audio) / SR, 3), "final": bool(final), **({"seam": list(seam)} if seam else {})})
 
     def run(self, q: queue.Queue, stop: threading.Event | None = None, hold: bool = False,
             idle_watch: bool = True) -> None:
@@ -859,14 +939,16 @@ class Engine:
             if ev == "pause":
                 # trim trailing silence, keep 100 ms
                 k = max((i for i, pp in enumerate(probs) if pp >= self.pt.threshold), default=len(probs) - 5) + 4
-                self.transcribe(np.concatenate(frames[:k]), times[0], last_voiced, first_voiced)
+                self.transcribe(np.concatenate(frames[:k]), times[0], last_voiced, first_voiced,
+                                ahead=np.concatenate(frames[k:]) if len(frames) > k else None)
                 frames, probs, times = [], [], []
             elif ev == "force":
                 # cut at the least-voiced frame in the last 2.5 s (never mid-word if avoidable)
                 lo = max(1, len(probs) - int(2.5 * SR / FRAME))
                 hi = max(lo + 1, len(probs) - int(0.3 * SR / FRAME))
                 cut = lo + int(np.argmin(probs[lo:hi]))
-                self.transcribe(np.concatenate(frames[:cut]), times[0], times[cut - 1], first_voiced, final=False)
+                self.transcribe(np.concatenate(frames[:cut]), times[0], times[cut - 1], first_voiced, final=False,
+                                ahead=np.concatenate(frames[cut:]))
                 frames, probs, times = frames[cut:], probs[cut:], times[cut:]
             elif self.partial_every and not behind and ts - last_partial > self.partial_every and len(frames) > 30:
                 last_partial = ts

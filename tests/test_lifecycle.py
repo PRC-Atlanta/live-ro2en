@@ -47,7 +47,7 @@ def _bare(mode="ro-en"):
     e.n, e._id_lock = 0, threading.Lock()
     e.vad = lambda fr: float(fr[0])
     e.calls = []
-    e.transcribe = lambda audio, t0, t1, t_speech=None, final=True: e.calls.append(len(audio))
+    e.transcribe = lambda audio, t0, t1, t_speech=None, final=True, ahead=None: e.calls.append(len(audio))
     return e
 
 

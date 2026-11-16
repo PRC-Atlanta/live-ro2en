@@ -192,6 +192,94 @@ def test_context_stt_flags_a_word_cut_by_the_chunk():
     assert not same_word("Laodicea.", "observăm") and not same_word("e", "este")
 
 
+class _TimedSTT:
+    """A recogniser that tells when each word was heard: scripted (word, start_s, end_s) lists."""
+    def __init__(self, *calls):
+        self.calls, self.heard = list(calls), []
+
+    def words(self, audio):
+        self.heard.append(len(audio) / 16000)
+        w = self.calls.pop(0)
+        return " ".join(x[0] for x in w), w
+
+    def __call__(self, audio):
+        return self.words(audio)[0]
+
+
+def _sec(s):
+    import numpy as np
+    return np.zeros(int(s * 16000), dtype=np.float32)
+
+
+# idea 25: words are committed by when they were heard, and a forced cut hears the audio past it
+def test_context_stt_commits_by_time_and_hears_past_a_forced_cut():
+    from live.context_stt import ContextSTT
+    stt = _TimedSTT(
+        [("a", 0.2, 0.4), ("b", 0.8, 1.0), ("c.", 1.5, 1.8)],
+        # context 2 s + chunk 2 s + 1 s ahead: «importantă» lies mostly after the cut at 4.0
+        [("a", 0.2, 0.4), ("b", 0.8, 1.0), ("c", 1.5, 1.8), ("d", 2.3, 2.6), ("e", 3.0, 3.4),
+         ("importantă", 3.8, 4.4), ("cât", 4.5, 4.7)],
+        # context = the last 2 s, so the clock moved by 2 s
+        [("d", 0.3, 0.6), ("e", 1.0, 1.4), ("importantă", 1.8, 2.4), ("cât", 2.5, 2.7), ("x.", 3.0, 3.5)])
+    c = ContextSTT(stt, ctx_s=2.0)
+    assert c(_sec(2), final=True) == "a b c."
+    assert c(_sec(2), final=False, ahead=_sec(1)) == "d e"
+    assert stt.heard[-1] == 5.0                              # context + chunk + the audio ahead
+    assert c(_sec(2), final=True) == "importantă cât x." and c.seam is None
+    assert stt.heard[-1] == 4.0                              # the audio ahead was not kept as context
+
+
+def test_context_stt_a_word_mostly_before_the_cut_is_committed_once():
+    from live.context_stt import ContextSTT
+    stt = _TimedSTT(
+        [("a", 0.2, 0.4), ("importantă", 1.6, 2.2), ("cât", 2.4, 2.6)],          # cut at 2.0, 1 s ahead
+        # heard again one frame later: still the committed word, not a new one
+        [("a", 0.2, 0.4), ("importantă", 1.92, 2.28), ("cât", 2.4, 2.6), ("y.", 3.0, 3.4)])
+    c = ContextSTT(stt, ctx_s=2.0)
+    assert c(_sec(2), final=False, ahead=_sec(1)) == "a importantă"
+    assert c(_sec(2), final=True) == "cât y."
+
+
+def test_context_stt_the_last_word_heard_later_or_earlier_is_not_said_twice_or_lost():
+    from live.context_stt import ContextSTT
+    # the one-frame word «și» committed at 1.84-1.92; next time it sits two frames later, past the old boundary
+    stt = _TimedSTT([("a", 0.2, 0.4), ("și", 1.84, 1.92)],
+                    [("a", 0.2, 0.4), ("și", 2.0, 2.08), ("b.", 2.5, 2.9)])
+    c = ContextSTT(stt, ctx_s=2.0)
+    assert c(_sec(2), final=True) == "a și"
+    assert c(_sec(2), final=True) == "b."
+    # the first new word sits a frame before the old boundary: it is still new
+    stt = _TimedSTT([("a", 0.2, 0.4), ("și", 1.84, 1.92)],
+                    [("a", 0.2, 0.4), ("și", 1.76, 1.84), ("b", 1.84, 1.92), ("c.", 2.5, 2.9)])
+    c = ContextSTT(stt, ctx_s=2.0)
+    assert c(_sec(2), final=True) == "a și"
+    assert c(_sec(2), final=True) == "b c."
+
+
+def test_context_stt_a_word_at_the_edge_of_the_audio_waits():
+    from live.context_stt import ContextSTT
+    stt = _TimedSTT([("a", 0.2, 0.4), ("impor", 1.7, 2.0)],                      # forced, nothing ahead
+                    [("a", 0.2, 0.4), ("importantă", 1.7, 2.4), ("b.", 3.0, 3.4)])
+    c = ContextSTT(stt, ctx_s=2.0)
+    assert c(_sec(2), final=False) == "a"
+    assert c(_sec(2), final=True) == "importantă b."
+
+
+def test_context_stt_without_word_times_stitches_by_text():
+    from live.context_stt import ContextSTT
+
+    class NoTimes(_TimedSTT):
+        def words(self, audio):
+            return self.calls[0], []                         # the text, but no times
+
+        def __call__(self, audio):
+            return self.calls.pop(0)
+    c = ContextSTT(NoTimes("for god so", "for god so loved the world"), ctx_s=1.0)
+    assert c(_sec(0.5)) == "for god so" and c(_sec(0.5), ahead=_sec(0.5)) == "loved the world"
+    c = ContextSTT(_TimedSTT([("for", 0.1, 0.2)], [("for", 0.1, 0.2), ("god", 0.6, 0.8)]), ctx_s=1.0, timed=False)
+    assert c(_sec(0.5)) == "for" and c(_sec(0.5)) == "god"
+
+
 # 2026-11-06 / 2026-11-08: NLLB English → Romanian
 def test_nllb_english_without_fillers_and_stutters_split_in_sentences():
     from live import translate as T

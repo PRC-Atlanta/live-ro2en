@@ -35,7 +35,7 @@ class FakeEngine(E.Engine):
         self.vad = lambda fr: 1.0 if float(np.abs(fr).max()) > 0.1 else 0.0
         E.loading("Ready", 100)
 
-    def transcribe(self, audio, t_start, t_end, t_speech=None, final=True):
+    def transcribe(self, audio, t_start, t_end, t_speech=None, final=True, ahead=None):
         E.emit({"type": "clause", "id": self._next_id(), "ro": SENT, "multi": "",
                 "t_start": t_start, "t_speech": t_speech or t_start, "t_end": t_end, "t_emit": time.time(),
                 "stt_s": 0.01, "audio_s": round(len(audio) / E.SR, 3)})
