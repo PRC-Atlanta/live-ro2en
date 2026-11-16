@@ -65,6 +65,10 @@ def test_speed_never_leaves_the_settings_range():
 
 
 # --- the voiced runs of 2026-11-10 (§4.3, §14), replayed through the same functions ----------------------
+# They were voiced with the speed answering to the whole lag and no short-sentence rule: replayed that way.
+LEGACY = {"speed_by": "lag", "short_words": 0}
+
+
 def replay(name):
     pace = list(csv.DictReader(open(D / f"{name}.pace.csv")))
     info = json.load(open(D / f"{name}.pace.json"))
@@ -88,7 +92,7 @@ def replay(name):
         if q is None:
             return {"ok": False, "reason": "not in the recorded run", "gemma_s": 1.0}
         return {"ok": q["accepted"], "text": q.get("out", ""), "reason": q.get("reason"), "gemma_s": q.get("gemma_s", 0)}
-    played, skipped, requests = pacing.simulate(sents, say, summ)
+    played, skipped, requests = pacing.simulate(sents, say, summ, LEGACY)
     return played, skipped, requests, info["stats"], wrong_speed
 
 
@@ -130,7 +134,7 @@ def test_the_plans_speed_table_is_reproduced(name, base, fixed, smooth):
     def say(text, nm, speed):
         r = tts[int(nm[1:])]
         return {"gen_s": float(r["gen_s"]), "audio_s": float(r["audio_s"]) * base / speed}
-    off = {"skip_s": 1e9, "limit_s": 1e9}
+    off = {"skip_s": 1e9, "limit_s": 1e9, **LEGACY}
     for cfg, (median, share) in (({**off, "speed": 1.25, "speed_max": 1.25}, fixed), (off, smooth)):
         played, _, _ = pacing.simulate(sentences(name), say, None, cfg)
         d = delays(played)
@@ -172,7 +176,7 @@ def test_the_catch_up_simulation_is_reproduced(name):
     # that simulation: one speed, no gap between items, no guards, no skip, any batch size
     played, _, _ = pacing.simulate(sentences(name), say, summarize_,
                                    {"speed": 1.25, "speed_max": 1.25, "gap_s": 0.0, "skip_s": 1e9, "summary_min_words": 0,
-                                    "summary_timeout_s": 1e9})
+                                    "summary_timeout_s": 1e9, **LEGACY})
     d = delays(played)
     # It projected a sentence's start from its real generation time; the voice can only estimate it
     # (words × the recent seconds per word), so the Alex run differs by a few tenths at the 90th percentile.
@@ -414,3 +418,28 @@ def test_the_answer_budget_follows_the_input_and_a_late_summary_is_not_started()
         summarize.GemmaSummarizer(tr).generate(["cuvânt " * 20], "ro")
         assert seen["max_tokens"] == 80
     assert summarize.MIN_TIME_LEFT_S >= 1.0
+
+
+# --- the speed answers to the wait for the audio ahead, not the whole lag (replay of 2026-11-16) -------------
+def test_a_late_sentence_with_nothing_ahead_keeps_the_normal_speed():
+    p = pacing.Pace()
+    d = p.plan(_s(3, behind=5.0), 1000.0, 990.0, [])            # 5 s behind the speaker, the voice is free
+    assert d["wait"] <= 0.01 and d["speed"] == 1.25
+    old = pacing.Pace({"speed_by": "lag", "short_words": 0})
+    assert old.plan(_s(3, behind=5.0), 1000.0, 990.0, [])["speed"] > 1.25   # the old rule sped it up
+
+
+def test_audio_waiting_ahead_speeds_up():
+    p = pacing.Pace()
+    a = _s(1)
+    speeds = [p.plan(_s(3), 1000.0, 1006.0, [_q(a)])["speed"] for _ in range(4)]
+    assert speeds[0] == 1.35 and speeds[-1] == 1.5
+
+
+def test_a_short_sentence_keeps_the_normal_speed_and_the_pace_is_kept():
+    p = pacing.Pace()
+    for _ in range(3):
+        p.plan(_s(3), 1000.0, 1006.0, [_q(_s(1))])
+    assert p.speed == 1.5
+    d = p.plan(_s(4, words=2), 1000.0, 1006.0, [_q(_s(1))])
+    assert d["speed"] == 1.25 and p.speed == 1.5

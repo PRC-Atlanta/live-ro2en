@@ -25,6 +25,22 @@ KEEP = 10                       # published sentences an operator's correction c
 QUIET_FLUSH = 1.0               # × flush_s: an open sentence is published when the voice has been silent this long
                                 # (M6, §9: 1 × was measured against 1.5 × and against not doing it at all)
 NO_NEXT = 99.0                  # "nothing follows": a gap longer than any pause
+# A sentence that ends on a pause is held while the voice still has this much to say in its language
+# (no cost: it could not be heard sooner), so that the speaker's next chunk can show it went on. The
+# recogniser puts a period at every breath: in the replay of 2026-11-16 about 28 of 128 sentences ended
+# mid-clause («…said that prayer.» | «And sin will never live…») and were read as two finished sentences.
+HOLD_LEFT_S = 1.5
+# The held sentence went on when the next chunk's source starts in lower case, or the held one ends
+# on a word that cannot end a sentence.
+DANGLING = {
+    "en": set("a an the and or but nor that which who whom whose to of for from in on at by with as if than so "
+              "can could will would may might must should shall have has had is are was were be been am do does "
+              "did not no very this these those their our your his its my when where while because although "
+              "though unless until".split()),
+    "ro": set("și sau dar iar că ca de la în pe cu din pentru prin spre să care ce cine un o al ale ai a lui lor "
+              "mai nu va vor poate este sunt era fi am ai au îl îi le se ne vă când dacă unde cum fiindcă "
+              "deoarece".split()),
+}
 # capitalised wherever they stand (clean_sermon.ALWAYS_CAP in the simulation)
 ALWAYS_CAP_RO = {"Dumnezeu", "Dumnezeul", "Dumnezeului", "Domnul", "Domnului", "Isus", "Hristos", "Duhul",
                  "Duhului", "Biblia", "Bibliei", "Biblie", "Pavel", "Tesaloniceni", "Cristos"}
@@ -92,6 +108,7 @@ class SentenceBuilder:
         self._n = 0
         self._next_sid = next_sid or self._count
         self.last_id = None                            # the chunk added last (Remove last / Fix last)
+        self.hold = None                               # callable: may a sentence that ended on a pause wait?
 
     def _count(self) -> int:
         self._n += 1
@@ -118,7 +135,45 @@ class SentenceBuilder:
                 text = text.split(" ", 1)[1] if " " in text else ""
         return book_numbers(text, self.lang)
 
+    @property
+    def held(self) -> bool:
+        return bool(self.parts) and bool(self.parts[-1].get("held"))
+
+    def goes_on(self, chunk: dict) -> bool:
+        """Does `chunk` continue the held sentence? Its source (what the speaker said) starts in lower
+        case, or the held sentence ends on a word no sentence ends on."""
+        src = re.sub(r"^[^\w]+", "", (chunk.get("src") or "").strip())
+        if src[:1].isalpha() and src[:1].islower():
+            return True
+        last = self.parts[-1]
+        for text, lang in ((last.get("raw") or last["text"], self.lang), (last.get("src") or "", "ro" if self.lang == "en" else "en")):
+            w = re.findall(r"[\wăâîșțşţ'-]+", text.lower())
+            if w and w[-1] in DANGLING[lang]:
+                return True
+        return False
+
+    def release(self) -> dict | None:
+        """The voice is about to run out: the held sentence goes out as it is."""
+        if not self.held:
+            return None
+        self.parts[-1].pop("held", None)
+        return self._close("pause")
+
     def add(self, chunk: dict, gap: float = NO_NEXT, last: bool = False) -> list[dict]:
+        out = []
+        if self.held:
+            if self.parts[-1]["text"].endswith(".") and self.goes_on(chunk):
+                held = self.parts[-1]
+                held.pop("held", None)
+                w = re.findall(r"[\w'-]+", held["text"].lower())
+                dangling = bool(w) and w[-1] in DANGLING[self.lang]
+                held["text"] = held["text"][:-1] + ("" if dangling else ",")   # it went on: one sentence
+                held["known"] = None
+            else:
+                out.append(self.release())
+        return out + self._add(chunk, gap, last)
+
+    def _add(self, chunk: dict, gap: float = NO_NEXT, last: bool = False) -> list[dict]:
         c = self.cfg
         raw = (chunk.get("text") or "").strip()
         self.names |= seen_names(raw, self.lang)
@@ -132,6 +187,10 @@ class SentenceBuilder:
         if ends and gap >= c["pause_s"]:
             part["known"] = chunk.get("t_end", 0.0) + c["pause_s"]
             self.parts.append(part)
+            if (not last and text.endswith(".") and words < c["max_words"] and self.hold is not None
+                    and self.hold()):
+                part["held"] = True                    # wait for the next chunk while the voice is busy
+                return []
             return [self._close("pause")]
         if last:
             part["text"] = text if ends else text + "."
@@ -178,6 +237,8 @@ class SentenceBuilder:
 
     def flush(self, why: str = "flush") -> dict | None:
         """Close and return the open sentence (a language switch, Stop, a speaker who trailed off)."""
+        if self.held:
+            return self.release()
         return self._close(why) if self.parts else None
 
     def close_if_ended(self, t: float) -> dict | None:
@@ -325,6 +386,7 @@ class SpeechMixin:
             b = self._speech_builders[lang] = SentenceBuilder(lang, self.voice_cfg(), next_sid=self._speech_next_sid)
         b.cfg = {**DEFAULTS, **{k: v for k, v in self.voice_cfg().items() if k in DEFAULTS}}
         b.names |= self._speech_names(lang)
+        b.hold = (lambda: self._speech_voice_busy(lang)) if self.voice_cfg().get("hold", True) else None
         return b
 
     def _speech_names(self, lang: str) -> set[str]:
@@ -508,6 +570,11 @@ class SpeechMixin:
                 if self._speech_q:
                     self._speech_arm_flush()
                     return
+            for lang, b in list(self._speech_builders.items()):
+                if b.held and not self._speech_voice_busy(lang):      # the voice is about to run out
+                    s = b.release()
+                    if s is not None:
+                        self._speech_publish(s)
             if not any(b.parts for b in self._speech_builders.values()):
                 return
             flush_s = float(self.voice_cfg().get("flush_s", DEFAULTS["flush_s"]))
@@ -531,6 +598,16 @@ class SpeechMixin:
         if not mine or time.time() - at > 2.5:
             return False
         return not mine.get("queue_n") and mine.get("playing_sid") is None
+
+    def _speech_voice_busy(self, lang: str) -> bool:
+        """The voice process said, within the last 2.5 s, that it still has more than HOLD_LEFT_S of audio
+        to play in `lang` (counting the time since it said so). Unknown = not busy: nothing is held."""
+        st, at = getattr(self, "_voice_status", None) or {}, getattr(self, "_voice_status_t", 0.0)
+        mine = (st.get("langs") or {}).get(lang)
+        age = time.time() - at
+        if not mine or age > 2.5 or mine.get("left_s") is None:
+            return False
+        return float(mine["left_s"]) - age > HOLD_LEFT_S
 
     def _speech_dropped(self, ev: dict):
         """A phrase that was not captioned (pipeline._log_failure): see SentenceBuilder.close_if_ended."""
