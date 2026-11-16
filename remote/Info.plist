@@ -19,9 +19,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.3</string>
+	<string>0.1.4</string>
 	<key>CFBundleVersion</key>
-	<string>4</string>
+	<string>5</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>LSApplicationCategoryType</key>
@@ -45,5 +45,19 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<!-- Sparkle updates (docs/release.md "Updates"): the appcast is attached to the newest GitHub
+	     release; checks run on their own, the update downloads quietly and installs on quit.
+	     SUPublicEDKey is the public half of the key in the release Mac's keychain
+	     (Sparkle generate_keys, account live-ro2en): an update not signed with it is refused. -->
+	<key>SUFeedURL</key>
+	<string>https://github.com/PRC-Atlanta/live-ro2en/releases/latest/download/appcast-remote.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>9oNBbOQ+W6WUfkk/E5voUqAasClkLsqy7hfo40+4qxs=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
+	<key>SUAllowsAutomaticUpdates</key>
+	<true/>
 </dict>
 </plist>
