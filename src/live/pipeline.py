@@ -23,7 +23,7 @@ import song
 import translate
 from captions import tidy_clause
 from langid import score as lang_score
-from segmenter import split_clauses
+from segmenter import DANGLING, NEGATION_END, split_clauses
 from textnorm import apply_spellings, fold_diacritics, tokens
 
 # A change of these needs a new engine process; every other profile setting is applied live.
@@ -43,17 +43,6 @@ def is_name_list(text: str) -> bool:
     translator rightly leaves as they are (idea 15). Needs at least two words."""
     words = re.findall(r"[^\W\d_]+", text)
     return len(words) >= 2 and sum(w[0].isupper() for w in words) >= 0.75 * len(words)
-
-
-# a phrase that stops on one of these was cut mid-thought ("aduc condoleanțe din."): it waits
-# for the next one (idea 20). Compared with diacritics: "sa" (his) ends phrases, "să" does not.
-DANGLING = frozenset("din de la în cu pe pentru și că care dar iar sau ca să "
-                     "of to in on for and but that which the a an".split())
-
-
-# a Romanian phrase that stops on a negation lost it at the cut: «în ceața aceea că nu.» |
-# «mai recunoaștem» came out "where we do not" | "we again recognize" (2026-11-08 evening, idea 35)
-NEGATION_END = frozenset({"nu", "nici", "n"})
 
 
 def dangling(text: str) -> bool:

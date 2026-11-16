@@ -231,15 +231,35 @@ def test_context_stt_commits_by_time_and_hears_past_a_forced_cut():
 
 def test_context_stt_the_word_after_the_pause_a_forced_cut_sits_in_waits():
     from live.context_stt import ContextSTT
-    # «În» is stamped at 1.82, before the cut at 2.0, but the voice had been silent for 0.3 s there
-    script = lambda: _TimedSTT([("de", 0.9, 1.0), ("tinerețe.", 1.1, 1.74), ("În", 1.82, 1.9), ("seara", 2.1, 2.4)],   # noqa: E731
-                               [("de", 0.9, 1.0), ("tinerețe.", 1.1, 1.74), ("În", 1.82, 1.9), ("seara", 2.1, 2.4),
+    # «mare» is stamped at 1.82, before the cut at 2.0, but the voice had been silent for 0.3 s there
+    script = lambda: _TimedSTT([("de", 0.9, 1.0), ("tinerețe", 1.1, 1.74), ("mare", 1.82, 1.9), ("seara", 2.1, 2.4)],   # noqa: E731
+                               [("de", 0.9, 1.0), ("tinerețe", 1.1, 1.74), ("mare", 1.82, 1.9), ("seara", 2.1, 2.4),
                                 ("aceasta.", 2.5, 3.0)])
     c = ContextSTT(script(), ctx_s=4.0)
-    assert c(_sec(2), final=False, ahead=_sec(1), quiet_s=0.3) == "de tinerețe."
-    assert c(_sec(1.5), final=True) == "În seara aceasta."
+    assert c(_sec(2), final=False, ahead=_sec(1), quiet_s=0.3) == "de tinerețe"
+    assert c(_sec(1.5), final=True) == "mare seara aceasta."
     c = ContextSTT(script(), ctx_s=4.0)                      # the cut in speech: the word began before it
-    assert c(_sec(2), final=False, ahead=_sec(1)) == "de tinerețe. În"
+    assert c(_sec(2), final=False, ahead=_sec(1)) == "de tinerețe mare"
+
+
+def test_context_stt_a_forced_piece_does_not_end_on_a_word_that_leans_on_the_next():
+    from live.context_stt import ContextSTT
+    from segmenter import held_back
+    assert held_back("dezamăgiți de un ușier, de".split()) == 1
+    assert held_back("orice predică, crezând că".split()) == 1
+    assert held_back("Nu este adevărat, nu".split()) == 1
+    assert held_back("cu foarte multă grijă. Priviți".split()) == 1      # the lone first word of a sentence
+    assert held_back("care s-a".split()) == 2 and held_back("și de".split()) == 2
+    assert held_back("Țineți-vă tari? Nu.".split()) == 0                # a sentence of its own stays
+    assert held_back("de un ușier".split()) == 0 and held_back([]) == 0
+    stt = _TimedSTT([("de", 0.3, 0.4), ("un", 0.5, 0.6), ("ușier,", 0.7, 1.3), ("de", 1.6, 1.7), ("un", 2.05, 2.1)],
+                    [("de", 0.3, 0.4), ("un", 0.5, 0.6), ("ușier,", 0.7, 1.3), ("de", 1.6, 1.7), ("un", 2.05, 2.1),
+                     ("învățător.", 2.3, 3.0)])
+    c = ContextSTT(stt, ctx_s=4.0)
+    assert c(_sec(2), final=False, ahead=_sec(0.5)) == "de un ușier,"
+    assert c(_sec(1.5), final=True) == "de un învățător."
+    stt = _TimedSTT([("crezând", 0.5, 0.9), ("că", 1.2, 1.3)])            # at a pause nothing is held back
+    assert ContextSTT(stt, ctx_s=4.0)(_sec(2), final=True) == "crezând că"
 
 
 def test_context_stt_a_word_mostly_before_the_cut_is_committed_once():
@@ -271,10 +291,10 @@ def test_context_stt_the_last_word_heard_later_or_earlier_is_not_said_twice_or_l
 
 def test_context_stt_a_word_at_the_edge_of_the_audio_waits():
     from live.context_stt import ContextSTT
-    stt = _TimedSTT([("a", 0.2, 0.4), ("impor", 1.7, 2.0)],                      # forced, nothing ahead
-                    [("a", 0.2, 0.4), ("importantă", 1.7, 2.4), ("b.", 3.0, 3.4)])
+    stt = _TimedSTT([("apoi", 0.2, 0.4), ("impor", 1.7, 2.0)],                   # forced, nothing ahead
+                    [("apoi", 0.2, 0.4), ("importantă", 1.7, 2.4), ("b.", 3.0, 3.4)])
     c = ContextSTT(stt, ctx_s=2.0)
-    assert c(_sec(2), final=False) == "a"
+    assert c(_sec(2), final=False) == "apoi"
     assert c(_sec(2), final=True) == "importantă b."
 
 

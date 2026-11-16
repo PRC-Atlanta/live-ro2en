@@ -22,7 +22,9 @@ import sys
 import numpy as np
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from scoring import align                       # noqa: E402
+from segmenter import held_back                 # noqa: E402
 from textnorm import fold_diacritics, key_tokens, tokens   # noqa: E402
 
 SR = 16000
@@ -218,6 +220,8 @@ class ContextSTT:
             m = k
             while m < len(words) and words[m][1] < began and words[m][2] <= end - self.edge_s:
                 m += 1
+            m -= held_back([w for w, _, _ in words[max(0, k - 1):m]][-3:]) if m > k else 0
+            m = max(m, k)
         late = self._missed(words, mid, k, b0)
         new = words[k:m]
         if new:
