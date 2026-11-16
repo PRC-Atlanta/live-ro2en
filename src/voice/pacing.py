@@ -12,24 +12,40 @@ DEFAULTS = {
     "speed": 1.25, "speed_max": 1.5, "speed_lag_lo_s": 2.0, "speed_lag_hi_s": 6.0, "speed_step": 0.1,
     "speed_round": 0.05, "gap_s": 0.25, "limit_s": 10.0, "skip_s": 20.0, "summary_timeout_s": 4.0,
     "summary_min_words": 12,
+    # What the speed answers to. "wait": only the time the sentence will wait for the audio ahead of it,
+    # the part speaking faster can win back. "lag": its whole delay after the speaker (the rule of the
+    # 2026-11-10 runs), which also counts recognising, translating and generating (~3.5 s) that no speed
+    # changes: in the replay of 2026-11-16, 118 of 129 items were sped up and 56 of those bought nothing,
+    # the voice then waited for the next sentence anyway.
+    "speed_by": "wait", "speed_wait_lo_s": 0.5, "speed_wait_hi_s": 4.0,
+    # Sentences of this many words or fewer keep the normal speed (unintelligible at 1.5x: «And 12.»);
+    # 0 = off.
+    "short_words": 3,
 }
+TEXT_SETTINGS = {"speed_by"}
 SKIP_PAUSE_S = 0.6            # the pause a skip leaves (no chime)
 SEC_PER_WORD0 = 0.05          # est_gen before any sentence has been generated
 SPW_KEEP = 20                 # est_gen = words x the median seconds per word of the last 20 items
 
 
 def settings(cfg: dict | None) -> dict:
-    return {**DEFAULTS, **{k: float(v) for k, v in (cfg or {}).items() if k in DEFAULTS and v is not None}}
+    out = dict(DEFAULTS)
+    for k, v in (cfg or {}).items():
+        if k in DEFAULTS and v is not None:
+            out[k] = str(v) if k in TEXT_SETTINGS else float(v)
+    return out
 
 
-def next_speed(prev: float, lag: float, c: dict) -> tuple[float, float]:
-    """(speed for this sentence, the unrounded target). 1.25 at <= 2 s behind, 1.5 at >= 6 s; the
-    target is rounded to the 0.05 grid and the speed moves at most 0.1 per sentence. A target within
-    one grid step of the current speed keeps it, as in the voiced runs (live_sim_pace.next_speed):
-    the lag wobbles by a few tenths from sentence to sentence."""
+def next_speed(prev: float, lag: float, c: dict, lo_s: float | None = None, hi_s: float | None = None) -> tuple[float, float]:
+    """(speed for this sentence, the unrounded target). 1.25 at <= lo_s behind (default speed_lag_lo_s,
+    2 s), 1.5 at >= hi_s (6 s); the target is rounded to the 0.05 grid and the speed moves at most 0.1
+    per sentence. A target within one grid step of the current speed keeps it, as in the voiced runs
+    (live_sim_pace.next_speed): the lag wobbles by a few tenths from sentence to sentence."""
     lo, hi = c["speed"], c["speed_max"]
-    span = max(c["speed_lag_hi_s"] - c["speed_lag_lo_s"], 1e-9)
-    target = lo + (hi - lo) * min(max((lag - c["speed_lag_lo_s"]) / span, 0.0), 1.0)
+    lo_s = c["speed_lag_lo_s"] if lo_s is None else lo_s
+    hi_s = c["speed_lag_hi_s"] if hi_s is None else hi_s
+    span = max(hi_s - lo_s, 1e-9)
+    target = lo + (hi - lo) * min(max((lag - lo_s) / span, 0.0), 1.0)
     grid = c["speed_round"] or 0.05
     if abs(target - prev) < grid - 1e-9:
         return prev, target
@@ -65,10 +81,18 @@ class Pace:
         tail = play_free
         for q in queued:
             tail = max(q["gen_end"], tail + q["pause_before"]) + q["audio_s"]
-        est_start = max(now + self.est_gen(int(s["words"])), tail + c["gap_s"])
+        ready_at = now + self.est_gen(int(s["words"]))
+        est_start = max(ready_at, tail + c["gap_s"])
         lag = est_start - s["spk_end"]
-        self.speed, target = next_speed(self.speed, lag, c)
-        out = {"lag": lag, "target": target, "speed": self.speed, "est_start": est_start, "ask": None, "why": None}
+        wait = est_start - ready_at                     # waiting for the audio ahead: what a faster voice wins back
+        if c["speed_by"] == "lag":
+            self.speed, target = next_speed(self.speed, lag, c)
+        else:
+            self.speed, target = next_speed(self.speed, wait, c, c["speed_wait_lo_s"], c["speed_wait_hi_s"])
+        speed = self.speed
+        if c["short_words"] and int(s["words"]) <= c["short_words"]:
+            speed = c["speed"]                          # this one at the normal speed; the pace is kept
+        out = {"lag": lag, "wait": wait, "target": target, "speed": speed, "est_start": est_start, "ask": None, "why": None}
         if lag > c["limit_s"]:
             batch = [x for q in queued for x in q["covers"]] + [s]
             words = sum(len(x["text"].split()) for x in batch)

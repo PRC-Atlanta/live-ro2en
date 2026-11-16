@@ -14,6 +14,34 @@ TARGET_RMS_DB = -20.0          # every item at the same speech level (plan §4.1
 PEAK_DB = -1.0
 EDGE_FADE_S = 0.010
 MAX_GAIN = 10.0               # +20 dB at most
+# Supertonic returns every sentence with ~0.4 s of silence before the first word and ~0.46 s after the
+# last (replay 2026-11-16: 111 s of 549 s, 20 % of all voice time). It is cut down to these margins.
+TRIM_FLOOR_DB = 45.0          # speech = 5 ms frames within this many dB of the item's loudest frame
+TRIM_LEAD_S = 0.06            # kept before the first word
+TRIM_TAIL_S = 0.15            # kept after the last (a final consonant's decay)
+# Text after the last word, so the model's own ending falls after it rather than on it: last words
+# were lost at 1.5x in 12/129 items; with this tail 41/48 against 36/48 on the hard items (the extra
+# audio it makes is trimmed away).
+TAIL_TEXT = " …"
+
+
+def trim(wav: np.ndarray, sr: int = SR, floor_db: float = TRIM_FLOOR_DB, lead_s: float = TRIM_LEAD_S,
+         tail_s: float = TRIM_TAIL_S) -> np.ndarray:
+    """The wave without the model's leading and trailing silence (margins kept)."""
+    wav = np.asarray(wav, dtype=np.float32).reshape(-1)
+    hop = max(1, int(0.005 * sr))
+    n = len(wav) // hop
+    if n < 4:
+        return wav
+    fr = 20 * np.log10(np.sqrt((wav[:n * hop].reshape(n, hop) ** 2).mean(1)) + 1e-9)
+    loud = fr > fr.max() - floor_db
+    if not loud.any() or fr.max() < -80:
+        return wav
+    first = int(np.argmax(loud))
+    last = n - 1 - int(np.argmax(loud[::-1]))
+    a = max(0, first * hop - int(lead_s * sr))
+    b = min(len(wav), (last + 1) * hop + int(tail_s * sr))
+    return wav[a:b]
 WARMUP = {"ro": "Bună ziua.", "en": "Good morning."}
 
 
@@ -64,10 +92,12 @@ class Synth:
         self.styles = {v: self.tts.get_voice_style(voice_name=v) for v in set(self.voices.values())}
 
     def say(self, text: str, lang: str = "ro", speed: float = 1.25) -> np.ndarray:
-        """`text` spoken in `lang`, levelled (float32, 44.1 kHz mono). The text must be speakable already."""
-        wav, _ = self.tts.synthesize(text, voice_style=self.styles[self.voices[lang]], lang=lang,
+        """`text` spoken in `lang`, trimmed and levelled (float32, 44.1 kHz mono). The text must be
+        speakable already."""
+        said = text.rstrip() + TAIL_TEXT if text.strip() else text
+        wav, _ = self.tts.synthesize(said, voice_style=self.styles[self.voices[lang]], lang=lang,
                                      total_steps=self.steps, speed=float(speed))
-        return level(np.asarray(wav, dtype=np.float32).reshape(-1))
+        return level(trim(np.asarray(wav, dtype=np.float32).reshape(-1)))
 
     def warm_up(self, langs=("ro", "en")):
         for lang in langs:

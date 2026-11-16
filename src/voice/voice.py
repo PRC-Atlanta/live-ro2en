@@ -610,6 +610,9 @@ class Voice:
                            "queue_n": len(queue) + sum(1 for s in waiting if s.get("lang") == lang)
                            + (1 if making is not None and making.get("lang") == lang else 0),
                            "queue_s": round(sum(q.audio_s for q in queue), 1),
+                           # seconds of audio still to play in this language (the item playing and the
+                           # queue): the sentence step holds a sentence that may go on while this is long
+                           "left_s": round(max(0.0, p.play_free(now) - now) + sum(q.audio_s for q in queue), 2),
                            "behind_s": round(behind, 1) if behind is not None else None,
                            "playing_sid": (cur.sids[0] if cur is not None and cur.sids else None),
                            "speed": self.pace[lang].speed}
