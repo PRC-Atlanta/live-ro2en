@@ -556,3 +556,48 @@ def test_operator_actions_between_the_screen_and_the_sentence_step(tmp_path):
         live._speech_stop()                                                  # …and the chunk is not voiced
         assert [s["chunks"] for s in _events(live, "sentence")] == [[0]], i
         assert live.sent[n:] == [], i                                        # nor is the one before taken back
+
+
+# --- a sentence that ended on a pause waits while the voice is busy (replay of 2026-11-16) -----------------
+def test_a_held_sentence_joins_a_chunk_that_goes_on():
+    b = SentenceBuilder("en")
+    b.hold = lambda: True                       # the voice still has audio to play
+    assert b.add(_c(1, "A man of God said that prayer.", 0, 3, src="Un om al lui Dumnezeu spunea că rugăciunea"), NO_NEXT) == []
+    assert b.held
+    assert b.add(_c(2, "And sin will never live in the same heart.", 4, 7, src="și păcatul nu vor trăi"), NO_NEXT) == []
+    assert b.held                               # joined, and held again while the voice is busy
+    b.hold = lambda: False
+    (s,) = b.add(_c(3, "Next thought.", 9, 10, src="Altceva."), NO_NEXT)[:1]
+    assert s["text"] == "A man of God said that prayer, and sin will never live in the same heart."
+    assert s["chunks"] == [1, 2]
+
+
+def test_a_held_sentence_goes_out_alone_when_the_next_chunk_starts_a_new_one():
+    b = SentenceBuilder("en")
+    b.hold = lambda: True
+    assert b.add(_c(1, "The solution is the Lord Jesus.", 0, 3, src="Soluția este Domnul Isus."), NO_NEXT) == []
+    out = b.add(_c(2, "He is the source of water.", 4, 6, src="El este izvorul de apă."), NO_NEXT)
+    assert [s["text"] for s in out][:1] == ["The solution is the Lord Jesus."]
+
+
+def test_a_dangling_last_word_also_joins():
+    b = SentenceBuilder("en")
+    b.hold = lambda: True
+    b.add(_c(1, "Whether prayer will consume sin, or.", 0, 3, src="Fie rugăciunea va mistui păcatul, fie"), NO_NEXT)
+    assert b.held
+    b.hold = lambda: False
+    out = b.add(_c(2, "Sin will suffocate the prayer.", 4, 6, src="Păcatul va sufoca rugăciunea."), NO_NEXT)
+    assert out[0]["text"] == "Whether prayer will consume sin, or sin will suffocate the prayer."
+
+
+def test_release_and_flush_publish_a_held_sentence_and_nothing_is_held_without_a_busy_voice():
+    b = SentenceBuilder("en")
+    b.hold = lambda: True
+    b.add(_c(1, "We can take our places.", 0, 3, src="Putem să ne ocupăm locurile."), NO_NEXT)
+    s = b.release()
+    assert s["text"] == "We can take our places." and s["why"] == "pause" and not b.parts
+    b.add(_c(2, "We can take our places.", 4, 6, src="Putem."), NO_NEXT)
+    assert b.flush()["text"] == "We can take our places."
+    b.hold = None
+    (s,) = b.add(_c(3, "Again.", 7, 8, src="Iar."), NO_NEXT)
+    assert s["text"] == "Again."

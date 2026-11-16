@@ -52,8 +52,11 @@ line of `livectl.py status`; `None` means the system default, whose name
 prints). This runs from the clone whichever copy is captioning:
 `cd "<repo>" && .venv-nemo/bin/python scripts/record_input.py --rate 16000 --device "<input device>"`
 It records the raw input (before the app's gain) to `logs/recordings/<date>_<time>.wav`,
-~2 MB a minute, alongside the app (macOS lets both read the device). It is only for reference:
-after the service it is cut down to short clips (step 4) and the full file deleted.
+~2 MB a minute, alongside the app (macOS lets both read the device). **Always record when
+monitoring a service**, and keep it running until the service is over: the user wants every
+sermon kept. After the service it is cut down (step 5): short clips of the mistakes, plus
+every stretch of 10+ minutes of talking (sermons, long readings) kept whole; only then may the
+full file be deleted. If the recording stops mid-service, restart it at once and say so.
 
 ## 2. Level check (report, don't change)
 
@@ -106,9 +109,18 @@ app as the user wants it (ask; don't stop it on your own).
    `python3 scripts/livectl.py transcript "" <scratchpad>/transcript.txt`, then read it all.
 2. Update `docs/translation_ideas.md` with what the whole session shows.
 3. Cut the recording down: `python3 scripts/clip_recording.py plan` (check it: marks + what the
-   log flags, ≤ 90 s per clip, ≤ 30 min in all), then
-   `python3 scripts/clip_recording.py cut --delete-full`. Clips land in
-   `logs/recordings/clips/<recording>/` with an `index.md`; each replays on the bench
+   log flags, ≤ 90 s per clip, ≤ 30 min in all, and the list of talks of 10+ min, which are
+   kept whole outside that budget: every sermon must be on it; if one is missing, e.g. split
+   by a pause, rerun with a smaller `--talk-min` or cut it by hand), then
+   `.venv-mt/bin/python scripts/clip_recording.py cut` (this Python writes the talks straight
+   to OGG). Clips land in
+   `logs/recordings/clips/<recording>/` with an `index.md`, talks in
+   `logs/recordings/talks/` named by date and time (`2026-11-15_10h39-11h15.ogg`); each clip replays on the bench
    (`scripts/bench.py run <clip>.wav`). Add the new mistakes to the bench's error list if useful.
+   Label each talk by speaker: find who was introduced just before it in the log ("fratele
+   … ne va aduce un cuvânt", "pastor …"), add `_First-Last` to the OGG/JSON name (`2026-11-15_10h39-11h15_First-Last.ogg`), a
+   `speaker` field in the JSON and a line in `logs/recordings/talks/index.md`; say "unsure"
+   when the log doesn't name them. Names stay in `logs/` (git-ignored), never in the docs.
+   Delete the full recording (`cut --delete-full`) only when the user says yes.
 4. Tell the user in a few lines: how it went (timings, problems), how many ideas were added or
    strengthened (titles), and how many clips were kept. Offer nothing else unless asked.

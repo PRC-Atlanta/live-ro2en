@@ -60,7 +60,7 @@ def test_cut_writes_replayable_clips_and_deletes_the_full_recording(tmp_path, mo
     log.write_text(json.dumps({"outcome": "mt_overlong", "t_start": T0 + 60, "source": "T."}) + "\n")
     monkeypatch.setattr(C, "RECORDINGS", tmp_path)
     args = type("A", (), {"rec": str(rec), "log": str(log), "before": 20.0, "after": 10.0,
-                          "max_min": 30.0, "delete_full": True})()
+                          "max_min": 30.0, "talk_min": 0.0, "delete_full": True})()
     C.cut(args, really=True)
     clips = sorted((tmp_path / "clips" / rec.stem).glob("*.wav"))
     assert len(clips) == 1 and not rec.exists()

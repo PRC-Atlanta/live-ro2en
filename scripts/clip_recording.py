@@ -9,6 +9,9 @@
       --log LOG          the service log (default: the newest one that overlaps the recording)
       --before S / --after S   seconds kept around each moment (default 20 / 10)
       --max-min M        total clip length cap in minutes (default 30); marks are kept first
+      --talk-min M       also keep whole every stretch of M+ minutes of talking (a sermon, a long
+                         reading) in logs/recordings/talks/ as DATE_HHhMM-HHhMM.ogg (default 10; 0 = off; OGG needs
+                         soundfile: run with .venv-mt/bin/python, else they stay WAV)
 
 Moments: the operator's / Claude's marks (`mark`), then what the service log flags by itself —
 phrases not shown for a reason worth checking (confidence gate, over-long or echoed output,
@@ -164,6 +167,52 @@ def plan(moms: list[tuple[float, int, str]], t0: float, t1: float, before: float
     return sorted(kept, key=lambda k: k["start"])
 
 
+def talks(recs: list[dict], t0: float, t1: float, min_s: float, gap_s: float = 30.0,
+          pad_s: float = 15.0) -> list[dict]:
+    """Stretches of continuous talking (sermons, long readings): phrases no more than gap_s
+    apart that last min_s or more, padded a little, clamped to the recording. Songs and silence
+    leave gaps in the log, so they split stretches."""
+    ps = sorted((r for r in recs if "t_start" in r and "t_end" in r and "outcome" in r),
+                key=lambda r: r["t_start"])
+    runs: list[list[dict]] = []
+    for p in ps:
+        if runs and p["t_start"] - runs[-1][-1]["t_end"] <= gap_s:
+            runs[-1].append(p)
+        else:
+            runs.append([p])
+    out = []
+    for r in runs:
+        a, b = r[0]["t_start"], r[-1]["t_end"]
+        if b - a < min_s:
+            continue
+        a, b = max(t0, a - pad_s), min(t1, b + pad_s)
+        if b - a >= min_s * 0.9:   # mostly inside the recording
+            out.append({"start": a, "end": b, "phrases": len(r),
+                        "speech": sum(p["t_end"] - p["t_start"] for p in r) / (r[-1]["t_end"] - r[0]["t_start"])})
+    return out
+
+
+def to_ogg(wav: pathlib.Path) -> pathlib.Path:
+    """Talks are kept for listening, so store them as OGG Opus (~40 kbps, ~6x smaller than 16 kHz WAV) when soundfile is
+    available (run with .venv-mt/bin/python); the WAV is removed once the OGG checks out.
+    Without soundfile the WAV stays."""
+    try:
+        import soundfile as sf
+    except ImportError:
+        return wav
+    ogg = wav.with_suffix(".ogg")
+    info = sf.info(wav)
+    with sf.SoundFile(wav) as src, sf.SoundFile(ogg, "w", samplerate=info.samplerate, channels=info.channels,
+                                                format="OGG", subtype="OPUS", compression_level=0.85) as dst:   # ~40 kbps: clear speech
+        for block in src.blocks(blocksize=info.samplerate * 10):
+            dst.write(block)
+    if abs(sf.info(ogg).duration - info.duration) < 1.0:
+        wav.unlink()
+        return ogg
+    ogg.unlink()
+    return wav
+
+
 def _gather(rec_arg: str | None, log_arg: str | None):
     rec = pathlib.Path(rec_arg) if rec_arg else newest_recording()
     meta = bench._meta(rec)
@@ -189,12 +238,32 @@ def cut(args, really: bool) -> None:
           f"{len(marks)} marks; {len(clips)} clips, {total / 60:.1f} min")
     for c in clips:
         print(f"  {hms(c['start'])}-{hms(c['end'])}  " + "; ".join(c["why"])[:150])
+    long = talks(recs, t0, t1, args.talk_min * 60) if args.talk_min > 0 else []
+    print(f"{len(long)} talks of {args.talk_min:g}+ min kept whole (outside the clip budget)"
+          + "".join(f"\n  {hms(t['start'])}-{hms(t['end'])}  {(t['end'] - t['start']) / 60:.0f} min, "
+                    f"{t['phrases']} phrases, speech {t['speech']:.0%}" for t in long))
     if not really:
         return
+    ok = True
+    if long:
+        tdir = RECORDINGS / "talks"
+        tdir.mkdir(parents=True, exist_ok=True)
+        for t in long:
+            a, b = (dt.datetime.fromtimestamp(t[k] + 30) for k in ("start", "end"))   # to the minute
+            wav = tdir / f"{a:%Y-%m-%d_%Hh%M}-{b:%Hh%M}.wav"   # e.g. 2026-11-15_10h39-11h15.wav
+            start = bench.cut(rec, t["start"], t["end"], wav)
+            wav.with_suffix(".json").write_text(json.dumps({**meta, "start_wall": start,
+                                                            "start_iso": dt.datetime.fromtimestamp(start).isoformat(timespec="milliseconds"),
+                                                            "source": str(rec), "why": ["talk"]}, ensure_ascii=False, indent=1))
+            good = wav.stat().st_size >= 44 + int((t["end"] - t["start"]) * meta["samplerate"]) * 2 * 0.98
+            ok &= good
+            if good:
+                print(f"  {to_ogg(wav).name}")
+        print(f"talks in {tdir}")
     out = RECORDINGS / "clips" / rec.stem
     out.mkdir(parents=True, exist_ok=True)
     lines = [f"# Clips of {rec.name}", "", "Service logs: " + (", ".join(f"`{p}`" for p in logs) or "none"), ""]
-    ok = True
+    lines += [f"- talk kept whole in `../../talks/`: {hms(t['start'])}-{hms(t['end'])}" for t in long]
     for c in clips:
         wav = out / f"{hms(c['start']).replace(':', '')}-{hms(c['end']).replace(':', '')}.wav"
         start = bench.cut(rec, c["start"], c["end"], wav)
@@ -232,6 +301,7 @@ def main() -> None:
         c.add_argument("--before", type=float, default=20.0)
         c.add_argument("--after", type=float, default=10.0)
         c.add_argument("--max-min", type=float, default=30.0)
+        c.add_argument("--talk-min", type=float, default=10.0)
         if name == "cut":
             c.add_argument("--delete-full", action="store_true")
     a = ap.parse_args()
