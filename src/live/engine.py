@@ -226,12 +226,19 @@ def _path_words(path: list[int], blank: int, tokenizer, dec, sec: float, text: s
             groups.append([tk])
         else:
             groups[-1].append(tk)
-    words = []
+    clock = []                                           # per character of the text, its word's times
     for g in groups:
-        w = dec.decode_tokens_to_str_with_strip_punctuation([t[0] for t in g]).strip()
-        if w:
-            words.append((w, round(g[0][1] * sec, 3), round((g[-1][2] + 1) * sec, 3)))
-    return words if " ".join(w for w, _, _ in words) == " ".join(text.split()) else []
+        w = "".join(dec.decode_tokens_to_str_with_strip_punctuation([t[0] for t in g]).split())
+        clock += [(round(g[0][1] * sec, 3), round((g[-1][2] + 1) * sec, 3))] * len(w)
+    # the text's own words (it sets a quote or a colon against its word: «Bună:"Hei,», «lumea." Noi»)
+    target = text.split()
+    if len(clock) != sum(len(w) for w in target):
+        return []
+    words, pos = [], 0
+    for w in target:
+        words.append((w, clock[pos][0], clock[pos + len(w) - 1][1]))
+        pos += len(w)
+    return words
 
 
 class ParakeetSTT:
