@@ -318,6 +318,8 @@ def judge(err: dict, phrases: list[dict], day: str, window: float = 25.0, t: flo
     if err.get("on") == "ro":
         window = min(window, 12.0)
     near = [r for r in phrases if r.get("t_end", 0) >= t - window and r.get("t_start", 0) <= t + window]
+    if err.get("pair"):
+        return judge_pair(err, near)
     if err.get("on") == "ro":
         from textnorm import fold_diacritics  # noqa: PLC0415
         lines = [fold_diacritics(" ".join((r.get("source") or "").split()).lower())
@@ -334,6 +336,33 @@ def judge(err: dict, phrases: list[dict], day: str, window: float = 25.0, t: flo
     if good and not any(re.search(good, ln, re.I) for ln in lines):
         return "still" if not bad else "fixed?", text
     return "fixed", text
+
+
+def judge_pair(err: dict, near: list[dict]) -> tuple[str, str]:
+    """The seam catalogue (scripts/seam_catalogue.py): two look-alike words at a piece boundary.
+    'missing' = not reproduced: the recogniser did not give the two side by side this time, and
+    the right reading is not there either. Else 'fixed' when the shown Romanian transcript has the
+    right reading (seam: the word before, then the second; dup: the first, then the word after;
+    keep: both), 'still' when not."""
+    from textnorm import fold_diacritics  # noqa: PLC0415
+
+    def fold(texts):
+        return fold_diacritics(" ".join(" ".join(x.split()) for x in texts if x).lower())
+
+    def rx(*words):
+        return r"\b" + r"\W+".join(re.escape(fold([w])) for w in words) + r"\b"
+    raw = fold(r.get("ro") or "" for r in near)                    # the recogniser's words, every piece
+    shown = fold(r.get("source") or "" for r in near if r.get("outcome") == "ok")
+    stub, word = err["pair"]
+    both = rx(stub, word)
+    right = {"seam": rx(err["before"], word) if err.get("before") else None,
+             "dup": rx(stub, err["after"]) if err.get("after") else None, "keep": both}[err["cat"]]
+    ok = bool(right and re.search(right, shown)) and (err["cat"] == "keep" or not re.search(both, shown))
+    if not re.search(both, raw):
+        return ("fixed" if ok and err["cat"] != "keep" else "missing"), shown
+    if right is None:
+        ok = not re.search(both, shown)
+    return ("fixed" if ok else "still"), shown
 
 
 GARBAGE = re.compile(r"<[^>\s]*\|>|<\|[^>]*>|\(Note|Note:|\[[a-z ]+\]", re.I)

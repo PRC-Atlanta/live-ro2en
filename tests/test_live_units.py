@@ -265,6 +265,25 @@ def test_context_stt_a_word_at_the_edge_of_the_audio_waits():
     assert c(_sec(2), final=True) == "importantă b."
 
 
+def test_context_stt_says_late_a_clause_the_last_chunk_lost():
+    from live.context_stt import ContextSTT
+    stt = _TimedSTT(
+        [("lăudat", 0.2, 0.5), ("să", 0.6, 0.7), ("fie", 0.8, 0.9), ("Domnul", 1.2, 1.8)],
+        # 4 s of speech heard as two words
+        [("lăudat", 0.2, 0.5), ("să", 0.6, 0.7), ("fie", 0.8, 0.9), ("Domnul", 1.2, 5.2), ("acesta.", 5.4, 5.9)],
+        # with the next chunk the clause is there: context = the last 5 s, clock moved by 1 s
+        [("fie", 0.0, 0.1), ("Domnultarea", 1.1, 1.6), ("care", 2.3, 2.4), ("s-a", 2.5, 2.7), ("cântat", 2.8, 3.1),
+         ("înainte", 3.2, 3.5), ("de", 3.6, 3.7), ("mesajul", 3.8, 4.2), ("acesta,", 4.4, 4.9), ("mi-a", 5.2, 5.4),
+         ("dat.", 5.5, 5.8)],
+        # one changed word is not said again
+        [("mesajul", 0.0, 0.2), ("acela,", 0.4, 0.9), ("mi-a", 1.2, 1.4), ("dat", 1.5, 1.8), ("curaj.", 5.2, 5.6)])
+    c = ContextSTT(stt, ctx_s=5.0)
+    assert c(_sec(2), final=True) == "lăudat să fie Domnul"
+    assert c(_sec(4), final=True) == "Domnul acesta."
+    assert c(_sec(1), final=True) == "care s-a cântat înainte de mesajul mi-a dat."
+    assert c(_sec(4), final=True) == "curaj."
+
+
 def test_context_stt_without_word_times_stitches_by_text():
     from live.context_stt import ContextSTT
 

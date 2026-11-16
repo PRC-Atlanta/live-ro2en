@@ -500,3 +500,34 @@ def test_a_long_open_piece_still_waits_and_merges(tmp_path):
     live._on_clause(_clause(2, t + 7.1, t + 13.6, ro="păcatul. Și un om a spus adevărul lui Dumnezeu."))
     live._drain()
     assert len(_log(live)) == 1 and _log(live)[0]["source"].endswith("iubește. păcatul. Și un om a spus adevărul lui Dumnezeu.")
+
+
+# the seam catalogue (scripts/seam_catalogue.py): a pair is judged only where the recogniser gave it
+def test_the_bench_judges_a_seam_pair_only_where_it_was_reproduced():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import bench
+
+    def recs(*pieces):
+        return [{"outcome": o, "ro": ro, "source": src} for o, ro, src in pieces]
+    seam = {"cat": "seam", "pair": ["important.", "importantă"], "before": "de", "after": "cât"}
+    # the stub and the whole word, both shown: still wrong
+    assert bench.judge_pair(seam, recs(("ok", "atât de important.", "atât de important."),
+                                       ("ok", "importantă cât", "importantă cât")))[0] == "still"
+    # the redo joined them
+    assert bench.judge_pair(seam, recs(("replaced", "atât de important.", "atât de important."),
+                                       ("ok", "importantă cât", "atât de importantă cât")))[0] == "fixed"
+    # the recogniser gave the word once: right without a redo
+    assert bench.judge_pair(seam, recs(("ok", "atât de", "atât de"), ("ok", "importantă cât", "importantă cât")))[0] == "fixed"
+    # the first word is right and the second its echo: joining them on the stub keeps the wrong one
+    dup = {"cat": "dup", "pair": ["sărac.", "sărat"], "before": "sau", "after": "tu"}
+    assert bench.judge_pair(dup, recs(("replaced", "bogat sau sărac.", "bogat sau sărac."),
+                                      ("ok", "sărat tu lupți", "bogat sau sărat tu lupți")))[0] == "still"
+    assert bench.judge_pair(dup, recs(("ok", "bogat sau sărac.", "bogat sau sărac."),
+                                      ("ok", "tu lupți", "tu lupți")))[0] == "fixed"
+    # two real words: right when both are shown; no cut there this time = not reproduced
+    keep = {"cat": "keep", "pair": ["culoar.", "culoare"], "before": "lângă", "after": "n-a"}
+    assert bench.judge_pair(keep, recs(("ok", "pe lângă culoar.", "pe lângă culoar."),
+                                       ("ok", "culoare n-a avut", "culoare n-a avut")))[0] == "fixed"
+    assert bench.judge_pair(keep, recs(("replaced", "pe lângă culoar.", "pe lângă culoar."),
+                                       ("ok", "culoare n-a avut", "pe lângă culoare n-a avut")))[0] == "still"
+    assert bench.judge_pair(keep, recs(("ok", "pe lângă culoare n-a avut", "pe lângă culoare n-a avut")))[0] == "missing"

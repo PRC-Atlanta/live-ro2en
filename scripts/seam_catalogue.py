@@ -11,10 +11,12 @@
                                                   between -> logs/bench/audio/seamclips.wav (+ .json)
 
 Each entry is labelled against the corrected Romanian transcript:
-  seam  the stub is wrong (an extra or misheard word): the redo should join the two pieces;
-        bad = stub then the whole word, good = the word before the stub then the whole word
-  keep  both words are right (two real words that look alike): nothing should be joined;
-        bad = the stub gone, good = both words
+  seam  the first word is wrong, the cut-off start of the second («important.» | «importantă»):
+        right is the word before it, then the second
+  dup   the first word is right and the second is the same word heard again («sărac.» | «sărat»):
+        right is the first, then the word after the second
+  keep  both words are right (two real words that look alike): right is both, side by side
+A run in which the recogniser did not give the two words side by side counts as not reproduced.
 
 Then:  scripts/bench.py run logs/bench/audio/seamclips.wav --speed 3 --name seams-X
        scripts/bench.py score seams-X --errors logs/bench/seams.json
@@ -55,25 +57,20 @@ def _words(text: str) -> list[str]:
     return _WORD.findall(text or "")
 
 
-def _rx(*words: str) -> str:
-    return r"\b" + r"\W+".join(re.escape(_key(w)) for w in words) + r"\b"
-
-
 def build(runs: list[str]) -> None:
     entries = []
     for run in runs:
         log, info = bench._run_log(run)
-        rdir = bench.BENCH / "runs" / run
-        if not log.exists():                    # a run made in a worktree that is gone: its own copy
-            log = next((rdir / "services").glob("*.jsonl"))
         sermon = pathlib.Path(info["audio"]).stem.removeprefix("corr_")
         if sermon not in bench.SERMONS:
             sys.exit(f"{run}: not a corrected-sermon run")
         lines, end = bench.reference(sermon)
         t0 = info["segment_start_wall"]
-        ph = [r for r in bench.on_screen([r for r in bench._records(log) if r.get("outcome") and "t_start" in r])
-              if r["outcome"] == "ok" and (end is None or r["t_start"] - t0 < end + 1.0)]
-        src = [r.get("source") or "" for r in ph]
+        # every caption made, also one a redo replaced later, with the recogniser's own words (ro):
+        # the catalogue is the same whether the run's redo was on or off
+        ph = [r for r in bench._records(log) if r.get("outcome") == "ok" and "t_start" in r
+              and (end is None or r["t_start"] - t0 < end + 1.0)]
+        src = [r.get("ro") or "" for r in ph]
         # which output tokens are wrong, against the corrected transcript
         hyp, owner = [], []
         for i, s in enumerate(src):
@@ -83,33 +80,30 @@ def build(runs: list[str]) -> None:
         a = align([w for x in lines for w in tokens(x["ro"])], hyp, free_ends=False)
         wrong = [r != h for r, h in a.pairs if h is not None]
         last = {o: k for k, o in enumerate(owner)}
+        first = {o: k for k, o in reversed(list(enumerate(owner)))}
         for i in range(len(ph) - 1):
             gap = ph[i + 1].get("t_speech", ph[i + 1]["t_start"]) - ph[i]["t_end"]
             pw, nw = _words(src[i]), _words(src[i + 1])
-            if gap > CUT_GAP_S or not pw or not nw or i not in last or not same_word(pw[-1], nw[0]):
+            if gap > CUT_GAP_S or not pw or not nw or i not in last or i + 1 not in first \
+                    or not same_word(pw[-1], nw[0]):
                 continue
             if _key(pw[-1]) == _key(nw[0]):
                 continue                        # the same word twice: a repeat or a seam, can't tell by text
-            seam = wrong[last[i]]
-            before = pw[-2] if len(pw) > 1 else None
+            cat = "seam" if wrong[last[i]] else "dup" if wrong[first[i + 1]] else "keep"
             t = dt.datetime.fromtimestamp(ph[i]["t_end"]).strftime("%H:%M:%S")
-            e = {"id": f"{sermon[:2].upper()}{len(entries) + 1:03d}", "sermon": sermon, "t_src": t,
-                 "cat": "seam" if seam else "keep", "on": "ro",
-                 "note": f"«{' '.join(src[i].split()[-3:])}» | «{' '.join(src[i + 1].split()[:3])}» gap {gap:.1f} s",
-                 "was": f"{src[i]} | {src[i + 1]}"}
-            if seam:
-                e["bad"] = _rx(pw[-1], nw[0])
-                if before:
-                    e["good"] = _rx(before, nw[0])
-            else:
-                e["good"] = _rx(pw[-1], nw[0])
-                if before:
-                    e["bad"] = _rx(before, nw[0])
-            entries.append(e)
-    doc = {"how": "on=ro: bad/good are regexes on the shown Romanian transcript near t (lower case, "
-                  "diacritics folded, phrases joined by spaces). seam = the redo should join the two "
-                  "pieces; keep = two real words, nothing should be joined. t_src: time in the "
-                  "corrected sermon's replay (corr_<sermon>.wav); t: time in seamclips.wav.",
+            entries.append({"id": f"{sermon[:2].upper()}{len(entries) + 1:03d}", "sermon": sermon, "t_src": t,
+                            "cat": cat, "on": "ro", "pair": [pw[-1], nw[0]],
+                            "before": pw[-2] if len(pw) > 1 else None, "after": nw[1] if len(nw) > 1 else None,
+                            "note": f"«{' '.join(src[i].split()[-3:])}» | «{' '.join(src[i + 1].split()[:3])}» "
+                                    f"gap {gap:.1f} s",
+                            "was": f"{src[i]} | {src[i + 1]}"})
+    doc = {"how": "pair = the last word of one piece and the first of the next, as the recogniser gave them "
+                  "(look-alikes, the pieces under 0.7 s apart). seam: the first is the cut-off start of the "
+                  "second (right: the word before, then the second). dup: the first is right and the second "
+                  "is the same word heard again (right: the first, then the word after). keep: two real "
+                  "words (right: both). Judged on the Romanian transcript near t (bench.judge_pair): not "
+                  "reproduced when the recogniser did not give the two words side by side this time. "
+                  "t_src: time in the corrected sermon's replay (corr_<sermon>.wav); t: time in seamclips.wav.",
            "day": CLIPS_START[:10], "built_from": runs, "errors": entries}
     if OUT.exists():                            # keep the clip times if the clips are already cut
         old = {(e["sermon"], e["t_src"]): e.get("t") for e in json.loads(OUT.read_text())["errors"]}
@@ -117,8 +111,8 @@ def build(runs: list[str]) -> None:
             if old.get((e["sermon"], e["t_src"])):
                 e["t"] = old[(e["sermon"], e["t_src"])]
     OUT.write_text(json.dumps(doc, indent=1, ensure_ascii=False))
-    n = {c: sum(e["cat"] == c for e in entries) for c in ("seam", "keep")}
-    print(f"{OUT}: {len(entries)} entries ({n['seam']} seam, {n['keep']} keep)")
+    n = {c: sum(e["cat"] == c for e in entries) for c in ("seam", "dup", "keep")}
+    print(f"{OUT}: {len(entries)} entries ({n['seam']} seam, {n['dup']} dup, {n['keep']} keep)")
 
 
 def _pause_before(phrases: list[dict], t: float, lead: float) -> float:
@@ -143,8 +137,6 @@ def clips(lead: float) -> None:
         run = next(r for r in doc["built_from"] if sermon in json.loads(
             (bench.BENCH / "runs" / r / "run.json").read_text())["audio"])
         log, _ = bench._run_log(run)
-        if not log.exists():
-            log = next((bench.BENCH / "runs" / run / "services").glob("*.jsonl"))
         phrases = [r for r in bench._records(log) if r.get("outcome") and "t_start" in r]
         # merge the entries' stretches that overlap
         stretches: list[list] = []
