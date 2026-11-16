@@ -1,67 +1,67 @@
-# Fine-tuning on corrected sermon data
+# Fine-tuning Jackrabbit on the church's own sermon audio
 
-Built and checked, **not run** (no training happens in this iteration).
-The training data is our own corrected sermon audio only. The Bible audio is evaluation-only:
-`build_manifests.py` refuses any row that points at it.
+Prepared and smoke-tested, **not run**. Self-training: the recogniser labels the archive's
+pause-cut segments, a second, different recogniser (Whisper large-v3) checks each label, and
+only close agreements (plus hand-corrected segments) are trained on, gently.
+Google-derived text and the Bible audio never enter training; `luigi-mitoi` is the held-out test.
 
 ## Pipeline
 
 ```bash
-# 1. Transcribe the whole archive with the chosen local model (resumable)
+export HF_HUB_OFFLINE=1
+# 1. Segment + label the archive with the live decoding (resumable; writes work/archive/<stem>/NNNN.wav)
 .venv-nemo/bin/python src/batch_transcribe.py --model jackrabbit-ctc-lm-b8
-
-# 2. (optional) Google reference transcripts for the archive, within the 600-min cap
-.venv/bin/python src/google_stt.py submit Audio/*.mp3 --model chirp_3 --tag sermons
-.venv/bin/python src/google_stt.py poll
-
-# 3. Correct transcripts in the browser: http://127.0.0.1:8766
-.venv-mt/bin/python src/correct_tool.py --model jackrabbit-ctc-lm-b8 --google chirp_3
-#    then click "Export manifest" -> data/finetune/manifest_google.jsonl (or manifest_clean.jsonl with --google none)
-
-# 4. Train/holdout split by sermon
-.venv/bin/python src/finetune/build_manifests.py
-
-# 5. Validate the setup without training, then train
+#    segment list for the other recognisers
+#    (data/finetune/archive_segments.csv: segment,audio,start,end from the step-1 jsonl files)
+# 2. Pseudo-labels with the most accurate offline decoding (CTC + LM beam 32 + terms.txt boost), resumable
+.venv-nemo/bin/python src/stt_run.py jackrabbit-ctc-lm-boost data/finetune/archive_segments.csv work/archive archive
+# 3. Second opinion (resumable)
+.venv-mlx/bin/python src/alt_transcribe.py --model whisper-large-v3-mlx
+# 4. Per-segment agreement (no threshold here) -> data/finetune/agreement.jsonl
+.venv/bin/python src/finetune/agreement.py
+# 5. Manifests: threshold, hold-outs, corrected text first, overlap refusal -> data/finetune/{train,dev,holdout}.jsonl
+.venv/bin/python src/finetune/build_manifests.py --max-disagreement 0.10 [--holdout br-random-1 nelu-suciu]
+# 6. Check, then train (checkpoints and the final .nemo under models/finetuned/<run>/)
 .venv-nemo/bin/python src/finetune/finetune.py --check
-.venv-nemo/bin/python src/finetune/finetune.py --epochs 20 --freeze-encoder-epochs 3
-
-# 6. Holdout evaluation (same scoring code as Phase 1)
-.venv-nemo/bin/python src/finetune/eval_holdout.py --registry jackrabbit-tdt
-.venv-nemo/bin/python src/finetune/eval_holdout.py --model models/finetuned/jackrabbit-<date>.nemo
+.venv-nemo/bin/python src/finetune/finetune.py --out-dir models/finetuned/jackrabbit-st1
+.venv-nemo/bin/python src/finetune/finetune.py --out-dir models/finetuned/jackrabbit-st1 --resume   # after a stop
+# 7. Evaluate with the live decoding (CTC + 4-gram LM, beam 8, church phrase boost)
+.venv-nemo/bin/python src/finetune/eval_checkpoint.py --tag base                     # unmodified model
+.venv-nemo/bin/python src/finetune/eval_checkpoint.py --tag st1 \
+    --ckpt models/finetuned/jackrabbit-st1/jackrabbit-st1.nemo
 ```
 
-## Data format
+`eval_checkpoint.py` runs `scripts/stt_replay.py`'s own `offline` and `wer` on each sermon
+(output `logs/bench/stt/<tag>-<sermon>-offline.jsonl`, so `scripts/stt_replay.py wer <tag>-luigi-mitoi-offline`
+rescores it), then transcribes the Bible set and scores it on the same reference spans as
+`results/bible_scores.csv`. Summary rows: `logs/finetune_eval/finetune_eval.csv`.
 
-NeMo ASR manifests, one JSON object per line:
+## Training recipe (finetune.py defaults)
 
-```json
-{"audio_filepath": "/abs/path/work/archive/<sermon>/0001.wav", "duration": 12.3, "text": "Frați și surori, ..."}
-```
+- Tokenizer unchanged, so the 4-gram LM and phrase boosting keep working.
+- Encoder: subsampling and the lower 13 of 17 conformer layers frozen and kept in eval mode
+  (BatchNorm statistics untouched); top 4 layers train (`--train-top-layers`). Epoch 0 trains
+  the decoders only (`--freeze-encoder-epochs 1`). TDT decoder + joint and CTC decoder train.
+- Both losses: TDT + CTC (CTC weight 0.3 as in the model; `--ctc-weight`).
+- AdamW, peak LR 5e-5, 10 % warm-up, cosine to 5e-6; batch 2 x accumulation 16 (effective 32; about 2 GB, against 10.5 GB peak for 4 x 8 at the same speed); 10 epochs; seed 1234.
+- Checkpoints every epoch in `<out-dir>/ckpt/` (`last.ckpt` for `--resume`, two best by dev CTC WER);
+  per-step seconds and memory in `<out-dir>/steps.jsonl`.
+- Apple GPU (MPS): NeMo's TDT loss is CUDA-only, so `tdt_loss.py` supplies a vectorised PyTorch
+  TDT loss (checked against NeMo's reference recursion, values and gradients to 1e-6, on CPU and
+  MPS); `PYTORCH_ENABLE_MPS_FALLBACK=1` runs the CTC loss on CPU.
 
-`manifest_all.jsonl` carries extra provenance fields (`sermon`, `source`, `human_edited`,
-`pending_terms_check`). `build_manifests.py` drops them.
+## Data rules
 
-## Google-derived text: not for training
+- Corrected text (`data/finetune/corrections_clean/`, sources `local` / `local-alt`) takes
+  precedence over a pseudo-label for the same segment.
+- Google-started corrections (`data/finetune/corrections/`, source `google`) are skipped:
+  Google Cloud Service Specific Terms §17(b), see DECISIONS.md 2026-10-22.
+- Held-out sermons are excluded by their whole source recording, and every training segment
+  of >= 5 s is checked by audio envelope against the held-out recordings (refused on a match).
+- Bible, e2e, podcast and live-service recordings are refused outright (evaluation only).
+- The Phase 1 sermon excerpts (work/sermon) are reported, not excluded; `--exclude-eval-excerpts`
+  drops overlapping segments.
 
-Google Cloud Service Specific Terms §17(b) ("Use Restrictions for AI/ML Services";
-Speech-to-Text is an AI/ML Service) say customers will not use AI/ML Service output "to …
-create or improve models similar to a Google Model". Training a Romanian speech recognizer
-on Chirp transcripts falls squarely under that. Therefore every segment whose starting text
-came from Google is flagged `"pending_terms_check": true`, **even after human edits**, and
-`build_manifests.py` excludes it. Such segments remain fine as an evaluation reference.
+## Licence
 
-For training data, correct segments that start from the local model's text
-(`correct_tool.py --google none`; highlights come from Whisper). Highlights can come from a second local model
-instead of Google.
-
-## Recipe notes
-
-- Base: `surogate/jackrabbit-110m-ro` (CC-BY-NC-4.0: fine for internal church use, not for
-  commercial use). Alternative: `--base sped` (Apache-2.0).
-- The tokenizer is unchanged, so the 4-gram LM and phrase boosting keep working.
-- How much data: expect gains from about 3–5 h of corrected speech. With less, use
-  `--freeze-encoder-epochs` and a low LR (5e-5 is the default).
-- Hardware: Apple GPU (MPS) at fp32. A 110M model with batch 8 × accumulation 4 fits easily
-  in 36 GB of RAM. Expect hours per epoch-hour of audio, not minutes.
-- Always compare against the baseline row in `results/holdout_eval.csv` before deploying.
-  Also re-run the Bible benchmark (`src/score_bible.py`) to check for regressions on read speech.
+Base `surogate/jackrabbit-110m-ro` is CC-BY-NC-4.0: fine for internal church use, not commercial.

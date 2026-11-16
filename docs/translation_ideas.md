@@ -1229,7 +1229,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   spent on the longer prompts (notes, more glossary rows) and the extra guard tries; recognition
   varied ±0.15 s between runs (not the new phrase boost: the same without it).
 
-## 25. A Romanian word cut in two at a piece boundary is translated as two words — `partly done` (2026-11-15): the previous caption is redone when its last word was the start of this piece's first
+## 25. A Romanian word cut in two at a piece boundary is translated as two words — `partly done` (2026-11-15): the previous caption is redone when its last word was the start of this piece's first · 2026-11-15 evening `done` at the recogniser: Romanian words are committed by when they were heard, and a forced cut hears the audio past it (`live.timed_commit`); WER 6.42 / 4.41 / 4.79 → 5.25 / 3.70 / 3.70% on the three corrected sermons
 
 - **Evidence (2026-10-25 evening, Quality; marked in the recording):**
   - 18:11:09 "…vrea să ne păzim și noi de **auto**." | "**autoînșelare**. Ne putem înșela…" →
@@ -1285,6 +1285,91 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   translation); (b) small, segmentation rule, watch delay; (c) tiny. Bench on the marked clips.
 - **More evidence (2026-11-15 morning, logs `2026-11-15_081707` / `_094327` / `_102255`, P2): words cut at a piece boundary, ~10.** 10:49:44 «înainte de a **parca.** | **parcurge** câteva versete» → "before we **park**"; 09:59:46 «poate să se **cuplu.** | **cutremure**» → "can be **joined**. | shake"; 11:06:16 «această **nepărere.** | **neprihănire**» → "this **helplessness**"; 11:39:31 «viabilă **autor.** | **autentică**» → "a viable reality, **author**"; 11:09:12 «ordinat și **păstrat.** | **păstor**» → "ordained and **kept**"; 11:43:44 «să se **multe.** | **multiplice**» → "to be **many**"; 10:58:59 «hanul de **poposire.** | **popostire**» → "inn" twice; 11:53:38 «Harusus. | harul» → "Harusus." | "**the spring**"; 11:56:03 «muncă din asta **orcoolică.** | **alcoolică**» (workaholic) → "enters into a work of this kind of..." | "**alcoholic**"; 12:01:26 «**Dul** nu poate» (Duhul) → "**The world** cannot". The (a) rule (a last word that the next piece's first word starts with, or not in the lexicon, is dropped and carried) covers 8 of the 10.
 - **Done (a) 2026-11-15 (branch `fix/2026-11-15-morning`):** when the next piece follows within 0.7 s and its first word continues the previous caption's last word (4+ shared letters and a longer word for a known word, 3+ for an unknown one), the previous piece without that word and this one are translated again as one, in place of the previous caption (`live.cut_word_redo`). The first rule (2+ letters) fired on real word pairs on the sermons («bogat sau sărac.» | «sărat», «Dumnezeu mare.» | «măriți»), so it was tightened: 9 of the first run's 24 redos remain, 5 clear fixes, 4 harmless repeats. **Bench** (11-15 clips, 61 marked errors, still wrong on main → branch: 40 → 10; luigi-mitoi chrF++ 62.62 → 62.44, BLEU 35.36 → 35.15, WER 4.82 → 4.82 %; Gemma 0.68/1.23 → 0.69/1.21 s, recogniser 0.29/0.49 → 0.29/0.44 s median/p90). Still wrong 3 → 1: "authentic", "multiply" now right; «cuplu.» | «cutremure» (a real word, 2 shared letters) still "joined"; «păstrat.» | «păstor» is no longer caught.
+- **Where the live Romanian transcript's extra errors come from (2026-11-15 evening, branch `seam-timing`).** The three corrected sermons through the recogniser alone (`scripts/stt_replay.py`: the live engine without the translator, and the same recogniser offline on pause-cut segments of up to 20 s, church phrases boosted in both), each aligned to the corrected Romanian transcript; an error the live run has where the offline run is right is caused by the live cutting and stitching (`scripts/stt_attrib.py`). Starting code 405fef7:
+
+  | | br-random-1 | nelu-suciu (first 8 min) | luigi-mitoi |
+  |---|---:|---:|---:|
+  | corrected words | 4,453 | 1,135 | 4,589 |
+  | offline errors | 200 (4.49%) | 32 (2.82%) | 164 (3.57%) |
+  | live errors, recogniser's own text | 275 (6.18%), S159 D45 I71 | 51 (4.49%), S28 D4 I19 | 197 (4.29%), S110 D46 I41 |
+  | (e) scoring noise (phonetic key, figures) | 6 | 4 | 17 |
+  | both have it (the recogniser's, or the reference's) | 153 | 25 | 123 |
+  | **live only** | **116** | **22** | **57** |
+  | (a) within 2 words of a forced cut (17–21% of the words) | 24, 18 of them extra words | 10 | 19 |
+  | within 2 words of a pause boundary | 24 | 6 | 24, 14 of them missing words |
+  | (b) inside a chunk | 68 | 6 | 14 |
+  | offline only (the live context got it right) | 43 | 10 | 37 |
+  | (c) the app's repairs, recogniser's text → repaired text | +4 (277 → 281) | −5 (60 → 55) | **+18** (198 → 216) |
+  | (d) words in phrases not shown; phrases taken for English | 5; 0 | 1; 0 | 0; 0 |
+
+  - (a) and the pause boundaries are the stitching by text: a stub and its word both kept («mâncat ‖ mântuit», «dispoziție ‖ dispoziția», «mun ‖ munte»), a word heard again after a pause kept as new («sărac | sărat», «culoar | culoare», «dor | doar»), and a phrase said twice lost because the text alignment took the second for the first («priviți-vă, priviți-vă rog», «dacă nu te pricepi la plumbing… dacă nu te pricepi la electrică»: 10 words gone).
+  - (b) is mostly one word heard differently with a different stretch of audio around it; the offline run has as many the other way (43 on br-random-1), so only the excess (~25) is the live pipeline's.
+  - (c) is the empty-phrase fallback (idea 10): when the Romanian recogniser gives nothing for a chunk because its words were already committed, Parakeet's text of the same audio is taken and the words are said twice (luigi-mitoi 24:59, 17 words; br-random-1 «nu o au», «scumpă să răți»). «Christmas» → «Hristos» and the name repairs are right where they fire.
+  - (e) `bench.py ref` counts every phrase that starts up to 1 s after the corrected stretch ends, so nelu-suciu's score carries ~9 extra words from the first uncorrected phrase (4.85% in the app run; 4.49% for the recogniser's text cut at the stretch's end). The reference keeps some of the offline recogniser's own mistakes («fragi și surori», «eroia aceea», «intras pe poarta», «tere și s descalificați»), so a live run that hears these right is counted wrong: the offline number cannot be reached.
+  - Half of all chunks end in a forced cut (235 of 471 on br-random-1). The voice detector calls the cut frame speech in 42% of them (≥ 0.9 in 25%); nelu-suciu 29%. 35% of the forced chunks are under 3 s (46 of 235 under 1 s): the pause tracker's 5.5 s speech clock and the 5.5 s buffer clock (`max_commit_s`) run apart, so a cut by one is followed by a cut by the other.
+  - Auto mode took no phrase for English on any of the three (0 of 913 shown phrases).
+- **Built (2026-11-15 evening, branch `seam-timing`, `live.timed_commit`, on by default):**
+  - `NemoSTT.words()` gives each Romanian word's start and end from the CTC beam search's own frame path (80 ms frames; the same text as before on 200 random windows, no extra time). Word starts sit within ±0.1 s of the voice detector's onsets.
+  - `ContextSTT` commits by time: the new words are those after the point in the audio where the committed text ended. Word times move between hearings (at the end of the audio the recogniser fires up to ~0.25 s early), so that point is then anchored on the last committed words, looked for within 3 words and 0.8 s of it.
+  - At a forced cut the engine passes the audio it already holds past the cut (0.3–2.5 s) and how long the voice had been silent before it. A word that began before the cut (or before that silence) and ends inside the audio goes with this chunk, heard whole; one that ends within 0.16 s of the end of the audio waits (`live.commit_edge_s`).
+  - A forced piece does not end on a word that leans on the next one (`segmenter.held_back`: «de», «că», «nu», «și»…, or the lone first word of a new sentence): it waits for the next chunk. The old code did not hear these at the edge; hearing them made 27% of forced pieces end "open" (7% before), which the pipeline holds, and the first word came later (within 8 s: 85.8 → 80.1%). With the rule 2% end open.
+  - A clause the recogniser lost and finds with the next chunk's audio (3+ words in a row that the last chunk's audio did not give) is said late instead of never (once in 29 min on br-random-1: 6 words).
+  - A forced chunk with no Romanian text while the recogniser has words in hand gives `clause.ro_wait`; the empty-phrase fallback does not take Parakeet's text for it.
+  - Parakeet (English, language detection) has no word times here and is stitched by text as before. So is the Romanian recogniser if its times cannot be had (another NeMo version; three calls without times and it stops asking): this morning's seam redo (`live.cut_word_seam`) stays for that case only. With the times neither it nor this morning's spelling rule (`live.cut_word_redo`) fired once on the three sermons and the clips.
+  - Reviewed by a second model with fresh eyes; its two real findings (a re-heard run taken for a lost clause, a stretched word said twice) are fixed, each with a test.
+- **Bench (2026-11-15 evening; app replays x3, quality, gain 0, no names; 405fef7 without / with this morning's seam redo → 8625355; offline = the same recogniser on pause-cut segments, church phrases boosted, the older stored figure in brackets):**
+
+  | Romanian transcript WER (all phrases) | offline | 405fef7, no redo | 405fef7, redo | **8625355** | extra words (redo → now) |
+  |---|---:|---:|---:|---:|---:|
+  | br-random-1 | 4.49% (4.22%) | 6.42% | 6.31% | **5.25%** | 82 → 39 |
+  | nelu-suciu, first 8 min | 2.82% (2.56%) | 4.41% | 4.05% | **3.70%** | 14 → 8 |
+  | luigi-mitoi | 3.57% | 4.79% | 4.71% | **3.70%** | 55 → 20 |
+
+  - Share of the live-to-offline gap closed, from the no-redo run (the state BENCHMARK Phase 3e was measured in): br-random-1 60%, nelu-suciu 45% (42 words; half would be 41), luigi-mitoi 89%. From this morning's code with its redo: 58%, 28%, 89%.
+  - luigi-mitoi English translation: chrF++ 62.5 → 63.1, BLEU 35.3 → 37.3.
+  - Seam catalogue (`logs/bench/seams.json`, rebuilt from these runs: 18 cut words, 2 re-heard duplicates, 1 pair of real words; clips 12 min): right 4 of 21 without the redo, 15 with it, **19 with the times and 2 not reproduced** (the word is heard once).
+  - Recogniser alone (`scripts/stt_replay.py`), 405fef7 → 8625355 (offline): br-random-1 6.18 → 5.25% (4.49%), nelu-suciu 4.49 → 3.70% (2.82%), luigi-mitoi 4.29 → 3.64% (3.57%). Live-only errors 116 → 81, 22 → 16, 57 → 34; offline-only 45, 10, 36. On luigi-mitoi, the one sermon whose reference was not made from the offline text, live now equals offline.
+  - Latency, real time, first 12 min of luigi-mitoi (148 phrases, 145 the same in both runs), 405fef7 → 8625355: recogniser 0.39/0.44 → 0.42/0.45 s, Gemma 1.23/2.02 → 1.21/1.90 s (median/p90); first word median 6.71 → 6.72 s, p90 9.37 → 9.37 s; within 6 s 35.1 → 34.5% (52 → 51 phrases), within 8 s 85.8 → 84.5%. Each phrase comes 0.03 s later: the recogniser hears up to 2.5 s more audio per forced cut (+0.02 s).
+  - `bench.py ref` now counts a phrase when its middle lies before the end of the corrected stretch (it took every phrase starting up to 1 s after it, whole: nelu-suciu carried ~9 extra words; 5.20% / 4.85% under the old rule are 4.41% / 4.05%).
+- **What is left (br-random-1, recogniser alone: 234 errors against 200 offline).** No stitching: 1 stub and 1 repeat in 29 min. It is one word heard differently with a different stretch of audio around it («am/a păstrat», «dăm/luăm», «ar vrea/avea»), as often the other way (45 offline-only), plus the reference's own leftovers from the offline text («fragi și surori», «eroia», «intras», «fără copii, fără tineri» where the live «văd copii, văd tineri» is what is said).
+- **Other sources checked (2026-11-15 evening):**
+  - *Context text against context audio:* 28% of chunks run above 3 words/s, so the 18 words kept as context text cover less than the 6 s of audio. With the times it no longer matters for Romanian; Parakeet's stitching still uses it.
+  - *Cut placement:* the forced cut lands on a frame the voice detector calls speech in 42% of cuts on br-random-1 (29% on nelu-suciu). With the audio past the cut heard it no longer cuts words. 0.8 s of audio after the cut instead of 0.3 s: same WER. One clock for forced cuts instead of two (35% of forced chunks are under 3 s because the pause tracker's speech clock and the buffer clock run apart): 235 → 178 forced cuts, WER 5.39 → 5.48%, the first word waits 4.61 → 4.96 s for the cut. Neither kept.
+  - *A pause-ended chunk losing its last word:* not seen. What was seen is the reverse: the last word, right the first time, heard again as another word once the pause is cut out of the context («sărac | sărat», «culoar | culoare», «pleci | plece», «dor | doar») and kept as a new word by the text stitching; this morning's redo then dropped the right one. By time it is the old word.
+  - *The c10a191 → 03e38eb regression (idea 27):* automatic gain is not it any more (br-random-1 with the gain fixed: 5.43% against 5.39%). The words added were the empty-phrase fallback's (Parakeet's text for a chunk the Romanian recogniser had already said: 17 words at luigi-mitoi 24:59) and the stitching itself; both are gone.
+  - *Auto mode:* no phrase of the three sermons was taken for English.
+  - *Names:* ten names entered as on a Sunday (`logs/bench/terms_corr_sermons.txt`): br-random-1 5.39 → 5.37%, nelu-suciu 3.70 → 3.61% (one or two words each).
+  - *9 s of context instead of 6 s:* br-random-1 5.39 → 5.23% (7 words); the recogniser hears 3 s more per call. Not changed.
+- **Next most valuable:** (1) the reference: a second pass over the br-random-1 and nelu-suciu corrections where live and offline disagree (~125 places, listed by `scripts/stt_attrib.py --list`), since the offline text's own mistakes are now a visible part of the remaining "gap"; (2) `context_s` 9 on all three with the real-time latency; (3) word times for Parakeet (parakeet-mlx gives them), so English gets the same commit and idea 16's overlap trim can go.
+- **Ceiling check (2026-11-16, `scripts/stt_ceiling.py`; offline segments, 10,177 reference words, the live recogniser 396 errors = 3.89%).** What the errors left could be fixed by, before building anything:
+  - *The right text is often there.* Best candidate of the recogniser's own beam-8 list (picked with the reference in hand, so a ceiling): 277 errors (−30%); of a beam-32 list: 207 (−48%); best of beam 8 or Whisper large-v3 per segment: 215 (−46%); best of every list and recogniser: 128 (−68%). Beam 32's own first choice: 396, no gain. The other decoder (TDT greedy) alone 570, Whisper alone 616, Parakeet 1,944.
+  - *Plain rules do not find it.* Word votes with the live recogniser as backbone: 376 at best (beam 8 + TDT + Whisper, −5%); the list's candidate nearest to Whisper and/or TDT: 379–398. Whisper has 43–68% of the live recogniser's wrong words right, and 2–3 times as many wrong that it has right. A chooser needs to know the language (a stronger language model, Gemma scoring the candidates) or the sound (the TDT decoder scoring the CTC list): not measured yet. The right candidate is close: usually #2 or #3, median 1.07 score units under the top.
+  - *By kind (396):* short words 185 (47%: missing 68, extra 48, one for another 69: «că», «o», «la», «a», «în», «cu», «să», «și»), word endings 55 («copii/copiii», «matur/maturi»), sounds alike 47, a different word 58, names 26, other missing/extra 18, diacritics 5, numbers 2. About 20 are the reference's spelling («Iisus», «prooroci», «-s» for «sunt», «n-» for «nu»), not hearing.
+  - *The live transcript's wrong words* (final code, `l7-*`): the offline recogniser has 24–53% of them right, Whisper on whole segments 40–64%.
+  - *Parakeet answered hundreds of `<unk>`* on 9 of 418 and 6+ of 556 segments (short ones too). Nothing in `src/live` strips it; none in the app replays' logs so far.
+- **Fine-tune prepared, not run (2026-11-16, `src/finetune/`).** Only 1.27 h of Romanian sermon speech may be trained on (br-random-1, nelu-suciu, br-recalo); the default set is 0.96 h (0.54 h corrected, 0.42 h labelled by the recogniser where Whisper agrees within 10%), luigi-mitoi held out by recording and by content. NeMo's TDT loss is CUDA-only: `tdt_loss.py` is the same maths in PyTorch and trains on the Apple GPU (7.3 s per step, about 40 min for 10 epochs, 10.5 GB). `eval_checkpoint.py` scores a checkpoint with the live decoding and reproduces luigi-mitoi 3.57% (164) and the Bible 4.86%. With br-random-1 and nelu-suciu in training, only luigi-mitoi and the Bible stay clean measures. More audio is the lever: under an hour is below what published self-training used.
+- **Fine-tune run `st1`: no gain on the held-out sermon (2026-11-16, `models/finetuned/jackrabbit-st1`).**
+  The prepared settings on the 0.96 h set (10 epochs, 290 steps, top 4 encoder layers, LR 5e-5), batch 2 × 16
+  instead of 4 × 8: about 2 GB instead of a 10.5 GB peak, 7.5 s a step, 37 min. Live decoding (CTC + 4-gram,
+  beam 8, church phrases), offline segments, errors base → st1: **luigi-mitoi (never trained on) 164 → 168
+  (3.57 → 3.66%)**; Bible set 193 → 179 (4.86 → 4.51%: nothing forgotten); the two sermons it trained on,
+  br-random-1 200 → 192 (4.49 → 4.31%) and nelu-suciu 32 → 24 (2.82 → 2.11%), which are no longer clean
+  measures. Dev set (60 segments, greedy): CTC 11.0 → 9.1%, TDT 10.1 → 9.3%, nearly all in the first two epochs.
+  So the model moved, but with the language model on top the gain on an unseen preacher is nil, and even the
+  training sermons kept 90% of their errors. What this does not answer: whether training on a regular preacher
+  helps that preacher's next sermon (no clean sermon of a trained speaker exists to test on), and what several
+  hours of audio would do. Not adopted; the live recogniser is unchanged.
+- **Chooser test, part 1: judging the candidates as sound does not help (2026-11-16, `scripts/stt_choose.py`).**
+  Each candidate of the beam lists got the probability the model's other decoder (TDT) and its CTC head without
+  the language model give its text, and a weighted sum with the list's own score picked; weights tuned on two
+  sermons, tested on the third. Beam-8 list: 396 errors → 393–396 held out (384 with the weights fitted to the
+  same data); the other decoder makes about as many segments worse as better (25–27 each). Beam-32 list: 393–403
+  held out. With the other decoder's and Whisper's own texts added as candidates: 396–412. Both judges hear
+  through the same encoder as the recogniser, so they share its mishearings. Gemma as a judge (the candidate as
+  a continuation of the transcript, and asked to pick) and Whisper as a judge (its decoder made to score each
+  candidate) are written and tried on 12–30 segments only: the full runs were stopped twice because they filled
+  the Mac's memory (two MLX models at once: 39 GB of swap; then Gemma alone, 12.5 GB peak, while the Mac was in
+  use). On 12 segments Gemma alone picked worse than the recogniser (8 and 9 errors against 5). Not a result yet.
 
 ## 26. Name repair turns a real word into today's name: «înșeală» → «Ionela» — `done` (2026-10-25): a lower-case word with no cue needs sound ratio ≥ 0.85 and is never a name after nu/ne/te/se/să…; bench on all 14 logs with the saved names: 12 → 6 repairs, the 6 false ones gone (Ionela ×4, Barbu, Dragoș), the 6 real kept · **reopened `next` 2026-11-01**: correct names repaired into saved ones (a man's first name → a woman's saved name)
 

@@ -23,7 +23,7 @@ import song
 import translate
 from captions import tidy_clause
 from langid import score as lang_score
-from segmenter import split_clauses
+from segmenter import DANGLING, NEGATION_END, split_clauses
 from textnorm import apply_spellings, fold_diacritics, tokens
 
 # A change of these needs a new engine process; every other profile setting is applied live.
@@ -43,17 +43,6 @@ def is_name_list(text: str) -> bool:
     translator rightly leaves as they are (idea 15). Needs at least two words."""
     words = re.findall(r"[^\W\d_]+", text)
     return len(words) >= 2 and sum(w[0].isupper() for w in words) >= 0.75 * len(words)
-
-
-# a phrase that stops on one of these was cut mid-thought ("aduc condoleanțe din."): it waits
-# for the next one (idea 20). Compared with diacritics: "sa" (his) ends phrases, "să" does not.
-DANGLING = frozenset("din de la în cu pe pentru și că care dar iar sau ca să "
-                     "of to in on for and but that which the a an".split())
-
-
-# a Romanian phrase that stops on a negation lost it at the cut: «în ceața aceea că nu.» |
-# «mai recunoaștem» came out "where we do not" | "we again recognize" (2026-11-08 evening, idea 35)
-NEGATION_END = frozenset({"nu", "nici", "n"})
 
 
 def dangling(text: str) -> bool:
@@ -142,6 +131,23 @@ def cut_word(prev_src: str, src: str, lex: set) -> str | None:
     one = (known and cp >= 4 and cp / len(w) >= 0.6 and len(v) > len(w) and not v.startswith(w)) \
         or (not known and cp >= 3 and len(v) > len(w))      # the lexicon lacks many inflected forms
     if not one:
+        return None
+    return f"{prev_src[:m1.start(1)].rstrip()} {src.lstrip()}".strip()
+
+
+def seam_word(prev_src: str, src: str, seam: list | None) -> str | None:
+    """Idea 25, the recogniser's side: ContextSTT found the previous chunk's last word unmatched
+    when it heard it again with the next chunk, and this piece's first word is the whole word
+    («de important.» | «importantă. cât», «la dispoziție.» | «dispoziția noastră», «dea ex.» |
+    «exemple»). The previous piece without its last word, joined to this one; None when the
+    seam does not name these two words (a repair or spelling changed them)."""
+    if not seam or len(seam) != 2:
+        return None
+    m1, m2 = _LAST_WORD.search(prev_src or ""), _FIRST_WORD.search(src or "")
+    if not m1 or not m2:
+        return None
+    key = lambda x: fold_diacritics("".join(re.findall(r"[^\W\d_]+", x)).lower())   # noqa: E731
+    if key(m1.group(1)) != key(seam[0]) or key(m2.group(1)) != key(seam[1]):
         return None
     return f"{prev_src[:m1.start(1)].rstrip()} {src.lstrip()}".strip()
 
@@ -248,6 +254,7 @@ def merge_clauses(a: dict, b: dict) -> dict:
     English texts lose a start that repeats a's end (idea 16: recognised twice)."""
     b = {**b, **{k: overlap.trim(a.get(k) or "", b.get(k) or "")[0] for k in ("multi", "en")
                  if a.get(k) and b.get(k) and b["t_start"] - a["t_end"] < OVERLAP_GAP_S}}
+    b = {**b, "ro_wait": bool(a.get("ro_wait") and b.get("ro_wait"))}    # only when neither part has its words
     return {**b, **{k: f"{a.get(k) or ''} {b.get(k) or ''}".strip() for k in ("ro", "multi", "en")},
             "t_start": a["t_start"], "t_speech": a.get("t_speech", a["t_start"]),
             # stt_s stays b's (what delayed b's t_emit, so vad_wait_s stays right); total kept apart
@@ -739,6 +746,10 @@ class PipelineMixin:
             return "en", english or ro, {}
         if ro.strip() or not multi.strip():
             return "ro", ro, {}
+        if ev.get("ro_wait"):
+            # idea 25: the Romanian recogniser keeps this chunk's words for the next one; Parakeet's
+            # text of the same audio would say them twice (luigi-mitoi 24:59, 17 words, bench 2026-11-15)
+            return "ro", "", {}
         s = lang_score(multi)
         if auto and s <= 0 and self._gate_ok(english, "en") and not self._gate_ok(multi, "ro") \
                 and not non_english(english, self._gate_names()):
@@ -949,8 +960,12 @@ class PipelineMixin:
         if lang == "ro" and last_out and last_src and last_end is not None and self.lc.get("cut_word_redo", True) \
                 and ev.get("t_speech", ev["t_start"]) - last_end <= CUT_GAP_S:
             joined = cut_word(last_src, src_text, gate.lexicon()["ro"])
+            by_seam = joined is None and self.lc.get("cut_word_seam", True)
+            if by_seam:
+                joined = seam_word(last_src, src_text, ev.get("seam"))
             if joined is not None:
-                src_info["cut_word"] = {"previous": last_src, "replaced_prev": " ".join(last_out)}
+                src_info["cut_word"] = {"previous": last_src, "replaced_prev": " ".join(last_out),
+                                        **({"seam": ev["seam"]} if by_seam else {})}
                 src_text, cut_redo = joined, True
                 ctx = getattr(tr, "context", None)
                 if isinstance(ctx, list) and ctx:
