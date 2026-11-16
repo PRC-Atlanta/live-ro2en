@@ -236,8 +236,11 @@ class ContextSTT:
                       "k": k, "m": m, "words": [[w, s, e] for w, s, e in words],
                       **({"late": [words[i][0] for i in late]} if late else {})}
         out = " ".join([words[i][0] for i in late] + [w for w, _, _ in new])
-        # words that begin in this chunk and wait for the next one (not those wholly in the audio ahead)
-        self.waiting = 0 if final else sum(1 for i in range(m, len(words)) if words[i][1] < b1)
+        # words heard past the commit point, left for the next chunk. Speech goes on: this chunk's
+        # audio is heard again then and nothing after the boundary is lost, so no Romanian text
+        # now is not "heard nothing" (counting only words that begin in the chunk let Parakeet's
+        # text back in for two chunks of br-random-1: «împiecat», «nu o au», both said twice)
+        self.waiting = 0 if final else len(words) - m
         self.tail = (self.tail + [x for x in (_wkey(w) for w, _, _ in new) if x])[-TAIL_N:]
         first = next((i for i, x in enumerate(mid) if x >= b0), len(words))
         self.prev = ([_wkey(w) for w, _, _ in words[min(first, k):m]], b1 - b0)

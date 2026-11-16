@@ -364,13 +364,15 @@ def test_context_stt_words_found_again_later_are_not_a_lost_clause():
     assert c(_sec(2), final=True) == "gg hh."
 
 
-def test_context_stt_words_wholly_in_the_audio_ahead_are_not_waiting():
+def test_context_stt_words_in_the_audio_ahead_wait_and_the_chunk_is_heard_again():
     from live.context_stt import ContextSTT
     stt = _TimedSTT([("a", 0.2, 0.4), ("b.", 1.0, 1.4)],
-                    [("a", 0.2, 0.4), ("b", 1.0, 1.4), ("c", 2.7, 2.9), ("d", 3.1, 3.3)])   # chunk 2.0-2.5: nothing in it
+                    [("a", 0.2, 0.4), ("b", 1.0, 1.4), ("c", 2.7, 2.9), ("d", 3.1, 3.3)],   # chunk 2.0-2.5: nothing yet
+                    [("b", 0.5, 0.9), ("x", 1.7, 1.9), ("c", 2.2, 2.4), ("d.", 2.6, 2.8)])  # heard again: «x» was in it
     c = ContextSTT(stt, ctx_s=2.0)
     c(_sec(2), final=True)
-    assert c(_sec(0.5), final=False, ahead=_sec(1)) == "" and c.waiting == 0
+    assert c(_sec(0.5), final=False, ahead=_sec(1)) == "" and c.waiting == 2
+    assert c(_sec(1), final=True) == "x c d."
 
 
 def test_context_stt_a_waiting_word_survives_a_call_that_hears_nothing():
