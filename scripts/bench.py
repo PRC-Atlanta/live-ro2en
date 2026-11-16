@@ -463,6 +463,7 @@ SERMONS = {
     "br-random-1": {"corrections": "data/finetune/corrections_clean/br-random-1.json"},
     "nelu-suciu": {"corrections": "data/finetune/corrections_clean/nelu-suciu.json", "last": 104},
     "luigi-mitoi": {"timed": "Audio/Luigi Mitoi - Ce facem cand - With time stamps.txt"},
+    "daniel-martafoiu": {"timed": "Audio/Daniel Martafoiu - 2026-11-15 - With time stamps.txt"},
 }
 SEGMENTS = REPO / "transcripts" / "local" / "jackrabbit-ctc-lm-b8" / "archive"
 TAG = re.compile(r"\s*\[(?:clears throat|voce dreas[ăa])\]", re.I)  # not speech

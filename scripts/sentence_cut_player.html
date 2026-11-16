@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Caption pacing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f4f3ef; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a66; --line: #dddbd4;
+    --a: #c2602a; --b: #2a6fc2; --ok: #2f8a4a; --warn: #c79a1c; --bad: #c23a2a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #17181b; --panel: #202125; --ink: #ecebe6; --muted: #9a9993; --line: #34353a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 -apple-system, "SF Pro Text", system-ui, sans-serif; }
+  main { max-width: 1320px; margin: 0 auto; padding: 18px 16px 40px; }
+  h1 { font-size: 19px; margin: 0 0 2px; font-weight: 650; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 14px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: var(--panel); border: 1px solid var(--line);
+         border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+  button, select { font: inherit; font-size: 13px; padding: 5px 10px; border-radius: 7px; border: 1px solid var(--line);
+                   background: var(--bg); color: var(--ink); cursor: pointer; max-width: 100%; }
+  button.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); min-width: 74px; }
+  .clock { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 110px; }
+  .grow { flex: 1; min-width: 120px; }
+  .ro { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; min-height: 66px; }
+  .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 4px; }
+  .ro .txt { font-size: 15px; color: var(--muted); }
+  .ro .txt b { color: var(--ink); font-weight: 500; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } }
+  .col { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+  .col .head { margin-bottom: 8px; font-weight: 650; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
+  /* the projection: dark band, two lines of up to 42 characters, upper case, bar on the left */
+  .screen { background: linear-gradient(#3a2f2a, #15110f); border-radius: 8px; padding: 12% 4% 3%; position: relative; overflow: hidden; }
+  .band { border-left: 5px solid #5aa0d8; padding: 2px 0 2px 14px; font-family: Montserrat, "Arial Black", sans-serif; font-weight: 700;
+          text-transform: uppercase; color: #fff; letter-spacing: .02em; font-size: clamp(11px, 1.55vw, 19px); line-height: 1.55;
+          text-shadow: 0 1px 3px #0009; }
+  .band div { white-space: nowrap; min-height: 1.55em; }
+  .band .gone { animation: up .35s ease-out; }
+  .band.pop { animation: pop .25s ease-out; }
+  @keyframes pop { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes up { from { transform: translateY(1.55em); opacity: .4; } to { transform: none; opacity: 1; } }
+  .meters { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: center; margin-top: 10px; font-size: 13px; }
+  .meters .k { color: var(--muted); }
+  .track { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; }
+  .fill { height: 100%; width: 0; border-radius: 99px; }
+  .v { font-variant-numeric: tabular-nums; text-align: right; min-width: 72px; }
+  .count { font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+  .count b { color: var(--bad); }
+  .src { margin-top: 6px; font-size: 12.5px; color: var(--muted); min-height: 36px; }
+  .chart { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-top: 12px; }
+  .chart svg { width: 100%; height: 150px; display: block; cursor: pointer; }
+  .legend { display: flex; gap: 16px; font-size: 12.5px; color: var(--muted); flex-wrap: wrap; }
+  .tblwrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 500; }
+  .note { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Caption pacing on the two-line screen</h1>
+  <div class="sub" id="sub"></div>
+
+  <div class="bar">
+    <button class="primary" id="play">Play</button>
+    <span class="clock" id="clock">0:00</span>
+    <input type="range" id="seek" class="grow" min="0" max="100" step="0.1" value="0">
+    <select id="speed"><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select>
+    <select id="jump"><option value="">Jump to…</option></select>
+  </div>
+
+  <div class="ro"><div class="lbl">Romanian transcript, as the recogniser hears it</div><div class="txt" id="ro"></div></div>
+
+  <div class="cols">
+    <div class="col" data-side="a">
+      <div class="head"><span class="dot" style="background:var(--a)"></span><select class="pick"></select></div>
+      <div class="screen"><div class="band"><div class="l0"></div><div class="l1"></div></div></div>
+      <div class="meters">
+        <span class="k">Behind speech</span><div class="track"><div class="fill lagf"></div></div><span class="v lagv">–</span>
+        <span class="k">Top line read</span><div class="track"><div class="fill readf"></div></div><span class="v readv">–</span>
+      </div>
+      <div class="count"></div>
+      <div class="src"></div>
+    </div>
+    <div class="col" data-side="b">
+      <div class="head"><span class="dot" style="background:var(--b)"></span><select class="pick"></select></div>
+      <div class="screen"><div class="band"><div class="l0"></div><div class="l1"></div></div></div>
+      <div class="meters">
+        <span class="k">Behind speech</span><div class="track"><div class="fill lagf"></div></div><span class="v lagv">–</span>
+        <span class="k">Top line read</span><div class="track"><div class="fill readf"></div></div><span class="v readv">–</span>
+      </div>
+      <div class="count"></div>
+      <div class="src"></div>
+    </div>
+  </div>
+
+  <div class="chart">
+    <div class="legend"><span><span class="dot" style="background:var(--a)"></span>left: seconds behind speech, per line</span>
+      <span><span class="dot" style="background:var(--b)"></span>right</span>
+      <span>red ticks: a line scrolled off before it could be read · dashed: 20 s · click to jump</span></div>
+    <svg id="svg" preserveAspectRatio="none"></svg>
+  </div>
+
+  <div class="tblwrap"><table id="tbl"></table></div>
+  <div class="note" id="note"></div>
+  <audio id="audio" preload="auto"></audio>
+</main>
+<script>
+const DATA = __DATA__;
+const S = DATA.screens, C = DATA.conf, names = Object.keys(S);
+const audio = document.getElementById("audio");
+// loaded whole, so it can be sought on a plain static server (no range requests)
+fetch("__AUDIO__").then(r => r.blob()).then(b => { audio.src = URL.createObjectURL(b); });
+const fmt = s => { s = Math.max(0, s); const m = Math.floor(s / 60); return m + ":" + String(Math.floor(s % 60)).padStart(2, "0"); };
+const end = Math.max(...names.flatMap(n => S[n].items.map(x => (x.parts ? x.parts[x.parts.length - 1][0] : x.t ?? x.show) + 3)));
+const pieces = DATA.app;
+document.getElementById("sub").textContent =
+  `${DATA.run} · ${C.lines} lines of up to ${C.chars} characters · a line needs ${C.min_line_s} s or words ÷ ${C.wps} per second, whichever is longer · sentences at most ${DATA.cap_s} s long`;
+
+const sides = {};
+for (const el of document.querySelectorAll(".col")) {
+  const side = el.dataset.side, pick = el.querySelector(".pick");
+  for (const n of names) pick.add(new Option(n, n));
+  pick.value = side === "a" ? "today: the app's caption box" : "sentences, whole lines, paced";
+  sides[side] = { pick, l0: el.querySelector(".l0"), l1: el.querySelector(".l1"), lagf: el.querySelector(".lagf"),
+                  lagv: el.querySelector(".lagv"), readf: el.querySelector(".readf"), readv: el.querySelector(".readv"),
+                  count: el.querySelector(".count"), src: el.querySelector(".src"), top: -9,
+                  band: el.querySelector(".band"), readk: el.querySelectorAll(".meters .k")[1] };
+  pick.onchange = () => { sides[side].top = -9; draw(); tick(); };
+}
+
+function lastAt(arr, t, key) {           // index of the last item with arr[i][key] <= t
+  let lo = 0, hi = arr.length - 1, k = -1;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (key(arr[m]) <= t) { k = m; lo = m + 1; } else hi = m - 1; }
+  return k;
+}
+function textAt(line, t) { let s = ""; for (const [pt, tx] of line.parts) { if (pt <= t) s = tx; else break; } return s; }
+function color(v, good, bad) { return v <= good ? "var(--ok)" : v <= bad ? "var(--warn)" : "var(--bad)"; }
+
+function frameTick(s, F, i, t) {       // the app's own caption box, frame by frame
+  s.readk.textContent = "Top line read";
+  const f = i >= 0 ? F[i] : null;
+  const top = f && f.lines.length ? f.lines[0] : "";
+  if (top !== s.top) { s.l1.classList.remove("gone"); void s.l1.offsetWidth; s.l1.classList.add("gone"); s.top = top; }
+  s.l0.textContent = f ? (f.lines.length > 1 ? f.lines[0] : f.lines[0] || "") : "";
+  s.l1.textContent = f && f.lines.length > 1 ? f.lines[1] : "";
+  if (!f) { s.lagv.textContent = "–"; s.readv.textContent = "–"; s.lagf.style.width = 0; s.readf.style.width = 0; return; }
+  s.lagf.style.width = Math.min(100, f.lag / 30 * 100) + "%";
+  s.lagf.style.background = color(f.lag, 8, 20);
+  s.lagv.textContent = f.lag.toFixed(1) + " s";
+  const had = t - f.top_since;
+  s.readf.style.width = Math.min(100, had / f.top_need * 100) + "%";
+  const next = F.slice(i + 1).find(g => g.lines[0] !== top);
+  const ok = !next || next.t - f.top_since + 0.05 >= f.top_need;
+  s.readf.style.background = ok ? "var(--ok)" : "var(--bad)";
+  s.readv.textContent = `${Math.min(had, f.top_need).toFixed(1)} / ${f.top_need.toFixed(1)} s`;
+  s.count.innerHTML = `Lines scrolled off before they could be read so far: <b>${f.gone}</b> of ${f.popped}`;
+  s.src.textContent = "Romanian: " + f.ro;
+}
+
+function pageTick(s, L, i, t) {        // pop-on: the whole page at once, nothing moves
+  s.readk.textContent = "Page read";
+  if (i !== s.top) { s.band.classList.remove("pop"); void s.band.offsetWidth; s.band.classList.add("pop"); s.top = i; }
+  const pg = i >= 0 ? L[i] : null;
+  s.l0.textContent = pg ? pg.lines[0] || "" : "";
+  s.l1.textContent = pg ? pg.lines[1] || "" : "";
+  s.l1.classList.remove("gone");
+  if (!pg) { s.lagv.textContent = "–"; s.readv.textContent = "–"; s.lagf.style.width = 0; s.readf.style.width = 0; return; }
+  s.lagf.style.width = Math.min(100, pg.lag / 30 * 100) + "%";
+  s.lagf.style.background = color(pg.lag, 8, 20);
+  s.lagv.textContent = pg.lag.toFixed(1) + " s";
+  const had = t - pg.show;
+  s.readf.style.width = Math.min(100, had / pg.need * 100) + "%";
+  s.readf.style.background = pg.up + 0.05 >= pg.need ? "var(--ok)" : "var(--bad)";
+  s.readv.textContent = `${Math.min(had, pg.need).toFixed(1)} / ${pg.need.toFixed(1)} s`;
+  const gone = L.slice(0, Math.max(0, i)).filter(x => x.up < x.need - 0.05).length;
+  s.count.innerHTML = `Pages replaced before they could be read so far: <b>${gone}</b> of ${Math.max(0, i)}`;
+  s.src.textContent = "Romanian: " + pg.ro;
+}
+
+function tick() {
+  const t = audio.currentTime;
+  document.getElementById("clock").textContent = fmt(t) + " / " + fmt(audio.duration || end);
+  document.getElementById("seek").value = (t / (audio.duration || end)) * 100;
+  const k = lastAt(pieces, t, p => p.ready);
+  document.getElementById("ro").innerHTML = pieces.slice(Math.max(0, k - 2), k + 1)
+    .map((p, i, a) => i === a.length - 1 ? `<b>${p.ro}</b>` : p.ro).join(" ");
+  for (const s of Object.values(sides)) {
+    const mode = S[s.pick.value].mode, L = S[s.pick.value].items;
+    if (mode === "frames") { frameTick(s, L, lastAt(L, t, x => x.t), t); continue; }
+    const i = lastAt(L, t, x => x.show);
+    if (mode === "pages") { pageTick(s, L, i, t); continue; }
+    s.readk.textContent = "Top line read";
+    const lines = [];
+    for (let j = Math.max(0, i - C.lines + 1); j <= i; j++) lines.push(j);
+    while (lines.length < C.lines) lines.unshift(-1);
+    const top = lines[0];
+    if (top !== s.top) { s.l1.classList.remove("gone"); void s.l1.offsetWidth; s.l1.classList.add("gone"); s.top = top; }
+    s.l0.textContent = top >= 0 ? textAt(L[top], t) : "";
+    s.l1.textContent = lines[1] >= 0 ? textAt(L[lines[1]], t) : "";
+    const newest = i >= 0 ? L[i] : null;
+    if (!newest) { s.lagv.textContent = "–"; s.readv.textContent = "–"; s.lagf.style.width = 0; s.readf.style.width = 0; continue; }
+    const lag = newest.lag;
+    s.lagf.style.width = Math.min(100, lag / 30 * 100) + "%";
+    s.lagf.style.background = color(lag, 8, 20);
+    s.lagv.textContent = lag.toFixed(1) + " s";
+    if (top >= 0) {                      // the top line: how much of its reading time it has had so far
+      const x = L[top], had = t - x.show, ok = x.up + 0.05 >= x.need;
+      s.readf.style.width = Math.min(100, had / x.need * 100) + "%";
+      s.readf.style.background = ok ? "var(--ok)" : "var(--bad)";
+      s.readv.textContent = `${Math.min(had, x.need).toFixed(1)} / ${x.need.toFixed(1)} s`;
+    }
+    const gone = L.slice(0, Math.max(0, i - C.lines + 1)).filter(x => x.up < x.need - 0.05).length;
+    s.count.innerHTML = `Lines scrolled off before they could be read so far: <b>${gone}</b> of ${Math.max(0, i - C.lines + 1)}`;
+    s.src.textContent = "Romanian: " + newest.ro;
+  }
+}
+
+function draw() {
+  const svg = document.getElementById("svg"), W = 1000, H = 150, top = 30;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const x = t => t / end * W, y = v => H - Math.min(v, top) / top * (H - 14) - 2;
+  let out = `<line x1="0" x2="${W}" y1="${y(20)}" y2="${y(20)}" stroke="var(--muted)" stroke-dasharray="5 5" vector-effect="non-scaling-stroke"/>`;
+  for (const [side, col, ty] of [["a", "var(--a)", 0], ["b", "var(--b)", 6]]) {
+    const scr = S[sides[side].pick.value], L = scr.items;
+    const when = l => l.t ?? l.show;
+    const pts = L.map(l => `${x(when(l)).toFixed(1)},${y(l.lag).toFixed(1)}`).join(" ");
+    out += `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.6" vector-effect="non-scaling-stroke" opacity=".9"/>`;
+    if (scr.mode === "frames") {
+      for (let k = 1; k < L.length; k++) if (L[k].gone > L[k - 1].gone)
+        out += `<line x1="${x(L[k].t)}" x2="${x(L[k].t)}" y1="${ty}" y2="${ty + 5}" stroke="${col}" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`;
+      continue;
+    }
+    for (const l of L) if (l.up < l.need - 0.05)
+      out += `<line x1="${x(l.show)}" x2="${x(l.show)}" y1="${ty}" y2="${ty + 5}" stroke="${col}" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`;
+  }
+  out += `<line id="head" x1="0" x2="0" y1="0" y2="${H}" stroke="var(--ink)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`;
+  svg.innerHTML = out;
+}
+function moveHead() { const h = document.getElementById("head"); if (h) { const X = audio.currentTime / end * 1000; h.setAttribute("x1", X); h.setAttribute("x2", X); } }
+function seekTo(t) { audio.currentTime = t; tick(); moveHead(); }
+
+document.getElementById("svg").onclick = e => { const r = e.currentTarget.getBoundingClientRect(); seekTo((e.clientX - r.left) / r.width * end); };
+document.getElementById("play").onclick = () => audio.paused ? audio.play() : audio.pause();
+audio.onplay = () => document.getElementById("play").textContent = "Pause";
+audio.onpause = () => document.getElementById("play").textContent = "Play";
+document.getElementById("seek").oninput = e => seekTo(e.target.value / 100 * (audio.duration || end));
+document.getElementById("speed").onchange = e => audio.playbackRate = +e.target.value;
+const jump = document.getElementById("jump");
+for (const j of DATA.jumps) jump.add(new Option(`${fmt(j.t)}  ${j.label}`, j.t));
+jump.onchange = () => { if (jump.value !== "") seekTo(+jump.value); };
+setInterval(() => { tick(); moveHead(); }, 100);
+
+const cols = ["chrf", "bleu", "lines", "lag_median", "lag_p90", "lag_max", "over_20s", "too_short_up"];
+const heads = ["chrF++", "BLEU", "lines", "behind, median", "p90", "worst", "> 20 s", "scrolled off unread"];
+const f = v => v == null ? "–" : Number.isInteger(v) ? v : v.toFixed(1);
+document.getElementById("tbl").innerHTML = "<tr><th></th>" + heads.map(h => `<th>${h}</th>`).join("") + "</tr>" +
+  Object.entries(DATA.rows).map(([n, r]) => `<tr><td>${n}</td>` + cols.map(c => `<td>${f(r[c])}</td>`).join("") + "</tr>").join("");
+document.getElementById("note").textContent =
+  "chrF++ / BLEU: the English translation against the reference translation, over ~20 s stretches (pacing does not change the words). " +
+  "Line pacing: a new line waits until the line it pushes off the top has been up for its reading time. " +
+  "Whole lines: every translation starts on a new line, and a line appears complete (it never grows). " +
+  "Today's caption box: the app's own captions.py on a simulated clock (2.5 s per line, words revealed at speaking pace); " +
+  "\"dwell fixed\" restarts a line's 2.5 s when words are added to it. " +
+  "Pages: two lines appear together and are replaced together; each page waits for the one before to be read.";
+draw(); tick();
+</script>
+</body>
+</html>
