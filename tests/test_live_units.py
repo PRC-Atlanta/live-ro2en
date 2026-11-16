@@ -216,17 +216,30 @@ def test_context_stt_commits_by_time_and_hears_past_a_forced_cut():
     from live.context_stt import ContextSTT
     stt = _TimedSTT(
         [("a", 0.2, 0.4), ("b", 0.8, 1.0), ("c.", 1.5, 1.8)],
-        # context 2 s + chunk 2 s + 1 s ahead: «importantă» lies mostly after the cut at 4.0
+        # context 2 s + chunk 2 s + 1 s ahead: the cut at 4.0 falls in «importantă», heard whole in the audio ahead
         [("a", 0.2, 0.4), ("b", 0.8, 1.0), ("c", 1.5, 1.8), ("d", 2.3, 2.6), ("e", 3.0, 3.4),
          ("importantă", 3.8, 4.4), ("cât", 4.5, 4.7)],
         # context = the last 2 s, so the clock moved by 2 s
         [("d", 0.3, 0.6), ("e", 1.0, 1.4), ("importantă", 1.8, 2.4), ("cât", 2.5, 2.7), ("x.", 3.0, 3.5)])
     c = ContextSTT(stt, ctx_s=2.0)
     assert c(_sec(2), final=True) == "a b c."
-    assert c(_sec(2), final=False, ahead=_sec(1)) == "d e"
+    assert c(_sec(2), final=False, ahead=_sec(1)) == "d e importantă"
     assert stt.heard[-1] == 5.0                              # context + chunk + the audio ahead
-    assert c(_sec(2), final=True) == "importantă cât x." and c.seam is None
+    assert c(_sec(2), final=True) == "cât x." and c.seam is None
     assert stt.heard[-1] == 4.0                              # the audio ahead was not kept as context
+
+
+def test_context_stt_the_word_after_the_pause_a_forced_cut_sits_in_waits():
+    from live.context_stt import ContextSTT
+    # «În» is stamped at 1.82, before the cut at 2.0, but the voice had been silent for 0.3 s there
+    script = lambda: _TimedSTT([("de", 0.9, 1.0), ("tinerețe.", 1.1, 1.74), ("În", 1.82, 1.9), ("seara", 2.1, 2.4)],   # noqa: E731
+                               [("de", 0.9, 1.0), ("tinerețe.", 1.1, 1.74), ("În", 1.82, 1.9), ("seara", 2.1, 2.4),
+                                ("aceasta.", 2.5, 3.0)])
+    c = ContextSTT(script(), ctx_s=4.0)
+    assert c(_sec(2), final=False, ahead=_sec(1), quiet_s=0.3) == "de tinerețe."
+    assert c(_sec(1.5), final=True) == "În seara aceasta."
+    c = ContextSTT(script(), ctx_s=4.0)                      # the cut in speech: the word began before it
+    assert c(_sec(2), final=False, ahead=_sec(1)) == "de tinerețe. În"
 
 
 def test_context_stt_a_word_mostly_before_the_cut_is_committed_once():

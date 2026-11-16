@@ -115,7 +115,7 @@ def _bare_engine(mode="auto"):
     e.n, e._id_lock = 0, threading.Lock()
     e.vad = lambda fr: float(fr[0])
     e.calls = []
-    e.transcribe = lambda audio, t0, t1, t_speech=None, final=True, ahead=None: e.calls.append((e.mode, len(audio), final))
+    e.transcribe = lambda audio, t0, t1, t_speech=None, final=True, ahead=None, quiet_s=0.0: e.calls.append((e.mode, len(audio), final))
     return e
 
 

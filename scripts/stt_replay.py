@@ -85,14 +85,15 @@ class _CtxTap:
     def __init__(self, ctx):
         self.c, self.rec = ctx, None
 
-    def __call__(self, chunk, final=False, ahead=None):
+    def __call__(self, chunk, final=False, ahead=None, quiet_s=0.0):
         before, n_ctx = self.c.ctx_text, len(self.c.ctx_audio)
         t = time.time()
-        out = self.c(chunk, final, ahead) if ahead is not None else self.c(chunk, final)
+        out = self.c(chunk, final, ahead, quiet_s) if ahead is not None else self.c(chunk, final)
         hyp = self.c.stt.last
         self.rec = {"final": bool(final), "ctx_text": before, "ctx_s": round(n_ctx / SR, 3),
                     "chunk_s": round(len(chunk) / SR, 3),
-                    "ahead_s": round(len(ahead) / SR, 3) if ahead is not None else 0.0, "stt_wall_s": round(time.time() - t, 3),
+                    "ahead_s": round(len(ahead) / SR, 3) if ahead is not None else 0.0,
+                    "quiet_s": round(quiet_s, 3), "stt_wall_s": round(time.time() - t, 3),
                     "hyp": hyp if isinstance(hyp, str) else getattr(hyp, "text", str(hyp)),
                     **({"debug": self.c.debug} if getattr(self.c, "debug", None) else {})}
         return out

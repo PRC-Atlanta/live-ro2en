@@ -1229,7 +1229,7 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   spent on the longer prompts (notes, more glossary rows) and the extra guard tries; recognition
   varied ±0.15 s between runs (not the new phrase boost: the same without it).
 
-## 25. A Romanian word cut in two at a piece boundary is translated as two words — `partly done` (2026-11-15): the previous caption is redone when its last word was the start of this piece's first
+## 25. A Romanian word cut in two at a piece boundary is translated as two words — `partly done` (2026-11-15): the previous caption is redone when its last word was the start of this piece's first · 2026-11-15 evening `done` at the recogniser: Romanian words are committed by when they were heard, and a forced cut hears the audio past it (`live.timed_commit`)
 
 - **Evidence (2026-10-25 evening, Quality; marked in the recording):**
   - 18:11:09 "…vrea să ne păzim și noi de **auto**." | "**autoînșelare**. Ne putem înșela…" →
@@ -1308,7 +1308,36 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   - (e) `bench.py ref` counts every phrase that starts up to 1 s after the corrected stretch ends, so nelu-suciu's score carries ~9 extra words from the first uncorrected phrase (4.85% in the app run; 4.49% for the recogniser's text cut at the stretch's end). The reference keeps some of the offline recogniser's own mistakes («fragi și surori», «eroia aceea», «intras pe poarta», «tere și s descalificați»), so a live run that hears these right is counted wrong: the offline number cannot be reached.
   - Half of all chunks end in a forced cut (235 of 471 on br-random-1). The voice detector calls the cut frame speech in 42% of them (≥ 0.9 in 25%); nelu-suciu 29%. 35% of the forced chunks are under 3 s (46 of 235 under 1 s): the pause tracker's 5.5 s speech clock and the 5.5 s buffer clock (`max_commit_s`) run apart, so a cut by one is followed by a cut by the other.
   - Auto mode took no phrase for English on any of the three (0 of 913 shown phrases).
-- **Built (2026-11-15 evening, `live.timed_commit`):** the Romanian recogniser's word times (the CTC beam's own frame path, 80 ms, no extra cost) decide which words are new: those after the point in the audio where the committed text ended. At a forced cut the engine passes the audio it already holds past the cut (0.3–2.5 s), so the word at the cut is heard whole and committed once. A clause the recogniser lost and finds with the next chunk's audio (3+ words in a row) is said late instead of never. **Bench so far** (recogniser only, WER 405fef7 → by time; offline): br-random-1 6.18 → 5.43% (4.49%), extra words 71 → 39; nelu-suciu 4.49 → 3.52% (2.82%), extra words 19 → 6. Full app replays, luigi-mitoi and latency: to come.
+- **Built (2026-11-15 evening, branch `seam-timing`, `live.timed_commit`, on by default):**
+  - `NemoSTT.words()` gives each Romanian word's start and end from the CTC beam search's own frame path (80 ms frames; same text as before on 200 random windows, no extra time).
+  - `ContextSTT` commits by time: the new words are those after the point in the audio where the committed text ended. Word times move between hearings (at the end of the audio the recogniser fires up to ~0.25 s early), so that point is then anchored on the last committed words, looked for within 3 words and 0.8 s of it.
+  - At a forced cut the engine passes the audio it already holds past the cut (0.3–2.5 s). The word at the cut is heard whole: committed now when most of it lies before the cut, else with the next chunk. A word that ends within 0.16 s of the end of the audio waits (`live.commit_edge_s`). Nothing waits longer than before: no first word comes later.
+  - A clause the recogniser lost and finds with the next chunk's audio (3+ words in a row that the last chunk's text lacks) is said late instead of never (once in 29 min on br-random-1: 6 words).
+  - A forced chunk whose words all wait gives no Romanian text; the engine says so (`clause.ro_wait`) and the empty-phrase fallback does not take Parakeet's text for it.
+  - Parakeet (English, language detection) has no word times here and is stitched by text as before. So is the Romanian recogniser if its times cannot be had (another NeMo version): the seam redo of this morning (`live.cut_word_seam`) stays for that case only; with the times it never fires (0 redos on the three sermons and the clips), and neither did this morning's spelling rule (`live.cut_word_redo`).
+- **Bench (2026-11-15 evening; app replays x3, quality, gain 0, no names; 405fef7 without / with this morning's seam redo → aa8230f; offline = the same recogniser on pause-cut segments, church phrases boosted, in brackets the older stored figure):**
+
+  | Romanian transcript WER | offline | 405fef7, no redo | 405fef7, redo | **aa8230f** | extra words |
+  |---|---:|---:|---:|---:|---:|
+  | br-random-1 | 4.49% (4.22%) | 6.42% | 6.31% | **BR_NEW** | 82 → BR_INS |
+  | nelu-suciu (first 8 min; old end rule in brackets) | 2.82% (2.56%) | 4.41% (5.20%) | 4.05% (4.85%) | **NE_NEW** (NE_OLD) | 14 → NE_INS |
+  | luigi-mitoi | 3.57% | 4.79% | 4.71% | **3.73%** | 55 → 20 |
+
+  - Share of the live-to-offline gap closed (from the no-redo run, the state BENCHMARK Phase 3e was measured in): br-random-1 BR_GAP, nelu-suciu NE_GAP, luigi-mitoi 87%.
+  - luigi-mitoi English translation: chrF++ 62.5 → 63.0, BLEU 35.3 → 37.2.
+  - Seam catalogue (`logs/bench/seams.json`, rebuilt: 18 cut words, 2 re-heard duplicates, 1 pair of real words; clips 12 min): right 4 of 21 without the redo, 15 with it, **19 with the times and 2 not reproduced** (the word is heard once).
+  - Recogniser alone (`scripts/stt_replay.py`), 405fef7 → aa8230f: br-random-1 6.18 → 5.37%, nelu-suciu 4.49 → 3.70%, luigi-mitoi 4.29 → 3.66% (offline 3.57%: on the one sermon whose reference was not made from the offline text, live now equals offline; live-only errors 57 → 35, offline-only 36).
+  - Latency, real time, first 12 min of luigi-mitoi, 405fef7 → aa8230f: LAT_LINE
+- **What is left (br-random-1, recogniser alone: 239 errors against 200 offline).** No stitching: 0 stubs, 0 repeats at forced cuts. It is one word heard differently with a different stretch of audio around it («am/a păstrat», «dăm/luăm», «ar vrea/avea»), as often the other way (45 offline-only), plus the reference's own leftovers from the offline text («fragi și surori», «eroia», «intras», «fără copii, fără tineri» where the live «văd copii, văd tineri» is what is said).
+- **Other sources checked (2026-11-15 evening):**
+  - *Context text against context audio:* 28% of chunks run above 3 words/s, so the 18 words kept as context text cover less than the 6 s of audio. With the times it no longer matters for Romanian; Parakeet's stitching still uses it.
+  - *Cut placement:* the forced cut lands on a frame the voice detector calls speech in 42% of cuts on br-random-1 (29% on nelu-suciu). With the audio past the cut heard it no longer cuts words. 0.8 s of audio after the cut instead of 0.3 s: same WER (5.39%). One clock for forced cuts instead of two (35% of forced chunks are under 3 s because the pause tracker's speech clock and the buffer clock run apart): 235 → 178 forced cuts, WER 5.39 → 5.48%, first word waits 4.61 → 4.96 s for the cut. Neither kept.
+  - *A pause-ended chunk losing its last word:* not seen. What was seen is the reverse: the last word, right the first time, heard again as another word once the pause is cut out of the context («sărac | sărat», «culoar | culoare», «pleci | plece», «dor | doar») and kept as a new word by the text stitching. This morning's redo then dropped the right word. By time it is the old word and is dropped.
+  - *The c10a191 → 03e38eb regression (idea 27):* automatic gain is not it any more (br-random-1 with the gain fixed: 5.43% against 5.39%). The words added were the empty-phrase fallback's (Parakeet's text for a chunk the Romanian recogniser had already said: 17 words at luigi-mitoi 24:59) and the stitching itself; both are gone.
+  - *Auto mode:* no phrase of the three sermons was taken for English.
+  - *Names:* ten names entered as on a Sunday (`logs/bench/terms_corr_sermons.txt`): br-random-1 5.39 → 5.37%, nelu-suciu 3.70 → 3.61% (one or two words each).
+  - *9 s of context instead of 6 s:* br-random-1 5.39 → 5.23% (7 words), the recogniser hears 3 s more per call. Not changed; the next thing to bench on all three with the real-time latency.
+- **Next most valuable:** (1) the reference: a second pass over the br-random-1 and nelu-suciu corrections where live and offline disagree (~130 places, listed by `scripts/stt_attrib.py --list`), since the offline text's own mistakes now make up a visible part of the remaining "gap"; (2) `context_s` 9; (3) word times for Parakeet (parakeet-mlx gives them), so English gets the same commit and idea 16's overlap trim can go.
 
 ## 26. Name repair turns a real word into today's name: «înșeală» → «Ionela» — `done` (2026-10-25): a lower-case word with no cue needs sound ratio ≥ 0.85 and is never a name after nu/ne/te/se/să…; bench on all 14 logs with the saved names: 12 → 6 repairs, the 6 false ones gone (Ionela ×4, Barbu, Dragoș), the 6 real kept · **reopened `next` 2026-11-01**: correct names repaired into saved ones (a man's first name → a woman's saved name)
 

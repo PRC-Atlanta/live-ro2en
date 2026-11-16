@@ -758,12 +758,12 @@ class Engine:
               "msg": f"{mode} needs the multilingual model, which is unavailable: running RO→EN only"})
 
     def transcribe(self, audio: np.ndarray, t_start: float, t_end: float, t_speech: float | None = None,
-                   final: bool = True, ahead: np.ndarray | None = None) -> None:
+                   final: bool = True, ahead: np.ndarray | None = None, quiet_s: float = 0.0) -> None:
         """One failed chunk (model/MPS error) is reported as an error event; the engine keeps
         listening instead of dying mid-service. ahead: the audio already held past the chunk
         (ContextSTT hears it too, so a word at the cut is heard whole)."""
         try:
-            self._transcribe(audio, t_start, t_end, t_speech, final, ahead)
+            self._transcribe(audio, t_start, t_end, t_speech, final, ahead, quiet_s)
         except Exception as e:                   # noqa: BLE001
             import traceback
             traceback.print_exc(file=sys.stderr)
@@ -771,7 +771,7 @@ class Engine:
                   "t_start": t_start, "t_end": t_end, "audio_s": round(len(audio) / SR, 3)})
 
     def _transcribe(self, audio: np.ndarray, t_start: float, t_end: float, t_speech: float | None = None,
-                    final: bool = True, ahead: np.ndarray | None = None) -> None:
+                    final: bool = True, ahead: np.ndarray | None = None, quiet_s: float = 0.0) -> None:
         t = time.time()
         need_ro = self.mode != "en-ro" or self.multi is None
         need_multi = self.multi is not None and self.mode != "ro-en"
@@ -779,13 +779,13 @@ class Engine:
         if need_ro and need_multi and self.multi_ctx is not None:
             # Auto mode: Jackrabbit (torch, helper thread) and Parakeet (MLX, must stay on this
             # thread) run at the same time instead of one after the other
-            fut = self._pool.submit(self.stt_ctx, audio, final, ahead)
-            multi = self.multi_ctx(audio, final, ahead)
+            fut = self._pool.submit(self.stt_ctx, audio, final, ahead, quiet_s)
+            multi = self.multi_ctx(audio, final, ahead, quiet_s)
             ro = fut.result()
         else:
-            ro = self.stt_ctx(audio, final, ahead) if need_ro else ""
+            ro = self.stt_ctx(audio, final, ahead, quiet_s) if need_ro else ""
             if need_multi:
-                multi = ro if self.multi is self.stt else self.multi_ctx(audio, final, ahead)  # language detection / English
+                multi = ro if self.multi is self.stt else self.multi_ctx(audio, final, ahead, quiet_s)  # language detection / English
         # look-ahead: words held from the previous (mid-speech) cut appear now, so the delay
         # clock starts when they were spoken (~0.4 s per held word before that cut)
         t_first = t_speech or t_start
@@ -956,8 +956,11 @@ class Engine:
                 lo = max(1, len(probs) - int(2.5 * SR / FRAME))
                 hi = max(lo + 1, len(probs) - int(0.3 * SR / FRAME))
                 cut = lo + int(np.argmin(probs[lo:hi]))
+                quiet = 0                             # frames of silence that end at the cut
+                while quiet < cut and probs[cut - 1 - quiet] < self.pt.threshold:
+                    quiet += 1
                 self.transcribe(np.concatenate(frames[:cut]), times[0], times[cut - 1], first_voiced, final=False,
-                                ahead=np.concatenate(frames[cut:]))
+                                ahead=np.concatenate(frames[cut:]), quiet_s=quiet * FRAME / SR)
                 frames, probs, times = frames[cut:], probs[cut:], times[cut:]
             elif self.partial_every and not behind and ts - last_partial > self.partial_every and len(frames) > 30:
                 last_partial = ts

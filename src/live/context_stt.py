@@ -40,6 +40,11 @@ def _word_spans(text: str) -> tuple[list[str], list[int]]:
 ANCHOR_WORDS = 3          # ... at most this many words before or after where the time says
 ANCHOR_S = 0.8            # ... and this far from it
 TAIL_N = 6                # committed words remembered for it
+# A word is stamped at its onset or a little before it: the first word after a pause can sit
+# inside the pause («tinerețe.» | «În» at 9.12 s, the cut at 9.23 s in a 0.3 s silence), and the
+# word after a dip in the voice just before it. At a forced cut a word goes with this chunk when it
+# began this long before the cut, or before the silence the cut sits in.
+ONSET_S = 0.1
 MISSED_MIN = 3            # words in a row the last chunk's text lacks, heard now in its audio: said late
 
 
@@ -80,10 +85,13 @@ class ContextSTT:
         self.untimed = 0                    # calls in a row without word times
         self.debug: dict | None = None
 
-    def __call__(self, chunk: np.ndarray, final: bool = False, ahead: np.ndarray | None = None) -> str:
+    def __call__(self, chunk: np.ndarray, final: bool = False, ahead: np.ndarray | None = None,
+                 quiet_s: float = 0.0) -> str:
         """final=True (chunk ended at a real pause): commit everything, nothing is held.
         ahead: audio after the chunk that is already there. After a forced cut (final=False) it is
-        the start of the next chunk; after a pause it is the silence that was trimmed."""
+        the start of the next chunk; after a pause it is the silence that was trimmed.
+        quiet_s: at a forced cut, how long the voice had been silent just before it (0 = the cut
+        fell in speech)."""
         if self.ctx_n <= 0:
             return self.stt(chunk)
         self.held = 0
@@ -91,7 +99,7 @@ class ContextSTT:
         self.debug = None
         self.waiting = 0
         if self.timed and self.untimed < 3 and hasattr(self.stt, "words"):   # no times three times: stop asking
-            new = self._by_time(chunk, final, ahead)
+            new = self._by_time(chunk, final, ahead, quiet_s)
             if new is not None:
                 return new
         audio = np.concatenate([self.ctx_audio, chunk]) if len(self.ctx_audio) else chunk
@@ -172,7 +180,7 @@ class ContextSTT:
         kept = (self.ctx_text + " " + new).split()
         self.ctx_text = " ".join(kept[-self.max_ctx_words:])
 
-    def _by_time(self, chunk: np.ndarray, final: bool, ahead: np.ndarray | None) -> str | None:
+    def _by_time(self, chunk: np.ndarray, final: bool, ahead: np.ndarray | None, quiet_s: float = 0.0) -> str | None:
         """The chunk's new words by their times; None when the recogniser gave no times (the
         caller stitches by text)."""
         ctx = self.ctx_audio
@@ -203,9 +211,13 @@ class ContextSTT:
         if final:
             m = len(words)
         else:
-            m = next((i for i in range(k, len(words)) if mid[i] >= b1), len(words))
-            while m > k and words[m - 1][2] > end - self.edge_s:
-                m -= 1                             # at the edge of the audio: it may not be over
+            # a word that began before the cut goes with this chunk when all of it is in the audio
+            # (the cut fell in it: it is heard whole in the audio ahead); one at the edge of the
+            # audio may not be over and waits, as does one after the pause the cut sits in
+            began = b1 - max(0.0, quiet_s) - ONSET_S
+            m = k
+            while m < len(words) and words[m][1] < began and words[m][2] <= end - self.edge_s:
+                m += 1
         late = self._missed(words, mid, k, b0)
         new = words[k:m]
         if new:
