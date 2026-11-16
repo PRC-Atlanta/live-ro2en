@@ -170,6 +170,28 @@ def test_context_stt_returns_only_new_words():
     assert out == ["for god so", "loved the world", "that he gave his"]
 
 
+def test_context_stt_flags_a_word_cut_by_the_chunk():
+    import numpy as np
+    from live.context_stt import ContextSTT, same_word
+    heard = iter(["este o seară de important", "o seară de importantă cât importanță"])
+    c = ContextSTT(lambda audio: next(heard), ctx_s=1.0)
+    assert c(np.zeros(8000, dtype=np.float32)) == "este o seară de important" and c.seam is None
+    assert c(np.zeros(8000, dtype=np.float32)) == "importantă cât importanță"
+    assert c.seam == ("important", "importantă")
+    # the first chunk ended at a real pause: its last word was whole, a look-alike next word is its own
+    heard = iter(["că ești bogat sau sărac", "bogat sau sărat tu lupți"])
+    c = ContextSTT(lambda audio: next(heard), ctx_s=1.0)
+    c(np.zeros(8000, dtype=np.float32), final=True)
+    assert c(np.zeros(8000, dtype=np.float32)) == "sărat tu lupți" and c.seam is None
+    # a word said again is matched, not a seam
+    heard = iter(["pe Isus", "pe Isus nu este"])
+    c = ContextSTT(lambda audio: next(heard), ctx_s=1.0)
+    c(np.zeros(8000, dtype=np.float32))
+    assert c(np.zeros(8000, dtype=np.float32)) == "nu este" and c.seam is None
+    assert same_word("ex.", "exemple") and same_word("mâncat", "mântuit") and same_word("dispoziție", "dispoziția")
+    assert not same_word("Laodicea.", "observăm") and not same_word("e", "este")
+
+
 # 2026-11-06 / 2026-11-08: NLLB English → Romanian
 def test_nllb_english_without_fillers_and_stutters_split_in_sentences():
     from live import translate as T

@@ -9,13 +9,14 @@ Model-agnostic: works with any callable audio -> text."""
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 
 import numpy as np
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from scoring import align                       # noqa: E402
-from textnorm import key_tokens, tokens          # noqa: E402
+from textnorm import fold_diacritics, key_tokens, tokens   # noqa: E402
 
 SR = 16000
 
@@ -37,6 +38,8 @@ class ContextSTT:
 
     def reset(self) -> None:
         self.held = 0
+        self.seam = None
+        self.prev_final = True              # the last chunk ended at a real pause (no word was cut)
         self.ctx_audio = np.zeros(0, dtype=np.float32)
         self.ctx_text = ""
 
@@ -45,9 +48,15 @@ class ContextSTT:
         if self.ctx_n <= 0:
             return self.stt(chunk)
         self.held = 0
+        self.seam = None
         audio = np.concatenate([self.ctx_audio, chunk]) if len(self.ctx_audio) else chunk
         hyp = self.stt(audio) or ""
         new = self._after_context(hyp).split()
+        if self.prev_final:
+            # the last chunk ended at a pause, so its last word was whole: a word that looks like it
+            # is a word of its own («bogat sau sărac.» | «sărat», «să pleci.» | «plece», bench 2026-11-15)
+            self.seam = None
+        self.prev_final = final
         if self.hold_words and not final:
             self.held = min(self.hold_words, len(new))
             new = new[:len(new) - self.held]      # wait for audio after these words
@@ -77,4 +86,27 @@ class ContextSTT:
         end_tok = a.ref_end
         if end_tok >= len(tok_word):
             return ""
-        return " ".join(words[tok_word[end_tok]:]).strip()
+        out = words[tok_word[end_tok]:]
+        # the committed text's last word found no match in the new hypothesis, and the first new
+        # word looks like the same word: the last chunk was cut inside it («important.» then
+        # «importantă», «ex.» then «exemple»). The caller redoes the previous caption with it.
+        if a.pairs and a.pairs[-1][0] is None and same_word(self.ctx_text.split()[-1], out[0]):
+            self.seam = (self.ctx_text.split()[-1], out[0])
+        return " ".join(out).strip()
+
+
+_LETTERS = re.compile(r"[^\W\d_]+")
+
+
+def same_word(stub: str, word: str) -> bool:
+    """The recogniser's guess at the start of a word cut by a chunk boundary, and the whole word
+    heard with the next chunk: a 3-letter shared start («mâncat» / «mântuit», «dispoziție» /
+    «dispoziția»), or a 2-letter stub the word begins with («ex» / «exemple»). Only asked after
+    the alignment found no match for the stub, so a word said twice is not a seam."""
+    s, w = (fold_diacritics("".join(_LETTERS.findall(x)).lower()) for x in (stub, word))
+    if len(s) < 2 or len(w) < 2:
+        return False
+    cp = 0
+    while cp < min(len(s), len(w)) and s[cp] == w[cp]:
+        cp += 1
+    return cp >= 3 or (cp >= 2 and w.startswith(s))

@@ -269,7 +269,10 @@ def _run_log(arg: str) -> tuple[pathlib.Path, dict]:
         p = BENCH / "runs" / arg
     if p.is_dir():
         info = json.loads((p / "run.json").read_text())
-        return pathlib.Path(info["log"]), info
+        log = pathlib.Path(info["log"])
+        if not log.exists():                             # run from a worktree that is gone: the folder's copy
+            log = next((p / "services").glob("*.jsonl"), log)
+        return log, info
     return p, {}
 
 
@@ -308,11 +311,20 @@ def on_screen(ph: list[dict]) -> list[dict]:
     return out
 
 
-def judge(err: dict, phrases: list[dict], day: str, window: float = 25.0) -> tuple[str, str]:
-    """('fixed' | 'still' | 'missing', the text found) for one known error."""
-    t = _day_ts(day, err["t"])
+def judge(err: dict, phrases: list[dict], day: str, window: float = 25.0, t: float | None = None) -> tuple[str, str]:
+    """('fixed' | 'still' | 'missing', the text found) for one known error. on=ro (the seam
+    catalogue): the regexes are matched on the shown Romanian transcript, folded and joined."""
+    t = _day_ts(day, err["t"]) if t is None else t
+    if err.get("on") == "ro":
+        window = min(window, 12.0)
     near = [r for r in phrases if r.get("t_end", 0) >= t - window and r.get("t_start", 0) <= t + window]
-    lines = [(r.get("translation") or "").strip() for r in near if r.get("outcome") == "ok"]
+    if err.get("on") == "ro":
+        from textnorm import fold_diacritics  # noqa: PLC0415
+        lines = [fold_diacritics(" ".join((r.get("source") or "").split()).lower())
+                 for r in near if r.get("outcome") == "ok"]
+        lines = [" ".join(lines)]                                # a seam spans two pieces
+    else:
+        lines = [(r.get("translation") or "").strip() for r in near if r.get("outcome") == "ok"]
     text = " | ".join(lines)
     if not near:
         return "missing", ""
@@ -356,13 +368,22 @@ def score(arg: str, errors_path: str | None, quiet: bool = False) -> dict:
     day = dt.datetime.fromtimestamp(ph[0]["t_start"]).date().isoformat()
     lo, hi = ph[0]["t_start"], ph[-1]["t_end"]
     res = {}
-    if day != _errors_day(errors_path):                 # another service's recording: nothing to judge
+    audio = pathlib.Path(info.get("audio", "")).stem
+    if day != _errors_day(errors_path) and not audio.startswith("corr_"):   # another service's recording
         errs = []
     for e in errs:
-        t = _day_ts(day, e["t"])
+        if "sermon" in e:                               # the seam catalogue: a corrected sermon or the clips
+            hms = e.get("t_src") if audio == f"corr_{e['sermon']}" else e.get("t") if day == _errors_day(errors_path) else None
+            if hms is None:
+                continue
+        elif day != _errors_day(errors_path):
+            continue
+        else:
+            hms = e["t"]
+        t = _day_ts(day, hms)
         if not (lo - 5 <= t <= hi + 5):
             continue
-        res[e["id"]] = (*judge(e, ph, day), e)
+        res[e["id"]] = (*judge(e, ph, day, t=t), e)
     counts: dict = {}
     for status, _, e in res.values():
         counts.setdefault(e["cat"], {}).setdefault(status, 0)
@@ -381,7 +402,7 @@ def score(arg: str, errors_path: str | None, quiet: bool = False) -> dict:
         print("metrics: " + json.dumps(summary["metrics"], ensure_ascii=False))
         for k, (s, text, e) in res.items():
             mark = {"fixed": "OK ", "fixed?": "ok?", "still": "XX ", "missing": "-- "}[s]
-            print(f"  {mark} {e['id']:4s} {e['t']} {e['cat']:10s} {e['note'][:60]}")
+            print(f"  {mark} {e['id']:5s} {e.get('t') or e.get('t_src')} {e['cat']:10s} {e['note'][:60]}")
             if s != "fixed" and text:
                 print(f"         now: {text[:150]}")
     return summary

@@ -146,6 +146,23 @@ def cut_word(prev_src: str, src: str, lex: set) -> str | None:
     return f"{prev_src[:m1.start(1)].rstrip()} {src.lstrip()}".strip()
 
 
+def seam_word(prev_src: str, src: str, seam: list | None) -> str | None:
+    """Idea 25, the recogniser's side: ContextSTT found the previous chunk's last word unmatched
+    when it heard it again with the next chunk, and this piece's first word is the whole word
+    («de important.» | «importantă. cât», «la dispoziție.» | «dispoziția noastră», «dea ex.» |
+    «exemple»). The previous piece without its last word, joined to this one; None when the
+    seam does not name these two words (a repair or spelling changed them)."""
+    if not seam or len(seam) != 2:
+        return None
+    m1, m2 = _LAST_WORD.search(prev_src or ""), _FIRST_WORD.search(src or "")
+    if not m1 or not m2:
+        return None
+    key = lambda x: fold_diacritics("".join(re.findall(r"[^\W\d_]+", x)).lower())   # noqa: E731
+    if key(m1.group(1)) != key(seam[0]) or key(m2.group(1)) != key(seam[1]):
+        return None
+    return f"{prev_src[:m1.start(1)].rstrip()} {src.lstrip()}".strip()
+
+
 _CHRISTMAS = re.compile(r"\bChristmas\b(?!\s+Child)")
 
 
@@ -949,8 +966,12 @@ class PipelineMixin:
         if lang == "ro" and last_out and last_src and last_end is not None and self.lc.get("cut_word_redo", True) \
                 and ev.get("t_speech", ev["t_start"]) - last_end <= CUT_GAP_S:
             joined = cut_word(last_src, src_text, gate.lexicon()["ro"])
+            by_seam = joined is None and self.lc.get("cut_word_seam", True)
+            if by_seam:
+                joined = seam_word(last_src, src_text, ev.get("seam"))
             if joined is not None:
-                src_info["cut_word"] = {"previous": last_src, "replaced_prev": " ".join(last_out)}
+                src_info["cut_word"] = {"previous": last_src, "replaced_prev": " ".join(last_out),
+                                        **({"seam": ev["seam"]} if by_seam else {})}
                 src_text, cut_redo = joined, True
                 ctx = getattr(tr, "context", None)
                 if isinstance(ctx, list) and ctx:

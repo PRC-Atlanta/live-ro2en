@@ -709,9 +709,10 @@ class Engine:
         self._held_t = (t_end - 0.4 * held) if (held and not final) else None
         if self.mode == "en-ro" and not ro:
             ro = multi
+        seam = getattr(self.stt_ctx, "seam", None) if need_ro else None   # idea 25: a word cut by the last chunk
         emit({"type": "clause", "id": self._next_id(), "ro": ro.strip(), "multi": multi.strip(),
               "t_start": t_start, "t_speech": t_first, "t_end": t_end, "t_emit": time.time(), "stt_s": round(time.time() - t, 4),
-              "audio_s": round(len(audio) / SR, 3)})
+              "audio_s": round(len(audio) / SR, 3), **({"seam": list(seam)} if seam else {})})
 
     def run(self, q: queue.Queue, stop: threading.Event | None = None, hold: bool = False,
             idle_watch: bool = True) -> None:

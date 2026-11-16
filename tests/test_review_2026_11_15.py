@@ -19,7 +19,7 @@ import verses as V                                       # noqa: E402
 from live import engine, gate                            # noqa: E402
 from live import translate as T                          # noqa: E402
 from live.app import Live                                # noqa: E402
-from live.pipeline import christmas_to_hristos, cut_word, non_english, open_end   # noqa: E402
+from live.pipeline import christmas_to_hristos, cut_word, non_english, open_end, seam_word   # noqa: E402
 
 LEX = gate.lexicon()
 
@@ -403,6 +403,37 @@ def test_the_previous_caption_is_redone_without_the_cut_word(tmp_path):
     recs = _log(live)
     assert recs[-1]["source"] == "aș vrea să spunem un cuvânt înainte de a parcurge câteva versete: Dumnezeu mă iubește."
     assert recs[-1]["cut_word"]["previous"].endswith("parca.")
+
+
+# idea 25, the recogniser's side: ContextSTT saw the cut word again whole (bench 2026-11-15: PR 9's
+# spelling rule caught 2 of 99 boundaries with an error; most were the same word said twice)
+@pytest.mark.parametrize("a,b,seam,joined", [
+    ("va fi atât de important.", "importantă. cât", ["important.", "importantă."], "va fi atât de importantă. cât"),
+    ("au pus la dispoziție.", "dispoziția noastră toate", ["dispoziție.", "dispoziția"], "au pus la dispoziția noastră toate"),
+    ("și încep să dea ex.", "exemple de ce", ["ex.", "exemple"], "și încep să dea exemple de ce"),
+])
+def test_a_seam_from_the_recogniser_carries_the_whole_word(a, b, seam, joined):
+    assert cut_word(a, b, LEX["ro"]) is None              # the spelling rule alone leaves these
+    assert seam_word(a, b, seam) == joined
+
+
+def test_a_seam_that_does_not_name_these_words_is_ignored():
+    assert seam_word("de important.", "importantă. cât", None) is None
+    assert seam_word("de important.", "importantă. cât", ["mare", "importantă"]) is None   # a repair changed it
+    assert seam_word("de important.", "cât de", ["important", "importantă"]) is None
+
+
+def test_the_previous_caption_is_redone_on_a_seam(tmp_path):
+    live = _live(tmp_path)
+    live.lang.set_mode("ro-en")
+    live.lc.update(phrase_min_words=0)
+    t = time.time() - 20
+    live._handle(_clause(1, t, t + 3, ro="este o seară care va fi atât de important."))
+    live._handle({**_clause(2, t + 3.0, t + 6, ro="importantă cât importanță îi vom da noi."),
+                  "seam": ["important.", "importantă"]})
+    recs = _log(live)
+    assert recs[-1]["source"] == "este o seară care va fi atât de importantă cât importanță îi vom da noi."
+    assert recs[-1]["cut_word"]["seam"] == ["important.", "importantă"]
 
 
 # --- the bench: a caption taken back on screen is not judged as shown ----------------------------
