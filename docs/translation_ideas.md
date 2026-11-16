@@ -1348,6 +1348,17 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   - *The live transcript's wrong words* (final code, `l7-*`): the offline recogniser has 24–53% of them right, Whisper on whole segments 40–64%.
   - *Parakeet answered hundreds of `<unk>`* on 9 of 418 and 6+ of 556 segments (short ones too). Nothing in `src/live` strips it; none in the app replays' logs so far.
 - **Fine-tune prepared, not run (2026-11-16, `src/finetune/`).** Only 1.27 h of Romanian sermon speech may be trained on (br-random-1, nelu-suciu, br-recalo); the default set is 0.96 h (0.54 h corrected, 0.42 h labelled by the recogniser where Whisper agrees within 10%), luigi-mitoi held out by recording and by content. NeMo's TDT loss is CUDA-only: `tdt_loss.py` is the same maths in PyTorch and trains on the Apple GPU (7.3 s per step, about 40 min for 10 epochs, 10.5 GB). `eval_checkpoint.py` scores a checkpoint with the live decoding and reproduces luigi-mitoi 3.57% (164) and the Bible 4.86%. With br-random-1 and nelu-suciu in training, only luigi-mitoi and the Bible stay clean measures. More audio is the lever: under an hour is below what published self-training used.
+- **Chooser test, part 1: judging the candidates as sound does not help (2026-11-16, `scripts/stt_choose.py`).**
+  Each candidate of the beam lists got the probability the model's other decoder (TDT) and its CTC head without
+  the language model give its text, and a weighted sum with the list's own score picked; weights tuned on two
+  sermons, tested on the third. Beam-8 list: 396 errors → 393–396 held out (384 with the weights fitted to the
+  same data); the other decoder makes about as many segments worse as better (25–27 each). Beam-32 list: 393–403
+  held out. With the other decoder's and Whisper's own texts added as candidates: 396–412. Both judges hear
+  through the same encoder as the recogniser, so they share its mishearings. Gemma as a judge (the candidate as
+  a continuation of the transcript, and asked to pick) and Whisper as a judge (its decoder made to score each
+  candidate) are written and tried on 12–30 segments only: the full runs were stopped twice because they filled
+  the Mac's memory (two MLX models at once: 39 GB of swap; then Gemma alone, 12.5 GB peak, while the Mac was in
+  use). On 12 segments Gemma alone picked worse than the recogniser (8 and 9 errors against 5). Not a result yet.
 
 ## 26. Name repair turns a real word into today's name: «înșeală» → «Ionela» — `done` (2026-10-25): a lower-case word with no cue needs sound ratio ≥ 0.85 and is never a name after nu/ne/te/se/să…; bench on all 14 logs with the saved names: 12 → 6 repairs, the 6 false ones gone (Ionela ×4, Barbu, Dragoș), the 6 real kept · **reopened `next` 2026-11-01**: correct names repaired into saved ones (a man's first name → a woman's saved name)
 
