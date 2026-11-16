@@ -137,19 +137,39 @@ _NOT_SURNAME = {"hristos", "cristos", "domnul", "dumnezeu", "botezatorul", "apos
                 "profetul", "sfantul", "duhul", "imparatul"}
 
 
+_TITLE_NAME_RE = re.compile(rf"\b(?:[Ff]rate(?:le|lui)?|[Ss]ora|[Ss]orei)\s+({_CAP})\b(?!\s+{_CAP})")
+_NAME_PAIR_RE = re.compile(rf"(?<![.!?]\s)(?<!^)\b({_CAP})\s+({_CAP})\b")
+_LIST_BEFORE_RE = re.compile(rf"\b({_CAP})\s*,\s*$")
+
+
 def persons(text: str, glossary) -> list[str]:
-    """People named with a Bible name and a surname after "fratele" / "sora" ("fratele Ilie
-    Puha", "sora Maria Vlad"): kept as written. "Ilie Puha" came out as "Elijah Puha"."""
+    """People with a Bible name, kept as written: after "fratele" / "sora" ("fratele Ilie Puha",
+    "fratele Ilie,"), before a capitalised surname anywhere ("cu Iosif <surname>"), and a Bible name
+    listed just before such a person ("pe Moise, Ilie <surname>"). On 2026-11-15 «Iosif <surname>» came
+    out as "Joseph" 3×, «fratele Ilie» as "brother Elijah", a child «Moise, Ilie» as "Moses, Elijah"."""
     bible = {fold_diacritics(r["ro"].casefold()) for r in getattr(glossary, "rows", [])
              if r["ro"][:1].isupper() and r["ro"].casefold() != r["en"].casefold()}
+    is_bible = lambda w: fold_diacritics(w.casefold()) in bible          # noqa: E731
+    not_surname = lambda w: (fold_diacritics(w.casefold()) in _NOT_SURNAME or is_bible(w)   # noqa: E731
+                             or fold_diacritics(w.casefold()).endswith(("ul", "lui")))
     out = []
     for m in _PERSON_RE.finditer(text):
         first, last = m.group(1), m.group(2)
-        if fold_diacritics(last.casefold()) in _NOT_SURNAME or fold_diacritics(last.casefold()) in bible:
+        if not_surname(last):
             continue
-        if fold_diacritics(first.casefold()) in bible:
+        if is_bible(first):
             out.append(f"{first} {last}")
-    return out
+    for m in _TITLE_NAME_RE.finditer(text):           # «fratele Ilie», «sora Maria»: a person
+        if is_bible(m.group(1)) and fold_diacritics(m.group(1).casefold()) not in _NOT_SURNAME:
+            out.append(m.group(1))
+    for m in _NAME_PAIR_RE.finditer(text):            # «Iosif <surname>» mid-sentence
+        first, last = m.group(1), m.group(2)
+        if is_bible(first) and not not_surname(last):
+            out.append(f"{first} {last}")
+            before = _LIST_BEFORE_RE.search(text[:m.start()])
+            if before and is_bible(before.group(1)):  # «pe Moise, Ilie <surname>»: the same family
+                out.append(before.group(1))
+    return list(dict.fromkeys(out))
 
 
 _FILLER = {"the", "and", "that", "this", "who", "what", "with", "for", "are", "was", "were", "you",
@@ -198,6 +218,45 @@ def echoes_previous(src: str, out: str, prev: tuple) -> bool:
             pool.remove(w)
             hit += 1
     return hit >= 0.8 * len(o)
+
+
+_CU_DOT = re.compile(r"\b(\d{1,3})\s+cu\s*[.,]\s+(\d{1,3})\b")
+_CU_EN = re.compile(r"\b(\d{1,3})\s+with\.?\s+(\d{1,3})\b")
+_CU_START = re.compile(r"^\W*cu\s+(\d{1,3})\b", re.I)
+_WITH_START = re.compile(r"^(\W*)with\s+(\d{1,3})\b", re.I)
+
+
+def cu_reference(src: str, out: str, chapter: int | None = None, verse: int | None = None) -> str:
+    """«26 cu 24» (chapter 26 verse 24) written "26 with 24" in the English: "26:24"; a piece that
+    starts «cu 18» with the chapter in force written "with 18": "1:18" (idea 3, 2026-11-15: «Geneza.
+    | 26 cu 24», «Coloseni 1 cu. 13», «Ioan 1, 18 | cu 18»)."""
+    pairs = {(a, b) for a, b in re.findall(r"\b(\d{1,3})\s+cu\s+(\d{1,3})\b", src)}
+    out = _CU_EN.sub(lambda m: f"{m.group(1)}:{m.group(2)}" if (m.group(1), m.group(2)) in pairs else m.group(0), out)
+    m = _CU_START.match(src)
+    if m and chapter and verse is not None and int(m.group(1)) == verse:   # the verse in force, said again
+        out = _WITH_START.sub(lambda w: f"{w.group(1)}{chapter}:{w.group(2)}" if w.group(2) == m.group(1) else w.group(0),
+                              out, count=1)
+    return out
+
+
+def keep_persons(text: str, out: str, glossary) -> str:
+    """The people's names persons() found, put back where the English still used the Bible form:
+    «fratele Iosif» → "brother Joseph" (bench 2026-11-15, after the prompt line) → "brother Iosif"."""
+    if glossary is None:
+        return out
+    bible = {fold_diacritics(r["ro"].casefold()): r["en"] for r in getattr(glossary, "rows", [])
+             if r["ro"][:1].isupper() and r["ro"].casefold() != r["en"].casefold()}
+    for p in persons(text, glossary):
+        first, *rest = p.split()
+        en = bible.get(fold_diacritics(first.casefold()))
+        if not en or "/" in en:
+            continue
+        if rest:
+            out = re.sub(rf"\b{re.escape(en)}(?=\s+{re.escape(rest[0])}\b)", first, out)
+        else:
+            out = re.sub(rf"\b(brother|sister|Brother|Sister)\s+{re.escape(en)}\b", rf"\1 {first}", out)
+            out = re.sub(rf"\b{re.escape(en)}(?=,\s+[A-ZĂÂÎȘȚ])", first, out)   # «pe Moise, Ilie <surname>»
+    return out
 
 
 def tiny(text: str) -> bool:
@@ -480,7 +539,9 @@ SYSTEM = {
                    "thou, thy, ye, hath, doth, unto, or -eth/-est endings. Capitalise You/Your/He/His/Him "
                    "only when this sentence speaks of or to God; for people use lower case (his footsteps, "
                    "your father, you have changed nothing). Keep the speaker's person: I stays I, we stays we, "
-                   "you stays you; never turn the speaker's I into you or He. Bible figures "
+                   "you stays you; never turn the speaker's I into you or He. «domnule», «domnul + a name», "
+                   "«domnul din …» are a man (sir, Mr., the gentleman), never the Lord. A question «Nu este …?» "
+                   "stays a question (Isn't it …?). Bible figures "
                    "keep their English Bible names; other people's names stay exactly as written, also when "
                    "they are a Bible name with a surname (fratele Ilie Puha = brother Ilie Puha). "
                    "Output only the English translation, nothing else."),
@@ -646,6 +707,8 @@ class MLXLLMTranslator:
             text = guards.to_digits(text, "en")   # "October fifteenth" came back as "fifty"
             if glossary is not None:
                 text = namelist.map_back(text, glossary.names, gate.lexicon()["en"])   # Dragosh → Dragoș, Souchava → Suceava
+        if src == "ro":
+            text = _CU_DOT.sub(r"\1 cu \2", text)      # «1 cu. 13»: the recogniser's full stop in a reference
         reading = getattr(self, "reading", None)
         if use_context and getattr(self, "verses", None) is not None:
             text = self.verses.take_tail(text, src)     # the verse's last words, already captioned
@@ -672,6 +735,10 @@ class MLXLLMTranslator:
         if small and len(out.split()) > 3:
             out = ""                              # "T." -> two sentences: not a translation of it
         out = postedit(out, tgt)
+        if src == "ro" and tgt == "en":
+            out = keep_persons(text, out, glossary)
+            ref = getattr(reading, "ref", None) if reading is not None else None
+            out = cu_reference(text, out, getattr(ref, "chapter", None), getattr(ref, "verse", None))
         if not small and ctx and echoes_previous(text, out, ctx[-1]):
             # its own previous caption again, the new words dropped: «poporului tău, poate chiar în
             # biserica noastră» → "a living sign before You and before" (2026-11-08 evening, idea 4)

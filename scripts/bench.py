@@ -294,6 +294,20 @@ def _day_ts(day: str, hms: str) -> float:
     return _clock(day, hms)
 
 
+def on_screen(ph: list[dict]) -> list[dict]:
+    """The phrases as the screen ended up showing them: a caption taken back by the next one (a verse
+    matched one piece late, `replaced_prev`; a word cut in two, `cut_word`) is not counted as shown."""
+    out = [dict(r) for r in ph]
+    last_ok = None
+    for i, r in enumerate(out):
+        if r.get("outcome") != "ok":
+            continue
+        if last_ok is not None and (r.get("replaced_prev") or r.get("cut_word")):
+            out[last_ok]["outcome"], out[last_ok]["replaced_by"] = "replaced", r.get("id")
+        last_ok = i
+    return out
+
+
 def judge(err: dict, phrases: list[dict], day: str, window: float = 25.0) -> tuple[str, str]:
     """('fixed' | 'still' | 'missing', the text found) for one known error."""
     t = _day_ts(day, err["t"])
@@ -336,7 +350,7 @@ def score(arg: str, errors_path: str | None, quiet: bool = False) -> dict:
     log, info = _run_log(arg)
     recs = _records(log)
     errs = _errors(errors_path)
-    ph = [r for r in recs if r.get("outcome")]
+    ph = on_screen([r for r in recs if r.get("outcome")])
     if not ph:
         sys.exit(f"{log}: no phrases")
     day = dt.datetime.fromtimestamp(ph[0]["t_start"]).date().isoformat()
@@ -477,6 +491,10 @@ def ref_score(arg: str, window_s: float = 20.0, quiet: bool = False) -> dict:
     t0 = info["segment_start_wall"]
     ph = [r for r in _records(log) if r.get("outcome") and "t_start" in r
           and (end is None or r["t_start"] - t0 < end + 1.0)]
+    # a word-cut redo's source holds the previous piece again (idea 25): that piece's words count once
+    by_id = {r.get("id"): r for r in on_screen(ph)}
+    ph = [r for r in ph if not (by_id[r.get("id")].get("outcome") == "replaced"
+                                and by_id.get(by_id[r.get("id")]["replaced_by"], {}).get("cut_word"))]
     ro = [tokens(r.get("source") or r.get("ro") or "") for r in ph]
     ref_ro = [tokens(x["ro"]) for x in lines]
     ref_words = [w for ws in ref_ro for w in ws]
