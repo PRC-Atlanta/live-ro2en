@@ -25,7 +25,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from scoring import align                       # noqa: E402
 from segmenter import held_back                 # noqa: E402
-from textnorm import fold_diacritics, key_tokens, tokens   # noqa: E402
+from textnorm import expand_numbers, fold_diacritics, key_tokens, num_words, tokens   # noqa: E402
 
 SR = 16000
 
@@ -48,10 +48,32 @@ TAIL_N = 6                # committed words remembered for it
 # began this long before the cut, or before the silence the cut sits in.
 ONSET_S = 0.1
 MISSED_MIN = 3            # words in a row the last chunk's text lacks, heard now in its audio: said late
+REHEARD_S = 0.3           # a committed word heard again as another word begins at most this long after it ended
 
 
 def _wkey(word: str) -> str:
     return fold_diacritics("".join(_LETTERS.findall(word)).lower())
+
+
+def _wkeys(word: str) -> list[str]:
+    """The keys a heard word is found again by. A word: its letters. A number in digits: the words
+    it is said with, since the recogniser writes the same number «24» with one stretch of audio
+    and «douăzeci și patru» with another, and a number with no key was invisible to the anchor:
+    the boundary was put before it and it was said again («Ioan 15» | «15 cu 14», «24 din 24» |
+    «douăzeci și patru», bench 2026-11-16). Feminine number words fold to one form (două = doi)."""
+    if not any(ch.isdigit() for ch in word):
+        k = _wkey(word)
+        return [fold_diacritics(x) for x in expand_numbers([k])] if k else []
+    return [fold_diacritics(x) for x in expand_numbers(_RUNS.findall(word.lower()))]
+
+
+def _flat(words: list) -> tuple[list[str], list[int]]:
+    """The words' keys in a row, and for each word how many keys there are up to its end."""
+    keys, upto = [], []
+    for w in words:
+        keys += _wkeys(w[0])
+        upto.append(len(keys))
+    return keys, upto
 
 
 class ContextSTT:
@@ -120,7 +142,7 @@ class ContextSTT:
         self.ctx_audio = audio[-self.ctx_n:]
         self._keep_text(new)
         self.bound, self.last, self.prev = 0.0, None, None   # by text, all up to the chunk's end is committed
-        self.tail = [k for k in (_wkey(w) for w in new.split()) if k][-TAIL_N:] or self.tail
+        self.tail = [x for w in new.split() for x in _wkeys(w)][-TAIL_N:] or self.tail
         return new
 
     def _first_new(self, words: list, mid: list[float], t0: float) -> int:
@@ -128,22 +150,58 @@ class ContextSTT:
         committed words are found again when they sit a little off. Two or more of them in a row
         may be up to ANCHOR_WORDS words away; a single word only next to where the time says («nu»,
         «și» come too often to trust further off). A word said twice stays twice: the longer run
-        of committed words wins, then the place nearest in time."""
+        of committed words wins, then the place nearest in time. Words are compared by their keys
+        (_wkeys), so a number counts however it is written; it is still one word («24», three keys,
+        is trusted no further off than «acasă»)."""
         k = next((i for i, x in enumerate(mid) if x >= t0), len(words))
         if not self.tail:
             return k
+        keys, upto = _flat(words)
+
+        def end_of(i: int) -> float:
+            # a number in digits is one piece, stamped as one 80 ms spike where it begins («11» at
+            # 5.04-5.12, the next word at 5.92): it lasts until the next word
+            if any(ch.isdigit() for ch in words[i][0]):
+                return words[i + 1][1] if i + 1 < len(words) else float("inf")
+            return words[i][2]
+
         best, run = k, 0
         for j in range(max(1, k - ANCHOR_WORDS), min(len(words), k + ANCHOR_WORDS) + 1):
-            if words[j - 1][1] > t0 + ANCHOR_S or words[j - 1][2] < t0 - ANCHOR_S:
+            if words[j - 1][1] > t0 + ANCHOR_S or end_of(j - 1) < t0 - ANCHOR_S:
                 continue                            # (a word stretched over a silence still counts)
-            n = 0
-            while n < len(self.tail) and j - 1 - n >= 0 and _wkey(words[j - 1 - n][0]) == self.tail[-1 - n]:
+            p, n = upto[j - 1], 0                   # the keys up to the end of the word before j
+            while n < len(self.tail) and p - 1 - n >= 0 and keys[p - 1 - n] == self.tail[-1 - n]:
                 n += 1
+            # whole words found again (a number found in part is not found)
+            n = sum(1 for i in range(j) if upto[i] > (upto[i - 1] if i else 0) and p - (upto[i - 1] if i else 0) <= n)
             if n == 0 or (n == 1 and abs(j - k) > 1):
                 continue
             if n > run or (n == run and abs(j - k) < abs(best - k)):
                 best, run = j, n
+        if run == 0 and self._reheard(words, keys, upto, k, t0):
+            return k + 1
         return best
+
+    def _reheard(self, words: list, keys: list[str], upto: list[int], k: int, t0: float) -> bool:
+        """The last committed word is not found again, the first word after the boundary looks like
+        it, and the word before that one is the committed word before it: the same stretch of audio
+        heard as another word («…câteva zile, Poți» | «zile, pot să se întâmple», 0.25 s later than
+        the clock says, bench 2026-11-16). It is the old word, already said. Had the speaker gone on
+        with a like word, the committed one would be heard between the two. Only after a forced cut:
+        there the last word sat at the edge of the audio, where the times move; and never a number
+        word («patru» / «patruzeci» are like words and different numbers)."""
+        if self.prev_final or k < 1 or k >= len(words) or len(self.tail) < 2:
+            return False
+        a, b = upto[k - 1], upto[k]
+        if b - a != 1 or a < 1:                     # one key (not a number), and a word before it
+            return False
+        last_end = t0 if self.last is None else len(self.ctx_audio) / SR + self.last[1]
+        if words[k][1] > max(t0, last_end) + REHEARD_S:
+            return False
+        if keys[a] in _NUMBER_KEYS or self.tail[-1] in _NUMBER_KEYS:
+            return False
+        return (keys[a] != self.tail[-1] and same_word(self.tail[-1], keys[a])
+                and keys[a - 1] == self.tail[-2])
 
     def _missed(self, words: list, mid: list[float], k: int, b0: float) -> list[int]:
         """Words heard now in the last chunk's audio that its committed text lacks, MISSED_MIN or
@@ -160,22 +218,25 @@ class ContextSTT:
         if len(heard) < MISSED_MIN:
             return []
         # a committed stub and the whole word heard now («Domnul» / «Domnultarea») are one word here
-        keys = [next((c for c in self.prev[0] if c == h or same_word(c, h)), h)
-                for h in (_wkey(words[i][0]) for i in heard)]
+        flat = [(h, i) for i in heard for h in _wkeys(words[i][0])]     # a number: one word, several keys
+        keys = [next((c for c in self.prev[0] if c == h or same_word(c, h)), h) for h, _ in flat]
         a = align(self.prev[0], keys, free_ends=False)
         out, run, hi = [], [], 0
+
+        def close() -> None:
+            if len(set(run)) >= MISSED_MIN:         # words, not keys
+                out.extend(i for i in dict.fromkeys(run) if i not in out)
+
         for c, h in a.pairs:
             if h is None:
                 continue
             if c is None:
-                run.append(heard[hi])
+                run.append(flat[hi][1])
             else:
-                if len(run) >= MISSED_MIN:
-                    out += run
+                close()
                 run = []
             hi += 1
-        if len(run) >= MISSED_MIN:
-            out += run
+        close()
         return out
 
     def _keep_text(self, new: str) -> None:
@@ -225,7 +286,7 @@ class ContextSTT:
         late = self._missed(words, mid, k, b0)
         new = words[k:m]
         if new:
-            last_end, key = new[-1][2], _wkey(new[-1][0])
+            last_end, key = new[-1][2], (_wkeys(new[-1][0]) or [""])[-1]
         else:
             last_end, key = (b0 + self.last[1], self.last[0]) if self.last is not None else (t0, "")
         if final or m >= len(words):
@@ -241,9 +302,9 @@ class ContextSTT:
         # now is not "heard nothing" (counting only words that begin in the chunk let Parakeet's
         # text back in for two chunks of br-random-1: «împiecat», «nu o au», both said twice)
         self.waiting = 0 if final else len(words) - m
-        self.tail = (self.tail + [x for x in (_wkey(w) for w, _, _ in new) if x])[-TAIL_N:]
+        self.tail = (self.tail + [x for w, _, _ in new for x in _wkeys(w)])[-TAIL_N:]
         first = next((i for i, x in enumerate(mid) if x >= b0), len(words))
-        self.prev = ([_wkey(w) for w, _, _ in words[min(first, k):m]], b1 - b0)
+        self.prev = ([x for w, _, _ in words[min(first, k):m] for x in _wkeys(w)], b1 - b0)
         self.ctx_audio = (np.concatenate([ctx, chunk]) if len(ctx) else chunk)[-self.ctx_n:]
         self.bound = max(tb - b1, -len(self.ctx_audio) / SR)
         self.last = (key, min(last_end, b1) - b1 if final else last_end - b1) if key else None
@@ -280,6 +341,9 @@ class ContextSTT:
 
 
 _LETTERS = re.compile(r"[^\W\d_]+")
+_RUNS = re.compile(r"\d+|[^\W\d_]+")           # a word with digits in it: its numbers and its letters, in order
+_NUMBER_KEYS = {fold_diacritics(w) for n in (*range(100), 100, 200, 1000, 2000) for w in num_words(n).split()
+                if len(w) > 2} | {"doua", "douasprezece", "una"}
 
 
 def same_word(stub: str, word: str) -> bool:

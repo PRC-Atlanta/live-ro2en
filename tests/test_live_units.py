@@ -316,6 +316,103 @@ def test_context_stt_finds_the_committed_words_again_when_their_times_moved():
     assert c(_sec(2), final=True) == "foarte bine."
 
 
+# bench 2026-11-16 (the 2026-11-15 09:48 sermon): a number in digits had no key, so the anchor put the
+# boundary before it and it was said again: «Ioan 15» | «15» | «15 cu 14» ("John 15:15:14" on screen)
+def test_context_stt_does_not_say_a_number_in_digits_again():
+    from live.context_stt import ContextSTT
+    said = [("o", 2.96, 3.04), ("condiție:", 3.04, 3.44), ("Ioan", 3.44, 3.68), ("15", 3.84, 3.92), ("cu", 4.24, 4.32)]
+    stt = _TimedSTT(said + [("14.", 4.40, 5.47)],
+                    said + [("14.", 4.40, 5.79)],
+                    said + [("14,", 4.40, 5.10), ("voi.", 5.40, 5.90)])
+    c = ContextSTT(stt, ctx_s=6.0)
+    assert c(_sec(5.152), final=False, ahead=_sec(0.32)) == "o condiție: Ioan 15"     # «cu» leans on «14»: it waits
+    assert c(_sec(0.096), final=False, ahead=_sec(0.544), quiet_s=0.032) == ""
+    assert c(_sec(3.0), final=True) == "cu 14, voi."
+
+
+# ... and the same number written in digits with one stretch of audio and in words with the next
+# («poți să stai 24 din 24» | «douăzeci și patru și îți livrează»)
+def test_context_stt_knows_a_number_in_digits_and_in_words_as_one():
+    from live.context_stt import ContextSTT
+    stt = _TimedSTT(
+        [("să", 2.0, 2.08), ("stai", 2.16, 2.40), ("24", 2.56, 2.64), ("din", 3.28, 3.36), ("24", 3.44, 3.52),
+         ("și", 4.08, 4.24), ("îți", 4.32, 4.40), ("livrează", 4.48, 4.88), ("totul.", 5.04, 5.50)],
+        [("să", 2.0, 2.08), ("stai", 2.16, 2.40), ("douăzeci", 2.64, 2.96), ("și", 2.96, 3.04), ("patru", 3.12, 3.28),
+         ("din", 3.36, 3.44), ("douăzeci", 3.60, 3.92), ("și", 3.92, 4.00), ("patru", 4.00, 4.16),
+         ("și", 4.32, 4.40), ("îți", 4.48, 4.56), ("livrează.", 4.72, 5.12)])
+    c = ContextSTT(stt, ctx_s=6.0)
+    assert c(_sec(4.0), final=False, ahead=_sec(1.5)) == "să stai 24 din 24"
+    assert c(_sec(2.3), final=True) == "și îți livrează."
+    # feminine and masculine forms are one number: «2» heard again as «două»
+    stt = _TimedSTT([("în", 0.5, 0.6), ("2", 1.0, 1.08), ("zile", 1.5, 1.9)],
+                    [("în", 0.5, 0.6), ("două", 1.2, 1.5), ("zile", 1.6, 1.95), ("vine.", 2.4, 2.9)])
+    c = ContextSTT(stt, ctx_s=6.0)
+    assert c(_sec(2.0), final=True) == "în 2 zile"
+    assert c(_sec(1.0), final=True) == "vine."
+
+
+# ... a number is one 80 ms spike where it begins, so the word after it was far from the anchor by the
+# clock and was taken for the committed text: «versetul 11.» | «12.» for «și 12»
+def test_context_stt_keeps_the_word_after_a_committed_number():
+    from live.context_stt import ContextSTT
+    head = [("capitolul", 0.24, 0.72), ("3,", 0.96, 2.00), ("versetul", 2.16, 2.56)]
+    stt = _TimedSTT(head + [("11.", 2.80, 3.80)],
+                    head + [("11", 2.80, 2.88), ("și", 3.72, 3.80), ("12.", 4.04, 4.90)])
+    c = ContextSTT(stt, ctx_s=6.0)
+    assert c(_sec(3.8), final=True) == "capitolul 3, versetul 11."
+    assert c(_sec(1.12), final=True) == "și 12."
+
+
+# ... the last committed word heard again as another word, later than the clock says, is the old word
+# («…peste câteva zile, Poți» | «pot să se întâmple toate»: "you can" twice)
+def test_context_stt_takes_the_last_word_heard_again_as_another_for_the_old_one():
+    from live.context_stt import ContextSTT
+    stt = _TimedSTT(
+        [("peste", 3.76, 4.00), ("câteva", 4.00, 4.32), ("zile,", 4.32, 4.56), ("Poți", 4.56, 4.72),
+         ("să", 4.72, 4.88), ("se", 4.88, 5.04), ("întâmple.", 5.04, 5.47)],
+        [("peste", 3.76, 4.00), ("câteva", 4.00, 4.32), ("zile,", 4.40, 4.64), ("pot", 4.80, 4.88),
+         ("să", 4.96, 5.12), ("se", 5.12, 5.28), ("întâmple", 5.28, 5.60), ("toate.", 5.68, 6.10)])
+    c = ContextSTT(stt, ctx_s=6.0)
+    assert c(_sec(4.768), final=False, ahead=_sec(0.704)) == "peste câteva zile, Poți"
+    assert c(_sec(2.0), final=True) == "să se întâmple toate."
+    # the speaker going on with a like word: the committed one is heard between, and both stay
+    stt = _TimedSTT([("prin", 0.5, 0.7), ("credința", 0.9, 1.5)],
+                    [("prin", 0.5, 0.7), ("credința", 0.9, 1.5), ("credincioșilor.", 2.1, 2.9)])
+    c = ContextSTT(stt, ctx_s=6.0)
+    assert c(_sec(2.0), final=True) == "prin credința"
+    assert c(_sec(1.0), final=True) == "credincioșilor."
+    # ... and a like word after another word is not the old one
+    stt = _TimedSTT([("este", 0.5, 0.7), ("mare", 0.9, 1.5)],
+                    [("este", 0.5, 0.7), ("un", 0.9, 1.0), ("măreț.", 2.1, 2.9)])
+    c = ContextSTT(stt, ctx_s=6.0)
+    assert c(_sec(2.0), final=True) == "este mare"
+    assert c(_sec(1.0), final=True) == "măreț."
+    # after a pause the last word was heard whole and its time holds: a like word after it is new
+    stt = _TimedSTT([("este", 0.5, 0.7), ("mare", 0.9, 1.5)], [("este", 0.5, 0.7), ("măreț.", 1.6, 2.2)])
+    c = ContextSTT(stt, ctx_s=6.0)
+    assert c(_sec(1.6), final=True) == "este mare"
+    assert c(_sec(1.0), final=True) == "măreț."
+    # like number words are different numbers: «4» heard again as «patruzeci și unu» is not skipped in part
+    stt = _TimedSTT([("capitolul", 0.5, 1.0), ("4", 1.2, 1.28), ("și", 1.9, 2.0)],
+                    [("capitolul", 0.5, 1.0), ("patruzeci", 1.5, 1.9), ("și", 1.95, 2.05), ("unu.", 2.1, 2.4)])
+    c = ContextSTT(stt, ctx_s=6.0)
+    assert c(_sec(1.75), final=False, ahead=_sec(0.4)) == "capitolul 4"
+    assert c(_sec(1.0), final=True) == "patruzeci și unu."
+
+
+# ... but a number is still one word: found again alone, it is trusted only next to where the time says
+# (review 2026-11-16: «să stai 24» heard again as «să stai 25 din 24 și…» lost «din 24»; «25» is the
+# committed «24» heard again, by its time)
+def test_context_stt_a_number_alone_does_not_anchor_further_off_than_a_word():
+    from live.context_stt import ContextSTT
+    stt = _TimedSTT([("să", 2.0, 2.08), ("stai", 2.16, 2.40), ("24", 2.56, 2.64)],
+                    [("să", 2.0, 2.08), ("stai", 2.16, 2.40), ("25", 2.56, 2.64), ("din", 3.28, 3.36), ("24", 3.44, 3.52),
+                     ("și", 4.08, 4.24), ("îți", 4.32, 4.40), ("livrează.", 4.48, 4.88)])
+    c = ContextSTT(stt, ctx_s=6.0)
+    assert c(_sec(3.0), final=True) == "să stai 24"
+    assert c(_sec(2.0), final=True) == "din 24 și îți livrează."
+
+
 def test_context_stt_tells_when_it_keeps_all_the_words_for_the_next_chunk():
     from live.context_stt import ContextSTT
     stt = _TimedSTT([("a", 0.2, 0.4), ("b.", 1.0, 1.4)],
