@@ -8,7 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private let web = WebViewController()
     private let captions = DisplayWindowController()   // the captions display window
     private let live = LiveActivity()
-    private let updater: Updater = StubUpdater()
+    private let updater: Updater = makeUpdater()
     private let launch = LaunchModel()
     private var overlay: OverlayHostingView!
     private var loadedOrigin: URL?

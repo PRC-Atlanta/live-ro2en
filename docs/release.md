@@ -59,8 +59,8 @@ synthetic reading). **Never add a church recording**: the DMG is distributed.
 6. Tag: `git tag v0.2.0 && git push origin v0.2.0`. The `release` workflow builds the DMG
    on GitHub too (ad hoc without the secrets; signed and notarized with them) and attaches it
    to the run as an artifact.
-7. Publish the DMG on the public releases page and, once Sparkle is wired up, the appcast
-   entry (below).
+7. `make appcast`, then publish the GitHub release with both DMGs and both appcasts
+   ("Publishing an update", below). Installed copies pick it up within a day.
 
 The int8 NLLB build Fast needs is published to `PRC-Media/nllb-200-distilled-1.3B-ct2-int8`
 (Hugging Face, public) and pinned in `requirements/models.lock.txt`. A new NLLB build goes up with
@@ -94,32 +94,50 @@ The scripts never create, read or print certificates, passwords or keys.
    builds an ad-hoc DMG. A CI build has no rehearsal recording (it is not in git;
    `BUNDLE_SAMPLES` is empty there).
 
-## Updates (Sparkle): not wired up yet
+## Updates (Sparkle)
 
-The shell still uses `StubUpdater` (`macos/Sources/LiveRO2EN/Updater.swift`), whose menu item
-says updates are not set up. Sparkle was left out of this release pipeline on purpose: it
-needs a public appcast URL and an EdDSA key pair that only you should create, and a Sparkle
-without both fails at launch. When the public releases feed exists (APP_PLAN §2, admin tasks):
+Both apps update themselves with **Sparkle 2.10.1** (pinned in `macos/Package.swift` and
+`remote/Package.swift`; `build.sh` puts `Sparkle.framework` in `Contents/Frameworks` through
+`packaging/embed_sparkle.sh`, and `sign.sh` signs it inside out).
 
-1. **Key pair (you, once).** Download the Sparkle 2 release, run `./bin/generate_keys`. The
-   private key stays in your login keychain; back it up (`generate_keys -x private.key`, kept
-   offline). Losing it means existing installs can never update again.
-2. **Info.plist.** Add
-   `SUFeedURL` = `https://<public releases site>/appcast.xml`,
-   `SUPublicEDKey` = `<PASTE THE PUBLIC KEY generate_keys PRINTS>` (placeholder: not set yet),
-   `SUEnableAutomaticChecks` = `true`, `SUAutomaticallyUpdate` = `false`.
-3. **SwiftPM.** In `macos/Package.swift` add
-   `.package(url: "https://github.com/sparkle-project/Sparkle", exact: "<2.x pinned version>")`
-   and `.product(name: "Sparkle", package: "Sparkle")` to the target, plus the linker flag
-   `-Xlinker -rpath -Xlinker @executable_path/../Frameworks`.
-4. **Bundle.** `assemble_app.sh`: copy `Sparkle.framework` from the SwiftPM build folder
-   (`.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/`) to
-   `Contents/Frameworks/` with `ditto`. `sign.sh` already signs `Contents/Frameworks` from the
-   inside out (XPC services and `Updater.app` before the framework) before the app.
-5. **Shell.** A `SparkleUpdater: Updater` using `SPUStandardUpdaterController`, whose
-   `setLive(true)` stops scheduled checks (`automaticallyChecksForUpdates = false` while live)
-   and whose delegate refuses to install while live; updates install on quit. Keep the rules
-   in `Updater.swift`'s header.
-6. **Appcast per release.** After `make notarize`:
-   `./bin/generate_appcast <folder with the DMGs>` (signs each with the keychain key), upload
-   the DMG and `appcast.xml` to the public releases site.
+- **Feeds.** `SUFeedURL` in each `Info.plist` points at the newest GitHub release:
+  `https://github.com/PRC-Atlanta/live-ro2en/releases/latest/download/appcast.xml` (Live RO2EN)
+  and `…/appcast-remote.xml` (Live Remote). "Latest" is the newest release that is not a
+  pre-release, so publishing a release is what ships an update.
+- **Behaviour.** Sparkle checks about once a day, downloads a new version quietly and
+  installs it when the app quits (`SUAutomaticallyUpdate`). No prompt. Live RO2EN never checks
+  or downloads while live (`updaterMayCheck` in `Updater.swift`); **Check for Updates…** in the
+  app menu (Live RO2EN) or the toolbar menu (Live Remote) checks at once. A dev build of Live
+  RO2EN (no bundled runtime) never updates itself; `defaults write <bundle id> LiveNoUpdates
+  -bool YES` turns updates off in either app.
+- **Key.** Every update is EdDSA-signed. The private key is in the release Mac's login
+  keychain under the account `live-ro2en` (created with Sparkle's `generate_keys --account
+  live-ro2en`); its public half is `SUPublicEDKey` in both `Info.plist`s. **Back it up**
+  (`build/cache/sparkle-2.10.1/bin/generate_keys --account live-ro2en -x <file>`, kept
+  offline): without it no installed copy can ever be updated again.
+- **Copies before 0.1.4** have no updater: install 0.1.4 by hand once; later versions arrive
+  on their own.
+
+### Publishing an update
+
+After `make notarize` (the appcast signs the final DMG bytes) and the Live Remote DMG is built,
+notarized and named `build/dist/LiveRemote-<version>.dmg`:
+
+```
+make appcast       # build/dist/appcast.xml and appcast-remote.xml (packaging/make_appcast.sh)
+```
+
+Attach **both DMGs and both appcasts** to the GitHub release `v<version>` and publish it (not
+as a pre-release). The appcast's download URL is
+`https://github.com/PRC-Atlanta/live-ro2en/releases/download/v<version>/<dmg>`, so the tag and
+the DMG names must match.
+
+### Trying an update before publishing
+
+Serve a folder with the DMG and an appcast made with
+`APPCAST_URL_PREFIX=http://127.0.0.1:8799/ packaging/make_appcast.sh <folder>` on
+`python3 -m http.server 8799 --bind 127.0.0.1`, then start an older copy with
+`open -n "<old copy>.app" --args -LiveUpdateFeed http://127.0.0.1:8799/appcast.xml`: it checks at
+once, downloads, and replaces itself when it quits. (For Live Remote, `APPCAST_ONLY=remote` and
+`appcast-remote.xml`.) Give the old copy its own bundle identifier so it does not share
+settings with the real app.

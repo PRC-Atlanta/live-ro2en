@@ -28,6 +28,7 @@ from segmenter import held_back                 # noqa: E402
 from textnorm import expand_numbers, fold_diacritics, key_tokens, num_words, tokens   # noqa: E402
 
 SR = 16000
+REHEARD_WORDS = 6       # how much of the re-heard committed tail is kept for the log (joint census)
 
 
 def _word_spans(text: str) -> tuple[list[str], list[int]]:
@@ -95,6 +96,7 @@ class ContextSTT:
     def reset(self) -> None:
         self.held = 0
         self.seam = None
+        self.reheard = ""                   # this pass's hearing of the committed tail (joint census)
         self.prev_final = True              # the last chunk ended at a real pause (no word was cut)
         self.ctx_audio = np.zeros(0, dtype=np.float32)
         self.ctx_text = ""
@@ -120,6 +122,7 @@ class ContextSTT:
             return self.stt(chunk)
         self.held = 0
         self.seam = None
+        self.reheard = ""
         self.debug = None
         self.waiting = 0
         if self.timed and self.untimed < 3 and hasattr(self.stt, "words"):   # no times three times: stop asking
@@ -283,6 +286,9 @@ class ContextSTT:
                 m += 1
             m -= held_back([w for w, _, _ in words[max(0, k - 1):m]][-3:]) if m > k else 0
             m = max(m, k)
+        # what this pass heard of the committed tail: a word in it that the committed text lacks
+        # was lost at the joint (logged for scripts/seam_catalogue.py lost)
+        self.reheard = " ".join(w for w, _, _ in words[max(0, k - REHEARD_WORDS):k])
         late = self._missed(words, mid, k, b0)
         new = words[k:m]
         if new:
@@ -329,6 +335,8 @@ class ContextSTT:
         # semi-global: where does the committed context text end inside the new hypothesis?
         a = align(hk, ck, free_ends=True)
         end_tok = a.ref_end
+        cut = tok_word[end_tok] if end_tok < len(tok_word) else len(words)
+        self.reheard = " ".join(words[:cut][-REHEARD_WORDS:])
         if end_tok >= len(tok_word):
             return ""
         out = words[tok_word[end_tok]:]

@@ -796,12 +796,14 @@ class Engine:
         if self.mode == "en-ro" and not ro:
             ro = multi
         seam = getattr(self.stt_ctx, "seam", None) if need_ro else None   # idea 25: a word cut by the last chunk
+        reheard = getattr(self.stt_ctx, "reheard", "") if need_ro else ""  # joint census: the committed tail heard again
         # the Romanian recogniser heard words in this chunk and keeps them all for the next one
         # (they lie past the cut): no Romanian text now is not "heard nothing"
         wait = bool(need_ro and not ro.strip() and getattr(self.stt_ctx, "waiting", 0))
         emit({"type": "clause", "id": self._next_id(), "ro": ro.strip(), "multi": multi.strip(),
               "t_start": t_start, "t_speech": t_first, "t_end": t_end, "t_emit": time.time(), "stt_s": round(time.time() - t, 4),
-              "audio_s": round(len(audio) / SR, 3), "final": bool(final), **({"seam": list(seam)} if seam else {}), **({"ro_wait": True} if wait else {})})
+              "audio_s": round(len(audio) / SR, 3), "final": bool(final), **({"seam": list(seam)} if seam else {}), **({"ro_wait": True} if wait else {}),
+              **({"reheard": reheard} if reheard else {})})
 
     def run(self, q: queue.Queue, stop: threading.Event | None = None, hold: bool = False,
             idle_watch: bool = True) -> None:

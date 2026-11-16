@@ -6,6 +6,7 @@
 #   make dmg         build/dist/LiveRO2EN-<version>.dmg
 #   make verify      signature, Gatekeeper, Mach-O audit, smoke launch (on the DMG's copy)
 #   make notarize    notarize + staple the app and the DMG (needs Developer ID + notary profile)
+#   make appcast     Sparkle appcasts for both apps' DMGs (after notarize; packaging/make_appcast.sh)
 #   make clean       remove build/dist (keeps the runtime and the download cache)
 #
 # Signing: SIGN_IDENTITY (default: the first "Developer ID Application" identity in the
@@ -21,7 +22,7 @@ STAMP     := $(RUNTIME)/.stamp
 RUNTIME_INPUTS := requirements/nemo.txt requirements/mt.txt requirements/voice.txt packaging/build_runtime.sh \
                   packaging/prune.txt packaging/audit_macho.sh
 
-.PHONY: all dist runtime app dmg verify notarize clean
+.PHONY: all dist runtime app dmg verify notarize appcast clean
 .DELETE_ON_ERROR:
 
 all: dist
@@ -50,6 +51,9 @@ verify:
 notarize:
 	packaging/notarize.sh "$(APP)" "$(DIST)"
 	REQUIRE_NOTARIZED=1 packaging/verify.sh "$(APP)" "$(DMG)"
+
+appcast:
+	packaging/make_appcast.sh "$(DIST)"
 
 clean:
 	rm -rf "$(DIST)"

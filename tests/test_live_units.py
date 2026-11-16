@@ -229,6 +229,36 @@ def test_context_stt_commits_by_time_and_hears_past_a_forced_cut():
     assert stt.heard[-1] == 4.0                              # the audio ahead was not kept as context
 
 
+def test_context_stt_keeps_what_it_heard_again_of_the_committed_tail():
+    from live.context_stt import ContextSTT
+    # by time: the words before the first new one are the committed tail heard again (joint census)
+    stt = _TimedSTT(
+        [("a", 0.2, 0.4), ("b", 0.8, 1.0), ("c.", 1.5, 1.8)],
+        [("a", 0.2, 0.4), ("b", 0.8, 1.0), ("c", 1.5, 1.8), ("d", 2.3, 2.6), ("e.", 3.0, 3.4)])
+    c = ContextSTT(stt, ctx_s=2.0)
+    assert c(_sec(2), final=True) == "a b c." and c.reheard == ""
+    assert c(_sec(2), final=True) == "d e." and c.reheard == "a b c"
+    # by text (a recogniser without word times): the same, from the alignment
+    heard = iter(["reprezenta cât un munte", "cât un munte de activitatea lui"])
+    c = ContextSTT(lambda audio: next(heard), ctx_s=1.0)
+    c(_sec(0.5))
+    assert c.reheard == ""
+    assert c(_sec(0.5)) == "de activitatea lui" and c.reheard == "cât un munte"
+
+
+def test_merged_pieces_keep_their_chunk_joints():
+    from live.pipeline import joint_fields, merge_clauses
+    a = {"ro": "aici la noi", "multi": "", "en": "", "t_start": 0.0, "t_end": 2.0, "stt_s": 0.1,
+         "audio_s": 2.0, "reheard": "spus"}
+    b = {"ro": "văd mulți frați", "multi": "", "en": "", "t_start": 2.1, "t_speech": 2.2, "t_end": 4.0,
+         "stt_s": 0.1, "audio_s": 2.0, "reheard": "la noi"}
+    c = {"ro": "și surori", "multi": "", "en": "", "t_start": 4.0, "t_end": 5.0, "stt_s": 0.1, "audio_s": 1.0}
+    m = merge_clauses(merge_clauses(a, b), c)
+    assert m["ro"] == "aici la noi văd mulți frați și surori" and m["reheard"] == "spus"
+    assert m["joints"] == [{"at": 3, "gap": 0.2, "reheard": "la noi"}, {"at": 6, "gap": 0.0}]
+    assert joint_fields(m) == {"reheard": "spus", "joints": m["joints"]}
+    assert joint_fields({"ro": "x"}) == {}
+
 def test_context_stt_the_word_after_the_pause_a_forced_cut_sits_in_waits():
     from live.context_stt import ContextSTT
     # «mare» is stamped at 1.82, before the cut at 2.0, but the voice had been silent for 0.3 s there

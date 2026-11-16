@@ -255,10 +255,24 @@ def merge_clauses(a: dict, b: dict) -> dict:
     b = {**b, **{k: overlap.trim(a.get(k) or "", b.get(k) or "")[0] for k in ("multi", "en")
                  if a.get(k) and b.get(k) and b["t_start"] - a["t_end"] < OVERLAP_GAP_S}}
     b = {**b, "ro_wait": bool(a.get("ro_wait") and b.get("ro_wait"))}    # only when neither part has its words
-    return {**b, **{k: f"{a.get(k) or ''} {b.get(k) or ''}".strip() for k in ("ro", "multi", "en")},
+    # where b's words start inside the joined Romanian transcript (joint census: a word lost at a cut)
+    at = len((a.get("ro") or "").split())
+    joints = [*(a.get("joints") or []),
+              {"at": at, "gap": round(b.get("t_speech", b["t_start"]) - a["t_end"], 3),
+               **({"reheard": b["reheard"]} if b.get("reheard") else {})},
+              *({**j, "at": j["at"] + at} for j in b.get("joints") or [])]
+    b = {k: v for k, v in b.items() if k != "reheard"}
+    return {**b, **({"reheard": a["reheard"]} if a.get("reheard") else {}), "joints": joints,
+            **{k: f"{a.get(k) or ''} {b.get(k) or ''}".strip() for k in ("ro", "multi", "en")},
             "t_start": a["t_start"], "t_speech": a.get("t_speech", a["t_start"]),
             # stt_s stays b's (what delayed b's t_emit, so vad_wait_s stays right); total kept apart
             "stt_s_total": a.get("stt_s_total", a["stt_s"]) + b["stt_s"], "audio_s": a["audio_s"] + b["audio_s"]}
+
+
+def joint_fields(ev: dict) -> dict:
+    """For the log: the committed tail as the recogniser heard it again at this piece's start, and
+    the chunk joints inside a piece made of several chunks (scripts/seam_catalogue.py lost)."""
+    return {k: ev[k] for k in ("reheard", "joints") if ev.get(k)}
 
 
 # --- safety filter: what a translator must never put on the church screen --------------------
@@ -695,7 +709,7 @@ class PipelineMixin:
         rec = {"id": ev.get("id"), "outcome": outcome, "t_start": ev.get("t_start"), "t_end": ev.get("t_end"),
                "ro": ev.get("ro", ""), "multi": ev.get("multi", ""), "en": ev.get("en", ""),
                "audio_s": ev.get("audio_s"), "stt_s": ev.get("stt_s"), "profile": self.profile,
-               **self._input_fields(ev),
+               **self._input_fields(ev), **joint_fields(ev),
                "time": dt.datetime.now().isoformat(timespec="milliseconds"), **extra}
         with self.lock:
             self.counts[outcome] += 1
@@ -1096,7 +1110,7 @@ class PipelineMixin:
                "mt_s": round(t_tr, 3), "pp_s": round(t_disp - t1, 4), "pp_ok": ok,
                "caught_up": ev.get("caught_up", 1), "mt_truncated": truncated, "passthrough": passthrough,
                "pp_error": self.pp.last_error, "audio_s": ev["audio_s"], "glossary": [n_g, ok_g],
-               **self._input_fields(ev),
+               **self._input_fields(ev), **joint_fields(ev),
                **safety, **guard, **({"verse": verse[0] if len(verse) == 1 else verse} if verse else {}),
                "time": dt.datetime.now().isoformat(timespec="milliseconds")}
         warn_s = float(self.lc.get("lag_warn_s", 6.0))

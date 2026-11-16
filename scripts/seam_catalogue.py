@@ -21,7 +21,19 @@ A run in which the recogniser did not give the two words side by side counts as 
 Then:  scripts/bench.py run logs/bench/audio/seamclips.wav --speed 3 --name seams-X
        scripts/bench.py score seams-X --errors logs/bench/seams.json
 A full corrected-sermon run is scored against the same file (entries carry their sermon and time
-in it), so the clips can be checked against the full replay they stand for."""
+in it), so the clips can be checked against the full replay they stand for.
+
+  scripts/seam_catalogue.py lost RUN [RUN ...] [--all]
+                                                  the joint census: words of the corrected transcript
+                                                  missing near a cut (a word lost at a joint), short
+                                                  words only unless --all -> logs/bench/lost.json
+Each lost word gets a cause:
+  unheard   no recogniser pass has it (the cut swallowed it)
+  reheard   the next pass heard it again in the committed tail, but it was not taken (the
+            alignment cut it, or it was never committed): a re-hearing check would get it back
+  unknown   the run's log predates the `reheard` field
+  filtered:<outcome>   recognised, but its piece was not shown (echo_word, scrap, low_confidence…)
+  edited    recognised in a shown piece, then removed (repair, overlap trim, cut-word redo)"""
 from __future__ import annotations
 
 import argparse
@@ -42,6 +54,17 @@ from scoring import align                                       # noqa: E402
 from textnorm import fold_diacritics, tokens                    # noqa: E402
 
 OUT = bench.BENCH / "seams.json"
+LOST = bench.BENCH / "lost.json"
+NEAR = 1                                # a word within this many words of a cut counts as at the joint
+# Romanian words of three letters or more that are still short function words (folded)
+FUNCTION = {"lui", "sau", "dar", "iar", "nici", "mai", "este", "era", "sunt", "din", "prin", "spre",
+            "care", "cum", "cand", "unde", "pentru", "dupa", "fara", "imi", "isi", "ita", "una", "unui",
+            "unei", "ale", "cel", "cea", "cei", "cele", "acest", "asta", "fie", "fost", "avem", "aveti"}
+CLIPS = bench.BENCH / "audio" / "seamclips.wav"
+CLIPS_START = "2026-10-23T10:00:00"     # its own day: the corrected sermons all start 2026-10-22 10:00
+GAP_S = 8.0                             # silence between clips: longer than the 6 s context
+TAIL_S = 8.0
+_WORD = re.compile(r"[^\W\d_]+(?:-[^\W\d_]+)*")
 CLIPS = bench.BENCH / "audio" / "seamclips.wav"
 CLIPS_START = "2026-10-23T10:00:00"     # its own day: the corrected sermons all start 2026-10-22 10:00
 GAP_S = 8.0                             # silence between clips: longer than the 6 s context
@@ -115,6 +138,161 @@ def build(runs: list[str]) -> None:
     print(f"{OUT}: {len(entries)} entries ({n['seam']} seam, {n['dup']} dup, {n['keep']} keep)")
 
 
+def short(w: str) -> bool:
+    k = _key(w)
+    return len(k) <= 3 or k in FUNCTION
+
+
+def ro_stream(recs: list[dict]) -> tuple[list[str], list[int], dict[int, dict]]:
+    """The Romanian transcript as recognised, every piece in order (shown or not): its tokens, the
+    record each came from, and the joints {token index where a chunk starts: {gap, reheard, kind}}."""
+    hyp, owner, joints = [], [], {}
+    prev_end = None
+    for i, r in enumerate(recs):
+        words = (r.get("ro") or "").split()
+        if not words:
+            continue
+        inner = {j["at"]: j for j in r.get("joints") or [] if 0 < j["at"] < len(words)}
+        if prev_end is not None:
+            joints[len(hyp)] = {"gap": round(r.get("t_speech", r["t_start"]) - prev_end, 3),
+                                "reheard": r.get("reheard"), "kind": "piece", "rec": i}
+        for wi, w in enumerate(words):
+            if wi in inner:
+                joints[len(hyp)] = {"gap": inner[wi].get("gap"), "reheard": inner[wi].get("reheard"),
+                                    "kind": "chunk", "rec": i}
+            for t in tokens(w):
+                hyp.append(t)
+                owner.append(i)
+        prev_end = r["t_end"]
+    return hyp, owner, joints
+
+
+def ref_map(ref: list[str], hyp: list[str]) -> list[tuple[int | None, int]]:
+    """For each reference token: (the hyp token it is matched or substituted with, None if deleted;
+    the hyp slot it sits at: the index of the next hyp token)."""
+    a = align(ref, hyp, free_ends=True)
+    out: list[tuple[int | None, int]] = [(None, 0)] * len(ref)
+    ri, hi = a.ref_start, 0
+    for r, h in a.pairs:
+        if r is None:
+            hi += 1
+            continue
+        out[ri] = (hi if h is not None else None, hi)
+        ri += 1
+        hi += h is not None
+    return out
+
+
+def _spacing(ref: list[str], k: int, hyp: list[str], slot: int) -> bool:
+    """The reference word and its neighbour were heard as one word (or the other way round)."""
+    near = {_key(t) for t in hyp[max(0, slot - 1):slot + 1]}
+    joined = {_key(ref[k - 1] + ref[k]) if k else None, _key(ref[k] + ref[k + 1]) if k + 1 < len(ref) else None}
+    return bool(near & joined)
+
+
+def near_joint(pos: int, joints: dict, deleted: bool) -> int | None:
+    """The joint (token index where a chunk starts) within NEAR words of a hyp token, or of a
+    deletion slot (between pos - 1 and pos); None if there is none."""
+    best = None
+    for d in range(NEAR + 1):
+        for j in ((pos - d, pos + d) if deleted else (pos + 1 + d, pos - d)):
+            if j in joints:
+                return j
+    return best
+
+
+def lost(runs: list[str], all_words: bool) -> None:
+    entries, n = [], {"ref_near_mid": 0, "lost_near_mid": 0, "ref_near_pause": 0, "lost_near_pause": 0,
+                      "ref_away": 0, "lost_away": 0, "joints_mid": 0, "joints_pause": 0}
+    for run in runs:
+        log, info = bench._run_log(run)
+        if not log.exists():
+            log = next(((bench.BENCH / "runs" / run) / "services").glob("*.jsonl"))
+        sermon = pathlib.Path(info["audio"]).stem.removeprefix("corr_")
+        if sermon not in bench.SERMONS:
+            sys.exit(f"{run}: not a corrected-sermon run")
+        lines, end = bench.reference(sermon)
+        t0 = info["segment_start_wall"]
+        recs = bench.on_screen(sorted(
+            (r for r in bench._records(log) if r.get("outcome") and "t_start" in r
+             and (end is None or r["t_start"] - t0 < end + 1.0)), key=lambda r: r["t_start"]))
+        has_reheard = any(r.get("reheard") for r in recs)
+        ref = [w for x in lines for w in tokens(x["ro"])]
+        hyp, owner, joints = ro_stream(recs)
+        mid = {j for j, v in joints.items() if v["gap"] is not None and v["gap"] <= CUT_GAP_S}
+        n["joints_mid"] += len(mid)
+        n["joints_pause"] += len(joints) - len(mid)
+        # the shown Romanian transcript, to tell a word recognised but not shown
+        # a piece a verse caption took over (`replaced_prev`) was shown, as the verse
+        by_id = {r.get("id"): r for r in recs}
+        verse_took = {i for i, r in enumerate(recs) if r["outcome"] == "replaced"
+                      and (by_id.get(r.get("replaced_by")) or {}).get("replaced_prev")}
+        shown, sowner = [], []
+        for i, r in enumerate(recs):
+            if r["outcome"] == "ok" or i in verse_took:
+                for t in tokens(r.get("source") or ""):
+                    shown.append(t)
+                    sowner.append(i)
+        rm, sm = ref_map(ref, hyp), ref_map(ref, shown)
+        lo = next((k for k, (h, _) in enumerate(rm) if h is not None), len(ref))
+        hi_ = max((k for k, (h, _) in enumerate(rm) if h is not None), default=-1)
+        for k in range(lo, hi_ + 1):
+            w = ref[k]
+            if not all_words and not short(w):
+                continue
+            h, slot = rm[k]
+            j = near_joint(slot if h is None else h, joints, h is None)
+            heard = h is not None and _key(hyp[h]) == _key(w)
+            on_screen = sm[k][0] is not None and _key(shown[sm[k][0]]) == _key(w)
+            where = "away" if j is None else ("near_mid" if j in mid else "near_pause")
+            n[f"ref_{where}"] += 1
+            if on_screen or (h is not None and not heard and sm[k][0] is not None):
+                continue                        # shown, or misheard (a substitution: not a lost word)
+            if h is not None and not heard:
+                continue
+            if h is None and _spacing(ref, k, hyp, slot):
+                continue                        # «la odicea» said, «laodicea» heard: not lost
+            n[f"lost_{where}"] += 1
+            if j is None:
+                continue
+            jt = joints[j]
+            if not heard:
+                rh = {_key(t) for t in tokens(jt.get("reheard") or "")}
+                cause = ("reheard" if _key(w) in rh else "unheard") if has_reheard else "unknown"
+            else:
+                o = recs[owner[h]]
+                cause = "edited" if o["outcome"] == "ok" else f"filtered:{o['outcome']}"
+            at = recs[jt["rec"]]
+            ctx_h = hyp[max(0, j - 4):j] + ["|"] + hyp[j:j + 4]
+            entries.append({
+                "sermon": sermon, "run": run, "word": w, "cause": cause, "joint": where.removeprefix("near_"),
+                "kind": jt["kind"], "gap": jt["gap"],
+                "t_src": dt.datetime.fromtimestamp(at.get("t_speech", at["t_start"])).strftime("%H:%M:%S"),
+                "said": " ".join(ref[max(0, k - 4):k] + [f"[{w}]"] + ref[k + 1:k + 5]),
+                "heard": " ".join(ctx_h), **({"reheard": jt["reheard"]} if jt.get("reheard") else {})})
+    causes: dict[str, int] = {}
+    for e in entries:
+        if e["joint"] == "mid":
+            causes[e["cause"]] = causes.get(e["cause"], 0) + 1
+    rate = {w: round(100 * n[f"lost_{w}"] / n[f"ref_{w}"], 2) if n[f"ref_{w}"] else None
+            for w in ("near_mid", "near_pause", "away")}
+    doc = {"how": f"words of the corrected transcript ({'all' if all_words else 'short'} words) missing "
+                  f"within {NEAR} word(s) of a cut; mid = the next chunk followed within {CUT_GAP_S} s",
+           "built_from": runs, "counts": n, "lost_pct": rate, "causes_mid": causes, "lost": entries}
+    LOST.write_text(json.dumps(doc, indent=1, ensure_ascii=False))
+    kind = "all" if all_words else "short"
+    print(f"joints: {n['joints_mid']} mid-speech, {n['joints_pause']} after a pause")
+    for w, label in (("near_mid", "near a mid-speech cut"), ("near_pause", "near a cut at a pause"),
+                     ("away", "away from cuts")):
+        print(f"  {kind} words {label:24} {n[f'lost_{w}']:4} lost of {n[f'ref_{w}']:5}  ({rate[w]} %)")
+    print("causes at mid-speech cuts: " + ", ".join(f"{c} {v}" for c, v in sorted(causes.items(), key=lambda x: -x[1])))
+    for e in entries:
+        if e["joint"] == "mid":
+            print(f"  {e['sermon'][:8]:8} {e['t_src']} {e['cause']:22} said «{e['said']}»  heard «{e['heard']}»"
+                  + (f"  reheard «{e['reheard']}»" if e.get("reheard") else ""))
+    print(f"-> {LOST}")
+
+
 def _pause_before(phrases: list[dict], t: float, lead: float) -> float:
     """A phrase start after a real pause, ~lead s before t (the cuts then fall as in the full replay)."""
     starts = [q.get("t_speech", q["t_start"]) for p, q in zip(phrases, phrases[1:])
@@ -184,9 +362,14 @@ def main() -> None:
     b.add_argument("runs", nargs="+")
     c = sub.add_parser("clips")
     c.add_argument("--lead", type=float, default=20.0)
+    lo = sub.add_parser("lost")
+    lo.add_argument("runs", nargs="+")
+    lo.add_argument("--all", action="store_true", help="every word, not just the short ones")
     a = p.parse_args()
     if a.cmd == "build":
         build(a.runs)
+    elif a.cmd == "lost":
+        lost(a.runs, a.all)
     else:
         clips(a.lead)
 
