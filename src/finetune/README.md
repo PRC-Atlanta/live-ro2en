@@ -43,7 +43,7 @@ rescores it), then transcribes the Bible set and scores it on the same reference
   (BatchNorm statistics untouched); top 4 layers train (`--train-top-layers`). Epoch 0 trains
   the decoders only (`--freeze-encoder-epochs 1`). TDT decoder + joint and CTC decoder train.
 - Both losses: TDT + CTC (CTC weight 0.3 as in the model; `--ctc-weight`).
-- AdamW, peak LR 5e-5, 10 % warm-up, cosine to 5e-6; batch 4 x accumulation 8 (effective 32); 10 epochs; seed 1234.
+- AdamW, peak LR 5e-5, 10 % warm-up, cosine to 5e-6; batch 2 x accumulation 16 (effective 32; about 2 GB, against 10.5 GB peak for 4 x 8 at the same speed); 10 epochs; seed 1234.
 - Checkpoints every epoch in `<out-dir>/ckpt/` (`last.ckpt` for `--resume`, two best by dev CTC WER);
   per-step seconds and memory in `<out-dir>/steps.jsonl`.
 - Apple GPU (MPS): NeMo's TDT loss is CUDA-only, so `tdt_loss.py` supplies a vectorised PyTorch

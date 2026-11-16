@@ -1348,6 +1348,17 @@ Status: `idea` → `next` (worth doing soon) → `done` / `dropped`.
   - *The live transcript's wrong words* (final code, `l7-*`): the offline recogniser has 24–53% of them right, Whisper on whole segments 40–64%.
   - *Parakeet answered hundreds of `<unk>`* on 9 of 418 and 6+ of 556 segments (short ones too). Nothing in `src/live` strips it; none in the app replays' logs so far.
 - **Fine-tune prepared, not run (2026-11-16, `src/finetune/`).** Only 1.27 h of Romanian sermon speech may be trained on (br-random-1, nelu-suciu, br-recalo); the default set is 0.96 h (0.54 h corrected, 0.42 h labelled by the recogniser where Whisper agrees within 10%), luigi-mitoi held out by recording and by content. NeMo's TDT loss is CUDA-only: `tdt_loss.py` is the same maths in PyTorch and trains on the Apple GPU (7.3 s per step, about 40 min for 10 epochs, 10.5 GB). `eval_checkpoint.py` scores a checkpoint with the live decoding and reproduces luigi-mitoi 3.57% (164) and the Bible 4.86%. With br-random-1 and nelu-suciu in training, only luigi-mitoi and the Bible stay clean measures. More audio is the lever: under an hour is below what published self-training used.
+- **Fine-tune run `st1`: no gain on the held-out sermon (2026-11-16, `models/finetuned/jackrabbit-st1`).**
+  The prepared settings on the 0.96 h set (10 epochs, 290 steps, top 4 encoder layers, LR 5e-5), batch 2 × 16
+  instead of 4 × 8: about 2 GB instead of a 10.5 GB peak, 7.5 s a step, 37 min. Live decoding (CTC + 4-gram,
+  beam 8, church phrases), offline segments, errors base → st1: **luigi-mitoi (never trained on) 164 → 168
+  (3.57 → 3.66%)**; Bible set 193 → 179 (4.86 → 4.51%: nothing forgotten); the two sermons it trained on,
+  br-random-1 200 → 192 (4.49 → 4.31%) and nelu-suciu 32 → 24 (2.82 → 2.11%), which are no longer clean
+  measures. Dev set (60 segments, greedy): CTC 11.0 → 9.1%, TDT 10.1 → 9.3%, nearly all in the first two epochs.
+  So the model moved, but with the language model on top the gain on an unseen preacher is nil, and even the
+  training sermons kept 90% of their errors. What this does not answer: whether training on a regular preacher
+  helps that preacher's next sermon (no clean sermon of a trained speaker exists to test on), and what several
+  hours of audio would do. Not adopted; the live recogniser is unchanged.
 - **Chooser test, part 1: judging the candidates as sound does not help (2026-11-16, `scripts/stt_choose.py`).**
   Each candidate of the beam lists got the probability the model's other decoder (TDT) and its CTC head without
   the language model give its text, and a weighted sum with the list's own score picked; weights tuned on two

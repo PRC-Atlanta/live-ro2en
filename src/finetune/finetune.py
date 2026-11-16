@@ -56,8 +56,9 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--out-dir", help="default models/finetuned/<base>-<YYYYmmdd-HHMM>")
     ap.add_argument("--epochs", type=int, default=10)
     ap.add_argument("--max-steps", type=int, default=-1, help="stop after this many optimiser steps (smoke runs)")
-    ap.add_argument("--batch", type=int, default=4)
-    ap.add_argument("--accum", type=int, default=8, help="gradient accumulation (effective batch = batch x accum)")
+    ap.add_argument("--batch", type=int, default=2,
+                    help="2 x 16 holds about 2 GB on the Apple GPU; 4 x 8 peaked at 10.5 GB, same speed")
+    ap.add_argument("--accum", type=int, default=16, help="gradient accumulation (effective batch = batch x accum)")
     ap.add_argument("--lr", type=float, default=5e-5, help="peak learning rate")
     ap.add_argument("--warmup-ratio", type=float, default=0.1)
     ap.add_argument("--min-lr-ratio", type=float, default=0.1, help="cosine decays to lr x this")
