@@ -13,11 +13,46 @@ import re
 from dataclasses import dataclass, field
 
 _HARD_END = re.compile(r"[.!?…]$")
+_WORD = re.compile(r"[^\W\d_]+")
 # Romanian/English words that commonly start a dependent clause; a comma before them is
 # a safe split point, other commas are not.
 _CONJ = {"și", "dar", "iar", "că", "care", "când", "pentru", "deoarece", "fiindcă", "ca",
          "însă", "ci", "deci", "astfel", "dacă", "unde", "and", "but", "because", "which",
          "when", "so", "that", "who", "where", "if", "for"}
+
+
+# a phrase that stops on one of these was cut mid-thought ("aduc condoleanțe din."): it waits
+# for the next one (idea 20). Compared with diacritics: "sa" (his) ends phrases, "să" does not.
+DANGLING = frozenset("din de la în cu pe pentru și că care dar iar sau ca să "
+                     "of to in on for and but that which the a an".split())
+
+
+# a Romanian phrase that stops on a negation lost it at the cut: «în ceața aceea că nu.» |
+# «mai recunoaștem» came out "where we do not" | "we again recognize" (2026-11-08 evening, idea 35)
+NEGATION_END = frozenset({"nu", "nici", "n"})
+SENTENCE_END = (".", "!", "?", "…")
+
+
+def held_back(words: list[str]) -> int:
+    """How many words at the end of a piece cut in mid-speech go with what follows (at most 2): a
+    small word that leans on the next one («…de un ușier, de» | «un învățător», «crezând că» |
+    «toate sunt», «adevărat, nu» | «predicăm»), or the lone first word of a new sentence («…multă
+    grijă. Priviți» | «cât de»). The recogniser, hearing the audio only up to the cut, used not to
+    give these at all; with the audio past the cut it does (idea 25), and a piece that ends on
+    one is held by the pipeline (`dangling`), so the first word came later (bench 2026-11-15:
+    within 8 s 85.8 -> 80.1%). A word that closes a sentence stays («Țineți-vă tari? Nu.»)."""
+    n = 0
+    while n < 2 and n < len(words):
+        w = words[-1 - n].rstrip()
+        if w.endswith(SENTENCE_END):
+            break
+        toks = _WORD.findall(w.lower())
+        leans = bool(toks) and (toks[-1] in DANGLING or toks[-1] in NEGATION_END)
+        starts = n + 1 < len(words) and words[-2 - n].rstrip().endswith(SENTENCE_END)
+        if not (leans or starts):
+            break
+        n += 1
+    return n
 
 
 @dataclass

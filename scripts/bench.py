@@ -269,7 +269,10 @@ def _run_log(arg: str) -> tuple[pathlib.Path, dict]:
         p = BENCH / "runs" / arg
     if p.is_dir():
         info = json.loads((p / "run.json").read_text())
-        return pathlib.Path(info["log"]), info
+        log = pathlib.Path(info["log"])
+        if not log.exists():                             # run from a worktree that is gone: the folder's copy
+            log = next((p / "services").glob("*.jsonl"), log)
+        return log, info
     return p, {}
 
 
@@ -308,11 +311,22 @@ def on_screen(ph: list[dict]) -> list[dict]:
     return out
 
 
-def judge(err: dict, phrases: list[dict], day: str, window: float = 25.0) -> tuple[str, str]:
-    """('fixed' | 'still' | 'missing', the text found) for one known error."""
-    t = _day_ts(day, err["t"])
+def judge(err: dict, phrases: list[dict], day: str, window: float = 25.0, t: float | None = None) -> tuple[str, str]:
+    """('fixed' | 'still' | 'missing', the text found) for one known error. on=ro (the seam
+    catalogue): the regexes are matched on the shown Romanian transcript, folded and joined."""
+    t = _day_ts(day, err["t"]) if t is None else t
+    if err.get("on") == "ro":
+        window = min(window, 12.0)
     near = [r for r in phrases if r.get("t_end", 0) >= t - window and r.get("t_start", 0) <= t + window]
-    lines = [(r.get("translation") or "").strip() for r in near if r.get("outcome") == "ok"]
+    if err.get("pair"):
+        return judge_pair(err, near)
+    if err.get("on") == "ro":
+        from textnorm import fold_diacritics  # noqa: PLC0415
+        lines = [fold_diacritics(" ".join((r.get("source") or "").split()).lower())
+                 for r in near if r.get("outcome") == "ok"]
+        lines = [" ".join(lines)]                                # a seam spans two pieces
+    else:
+        lines = [(r.get("translation") or "").strip() for r in near if r.get("outcome") == "ok"]
     text = " | ".join(lines)
     if not near:
         return "missing", ""
@@ -322,6 +336,33 @@ def judge(err: dict, phrases: list[dict], day: str, window: float = 25.0) -> tup
     if good and not any(re.search(good, ln, re.I) for ln in lines):
         return "still" if not bad else "fixed?", text
     return "fixed", text
+
+
+def judge_pair(err: dict, near: list[dict]) -> tuple[str, str]:
+    """The seam catalogue (scripts/seam_catalogue.py): two look-alike words at a piece boundary.
+    'missing' = not reproduced: the recogniser did not give the two side by side this time, and
+    the right reading is not there either. Else 'fixed' when the shown Romanian transcript has the
+    right reading (seam: the word before, then the second; dup: the first, then the word after;
+    keep: both), 'still' when not."""
+    from textnorm import fold_diacritics  # noqa: PLC0415
+
+    def fold(texts):
+        return fold_diacritics(" ".join(" ".join(x.split()) for x in texts if x).lower())
+
+    def rx(*words):
+        return r"\b" + r"\W+".join(re.escape(fold([w])) for w in words) + r"\b"
+    raw = fold(r.get("ro") or "" for r in near)                    # the recogniser's words, every piece
+    shown = fold(r.get("source") or "" for r in near if r.get("outcome") == "ok")
+    stub, word = err["pair"]
+    both = rx(stub, word)
+    right = {"seam": rx(err["before"], word) if err.get("before") else None,
+             "dup": rx(stub, err["after"]) if err.get("after") else None, "keep": both}[err["cat"]]
+    ok = bool(right and re.search(right, shown)) and (err["cat"] == "keep" or not re.search(both, shown))
+    if not re.search(both, raw):
+        return ("fixed" if ok and err["cat"] != "keep" else "missing"), shown
+    if right is None:
+        ok = not re.search(both, shown)
+    return ("fixed" if ok else "still"), shown
 
 
 GARBAGE = re.compile(r"<[^>\s]*\|>|<\|[^>]*>|\(Note|Note:|\[[a-z ]+\]", re.I)
@@ -356,13 +397,22 @@ def score(arg: str, errors_path: str | None, quiet: bool = False) -> dict:
     day = dt.datetime.fromtimestamp(ph[0]["t_start"]).date().isoformat()
     lo, hi = ph[0]["t_start"], ph[-1]["t_end"]
     res = {}
-    if day != _errors_day(errors_path):                 # another service's recording: nothing to judge
+    audio = pathlib.Path(info.get("audio", "")).stem
+    if day != _errors_day(errors_path) and not audio.startswith("corr_"):   # another service's recording
         errs = []
     for e in errs:
-        t = _day_ts(day, e["t"])
+        if "sermon" in e:                               # the seam catalogue: a corrected sermon or the clips
+            hms = e.get("t_src") if audio == f"corr_{e['sermon']}" else e.get("t") if day == _errors_day(errors_path) else None
+            if hms is None:
+                continue
+        elif day != _errors_day(errors_path):
+            continue
+        else:
+            hms = e["t"]
+        t = _day_ts(day, hms)
         if not (lo - 5 <= t <= hi + 5):
             continue
-        res[e["id"]] = (*judge(e, ph, day), e)
+        res[e["id"]] = (*judge(e, ph, day, t=t), e)
     counts: dict = {}
     for status, _, e in res.values():
         counts.setdefault(e["cat"], {}).setdefault(status, 0)
@@ -381,7 +431,7 @@ def score(arg: str, errors_path: str | None, quiet: bool = False) -> dict:
         print("metrics: " + json.dumps(summary["metrics"], ensure_ascii=False))
         for k, (s, text, e) in res.items():
             mark = {"fixed": "OK ", "fixed?": "ok?", "still": "XX ", "missing": "-- "}[s]
-            print(f"  {mark} {e['id']:4s} {e['t']} {e['cat']:10s} {e['note'][:60]}")
+            print(f"  {mark} {e['id']:5s} {e.get('t') or e.get('t_src')} {e['cat']:10s} {e['note'][:60]}")
             if s != "fixed" and text:
                 print(f"         now: {text[:150]}")
     return summary
@@ -489,8 +539,11 @@ def ref_score(arg: str, window_s: float = 20.0, quiet: bool = False) -> dict:
         sys.exit(f"{arg}: not a corrected-sermon run (audio {info.get('audio')}); known: {', '.join(SERMONS)}")
     lines, end = reference(name)
     t0 = info["segment_start_wall"]
+    # where the corrected stretch ends before the recording does, a phrase counts when its middle
+    # lies before that end. (Until 2026-11-15 every phrase that started up to 1 s after it counted,
+    # whole: nelu-suciu carried ~9 extra words from the first uncorrected phrase, 0.8 points.)
     ph = [r for r in _records(log) if r.get("outcome") and "t_start" in r
-          and (end is None or r["t_start"] - t0 < end + 1.0)]
+          and (end is None or (r["t_start"] + r.get("t_end", r["t_start"])) / 2 - t0 < end)]
     # a word-cut redo's source holds the previous piece again (idea 25): that piece's words count once
     by_id = {r.get("id"): r for r in on_screen(ph)}
     ph = [r for r in ph if not (by_id[r.get("id")].get("outcome") == "replaced"

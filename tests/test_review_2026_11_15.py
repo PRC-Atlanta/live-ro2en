@@ -19,7 +19,7 @@ import verses as V                                       # noqa: E402
 from live import engine, gate                            # noqa: E402
 from live import translate as T                          # noqa: E402
 from live.app import Live                                # noqa: E402
-from live.pipeline import christmas_to_hristos, cut_word, non_english, open_end   # noqa: E402
+from live.pipeline import christmas_to_hristos, cut_word, non_english, open_end, seam_word   # noqa: E402
 
 LEX = gate.lexicon()
 
@@ -405,6 +405,37 @@ def test_the_previous_caption_is_redone_without_the_cut_word(tmp_path):
     assert recs[-1]["cut_word"]["previous"].endswith("parca.")
 
 
+# idea 25, the recogniser's side: ContextSTT saw the cut word again whole (bench 2026-11-15: PR 9's
+# spelling rule caught 2 of 99 boundaries with an error; most were the same word said twice)
+@pytest.mark.parametrize("a,b,seam,joined", [
+    ("va fi atât de important.", "importantă. cât", ["important.", "importantă."], "va fi atât de importantă. cât"),
+    ("au pus la dispoziție.", "dispoziția noastră toate", ["dispoziție.", "dispoziția"], "au pus la dispoziția noastră toate"),
+    ("și încep să dea ex.", "exemple de ce", ["ex.", "exemple"], "și încep să dea exemple de ce"),
+])
+def test_a_seam_from_the_recogniser_carries_the_whole_word(a, b, seam, joined):
+    assert cut_word(a, b, LEX["ro"]) is None              # the spelling rule alone leaves these
+    assert seam_word(a, b, seam) == joined
+
+
+def test_a_seam_that_does_not_name_these_words_is_ignored():
+    assert seam_word("de important.", "importantă. cât", None) is None
+    assert seam_word("de important.", "importantă. cât", ["mare", "importantă"]) is None   # a repair changed it
+    assert seam_word("de important.", "cât de", ["important", "importantă"]) is None
+
+
+def test_the_previous_caption_is_redone_on_a_seam(tmp_path):
+    live = _live(tmp_path)
+    live.lang.set_mode("ro-en")
+    live.lc.update(phrase_min_words=0)
+    t = time.time() - 20
+    live._handle(_clause(1, t, t + 3, ro="este o seară care va fi atât de important."))
+    live._handle({**_clause(2, t + 3.0, t + 6, ro="importantă cât importanță îi vom da noi."),
+                  "seam": ["important.", "importantă"]})
+    recs = _log(live)
+    assert recs[-1]["source"] == "este o seară care va fi atât de importantă cât importanță îi vom da noi."
+    assert recs[-1]["cut_word"]["seam"] == ["important.", "importantă"]
+
+
 # --- the bench: a caption taken back on screen is not judged as shown ----------------------------
 def test_the_bench_drops_a_caption_a_redo_replaced():
     sys.path.insert(0, str(ROOT / "scripts"))
@@ -469,3 +500,49 @@ def test_a_long_open_piece_still_waits_and_merges(tmp_path):
     live._on_clause(_clause(2, t + 7.1, t + 13.6, ro="păcatul. Și un om a spus adevărul lui Dumnezeu."))
     live._drain()
     assert len(_log(live)) == 1 and _log(live)[0]["source"].endswith("iubește. păcatul. Și un om a spus adevărul lui Dumnezeu.")
+
+
+# the seam catalogue (scripts/seam_catalogue.py): a pair is judged only where the recogniser gave it
+def test_the_bench_judges_a_seam_pair_only_where_it_was_reproduced():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import bench
+
+    def recs(*pieces):
+        return [{"outcome": o, "ro": ro, "source": src} for o, ro, src in pieces]
+    seam = {"cat": "seam", "pair": ["important.", "importantă"], "before": "de", "after": "cât"}
+    # the stub and the whole word, both shown: still wrong
+    assert bench.judge_pair(seam, recs(("ok", "atât de important.", "atât de important."),
+                                       ("ok", "importantă cât", "importantă cât")))[0] == "still"
+    # the redo joined them
+    assert bench.judge_pair(seam, recs(("replaced", "atât de important.", "atât de important."),
+                                       ("ok", "importantă cât", "atât de importantă cât")))[0] == "fixed"
+    # the recogniser gave the word once: right without a redo
+    assert bench.judge_pair(seam, recs(("ok", "atât de", "atât de"), ("ok", "importantă cât", "importantă cât")))[0] == "fixed"
+    # the first word is right and the second its echo: joining them on the stub keeps the wrong one
+    dup = {"cat": "dup", "pair": ["sărac.", "sărat"], "before": "sau", "after": "tu"}
+    assert bench.judge_pair(dup, recs(("replaced", "bogat sau sărac.", "bogat sau sărac."),
+                                      ("ok", "sărat tu lupți", "bogat sau sărat tu lupți")))[0] == "still"
+    assert bench.judge_pair(dup, recs(("ok", "bogat sau sărac.", "bogat sau sărac."),
+                                      ("ok", "tu lupți", "tu lupți")))[0] == "fixed"
+    # two real words: right when both are shown; no cut there this time = not reproduced
+    keep = {"cat": "keep", "pair": ["culoar.", "culoare"], "before": "lângă", "after": "n-a"}
+    assert bench.judge_pair(keep, recs(("ok", "pe lângă culoar.", "pe lângă culoar."),
+                                       ("ok", "culoare n-a avut", "culoare n-a avut")))[0] == "fixed"
+    assert bench.judge_pair(keep, recs(("replaced", "pe lângă culoar.", "pe lângă culoar."),
+                                       ("ok", "culoare n-a avut", "pe lângă culoare n-a avut")))[0] == "still"
+    assert bench.judge_pair(keep, recs(("ok", "pe lângă culoare n-a avut", "pe lângă culoare n-a avut")))[0] == "missing"
+
+
+# idea 25: no Romanian text because the recogniser keeps the words for the next chunk is not
+# "heard nothing": Parakeet's text of the same audio would say them twice
+def test_a_chunk_whose_words_wait_does_not_fall_back_on_the_other_recogniser(tmp_path):
+    live = _live(tmp_path)
+    live.lang.set_mode("auto")
+    ev = {"ro": "", "multi": "nu e nevoie de o biserică"}
+    assert live._source(dict(ev))[1:] == ("nu e nevoie de o biserică", {"fallback": "multi"})
+    assert live._source({**ev, "ro_wait": True})[1:] == ("", {})
+    from live.pipeline import merge_clauses
+    part = {"ro": "", "multi": "binecuvinteze", "t_start": 0.0, "t_end": 1.0, "stt_s": 0.1, "audio_s": 1.0}
+    wait = {**part, "multi": "", "t_start": 1.0, "t_end": 2.0, "ro_wait": True}
+    assert not merge_clauses(part, wait).get("ro_wait")      # the first part's text is still wanted
+    assert merge_clauses(wait, {**wait, "t_start": 2.0, "t_end": 3.0}).get("ro_wait")

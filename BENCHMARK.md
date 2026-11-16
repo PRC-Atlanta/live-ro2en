@@ -447,6 +447,33 @@ logs/bench/audio/corr_<name>.wav --speed 3`, quality, gain 0, no `--terms`) and 
   ("my people, P. ...pierce from a lack of holiness"; «plumbing» → "the ping") and «să nu fie
   totdeauna răstit cu copilul» at 31:41 ("not to always grow up with the child").
 
+**2026-11-15: Romanian words committed by when they were heard** (`live.timed_commit`, translation idea 25).
+The same three sermons, same settings, before (405fef7, without and with the caption redo of the
+2026-11-15 morning fixes) and after (8625355), against the same recogniser run offline on pause-cut
+segments of up to 20 s (church phrases boosted; `scripts/stt_replay.py offline`):
+
+| Sermon | Offline | Live before, no redo | Live before, redo | **Live now** | English translation now (before) |
+|---|---:|---:|---:|---:|---|
+| br-random-1 | 4.49% | 6.42% | 6.31% | **5.25%** | – |
+| nelu-suciu (first 8 min) | 2.82% | 4.41%² | 4.05% | **3.70%** | – |
+| luigi-mitoi | 3.57% | 4.79% | 4.71% | **3.70%** | **chrF++ 63.1, BLEU 37.3** (62.5, 35.3) |
+
+² `bench.py ref` now counts a phrase when its middle lies before the end of the corrected stretch; the
+5.20% above counted the first uncorrected phrase whole (~9 extra words).
+
+- The recogniser's word times (the CTC beam search's frame path, free) decide which words of
+  [6 s of context + chunk] are new, and a forced cut hears the audio already held past it. Extra
+  words fell 82 → 39, 14 → 8 and 55 → 20; the caption redo for cut words is no longer needed
+  (0 redos; seam catalogue 19 of 21 right, 2 not reproduced, was 15 with the redo and 4 without).
+- Real time (first 12 min of luigi-mitoi, 148 phrases): recogniser 0.39/0.44 → 0.42/0.45 s
+  median/p90, first word median 6.71 → 6.72 s, within 6 s 35.1 → 34.5% (one phrase), within 8 s
+  85.8 → 84.5%.
+- What is left is no longer stitching: on luigi-mitoi, whose reference was made independently,
+  live equals offline (recogniser alone 3.64% against 3.57%). The references of the other two were
+  corrected from the offline text and keep some of its mistakes, so their offline figures cannot be
+  reached. Attribution table: `docs/translation_ideas.md` idea 25; tools: `scripts/stt_replay.py`,
+  `scripts/stt_attrib.py`.
+
 ## Google data use (terms checked 2026-10-22, not legal advice)
 
 Google Cloud Service Specific Terms §17 ("Use Restrictions for AI/ML Services"; Speech-to-Text
