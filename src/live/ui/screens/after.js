@@ -45,7 +45,8 @@ export function voiceFacts(v) {
     delay: x.delay_median_s == null ? "–" : `${Number(x.delay_median_s).toFixed(1)} s`,
     within: x.within_10s_pct == null ? "–" : `${Math.round(x.within_10s_pct)}%`,
     summaries: `${x.summaries} spoken, ${x.summaries_refused} refused`,
-    peak: `${x.peak_listeners.ro} Romanian · ${x.peak_listeners.en} English`,
+    peak: x.peak_listeners.en ? `${x.peak_listeners.ro} Romanian · ${x.peak_listeners.en} English`
+      : `${x.peak_listeners.ro}`,                    // one mixed stream: one number
     late: x.within_10s_pct != null && x.within_10s_pct < 70,
   };
 }

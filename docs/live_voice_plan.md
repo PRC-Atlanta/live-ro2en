@@ -16,7 +16,8 @@ This document is the build plan: what to build, where, in what order, and how to
 | Topic | Decision | Source |
 |---|---|---|
 | Voice model | **Supertonic 3, preset voice M2**, 8 steps, speed 1.25, ONNX on the CPU. No voice cloning, so no consent is needed. Licence OpenRAIL-M. | Two blind rounds against Piper, OmniVoice, Higgs Audio v3, ZONOS2, FireRedTTS3 (2026-11-09/10) |
-| English voice | **The same model and voice: Supertonic 3 M2**, `lang="en"`, 8 steps, the same pacing. A second stream at `/listen/en` (§14). | Blind test against Supertonic M1/M5, Kokoro, Piper (user, 2026-11-10) |
+| English voice | **The same model and voice: Supertonic 3 M2**, `lang="en"`, 8 steps, the same pacing. ~~A second stream at `/listen/en` (§14).~~ In the same stream since 2026-11-15 (next row). | Blind test against Supertonic M1/M5, Kokoro, Piper (user, 2026-11-10) |
+| **One mixed stream** | **One stream at `/listen` for both languages** (`voice.mix: true`, the default): only one translation goes out at a time, so the Romanian translation of an English speaker and the English translation of a Romanian speaker take turns in it. The listener page has one button, Ascultă · Listen; `/listen/ro` and `/listen/en` play the same stream. Each language keeps its own queue and pacing; the play clock gives the stream to one language at a time (the one speaking keeps it to the end of its item, otherwise the item generated first), and a language's pacing counts the other's playing and queued audio. `voice.mix: false` brings back the two streams of §14. | User, 2026-11-15 |
 | Model files | **Keep our own copy.** The company may be closing (unconfirmed). Supertonic 3 is about 385 MB (`~/.cache/supertonic3` on the dev Mac, package `supertonic` 1.3.1). | |
 | **Hardware** | **The same Mac Studio as Live RO2EN** (user, 2026-11-10). This replaces the separate M5 Mac mini in the Claude Doc. | This plan, §6 |
 | Safety hold | **None.** In the logs, no English→Romanian caption has ever been retracted or corrected. | Live timing test |
@@ -1047,6 +1048,10 @@ voice is really behind, and it speaks at 1.40–1.50 for most of the sermon. Bot
 settings. Per-language thresholds (`voice.en.lag_lo_s`) stay possible but are not planned; they would
 lower the share within 10 s to 88%.
 The user listened to `work/tts_bakeoff/en/pacing/` and kept the §4.3 rule for English (2026-11-10).
+
+> **2026-11-15: superseded by one mixed stream** (§0, "One mixed stream"). The user: there will only be one
+> translation going out at a time, so there need not be two streams. What follows describes the two-stream
+> layout, still available with `voice.mix: false`.
 
 **What changes for the English stream:**
 - **A second stream, `/listen/en`.** `/listen` stays Romanian (alias `/listen/ro`). Each listener picks a

@@ -58,8 +58,8 @@ export const FIELDS = {
   ],
   // Live Voice (docs/live_voice_plan.md §5): the on/off switch, the address and Test voice are built by hand
   voice: [
-    { key: "voice.en.enabled", label: "Also an English stream", kind: "toggle",
-      hint: "For listeners who understand only English: the English translation of a Romanian speaker, at /listen/en. Changing it restarts the voice (a few seconds)." },
+    { key: "voice.en.enabled", label: "Also speak English", kind: "toggle",
+      hint: "The English translation of a Romanian speaker, in the same stream as the Romanian. Off: only the Romanian translation of an English speaker is spoken. Changing it restarts the voice (a few seconds)." },
     { key: "voice.speed", label: "Speaking speed", kind: "number", min: 1.0, max: 1.5, step: 0.05,
       hint: "1.25 is the speed that was chosen by ear. The voice never adds pauses of its own." },
     { key: "voice.speed_max", label: "Fastest it may speak when behind", kind: "number", min: 1.0, max: 1.75, step: 0.05,

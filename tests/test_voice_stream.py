@@ -117,6 +117,33 @@ def test_the_page_and_the_two_streams(feed):
         c.close()
 
 
+def test_one_mixed_stream_plays_at_every_listen_address():
+    ch = stream.Channel(stream.MIX)
+    server = stream.Server({stream.MIX: ch}, host="127.0.0.1", port=0, log=lambda r: None, page=b"<html>page</html>")
+    assert server.start()
+    stop = threading.Event()
+
+    def run():
+        while not stop.is_set():
+            ch.put(b"M" * 400)
+            server.notify(stream.MIX)
+            time.sleep(0.05)
+    threading.Thread(target=run, daemon=True).start()
+    try:
+        for path in ("/listen", "/listen/ro", "/listen/en"):
+            c = http.client.HTTPConnection("127.0.0.1", server.port, timeout=3)
+            c.request("GET", path)
+            r = c.getresponse()
+            assert r.status == 200 and set(r.read(2000)) == set(b"M"), path
+            c.close()
+        c = http.client.HTTPConnection("127.0.0.1", server.port, timeout=3)
+        c.request("HEAD", "/listen")
+        assert c.getresponse().getheader("X-Voice-Mix") == "1"
+    finally:
+        stop.set()
+        server.stop()
+
+
 def test_a_query_string_is_ignored_and_nothing_else_is_served(feed):
     c, r = feed.get("/listen/ro?t=123")
     assert r.status == 200
@@ -131,7 +158,7 @@ def test_a_query_string_is_ignored_and_nothing_else_is_served(feed):
     c, r = feed.get("/stats", method="POST", body=b"{}")              # only in rehearsal mode
     assert r.status == 404
     c, r = feed.get("/listen/en", method="HEAD")
-    assert r.status == 200 and r.getheader("X-Voice-Rehearsal") is None
+    assert r.status == 200 and r.getheader("X-Voice-Rehearsal") is None and r.getheader("X-Voice-Mix") is None
 
 
 def test_bad_and_slow_requests_are_refused(feed):
@@ -355,7 +382,8 @@ def test_the_stream_keeps_its_byte_rate_through_silence_and_speech(proc):
 
 @needs_voice_env
 def test_sentences_play_in_order_each_language_in_its_own_stream(proc):
-    v = proc()
+    v = proc({"mix": False})
+    assert v.ready["mix"] is False
     v.state()
     v.sentence(1, "unu doi trei patru")
     v.sentence(2, "one two three four", lang="en")
@@ -370,6 +398,28 @@ def test_sentences_play_in_order_each_language_in_its_own_stream(proc):
     st = v.wait("status", 5, n=len(v.of("status")) + 1)
     assert set(st["langs"]) == {"ro", "en"} and st["errors"] == 0 and st["rtf_recent"] is not None
     assert {"listeners", "queue_n", "queue_s", "behind_s", "playing_sid"} <= set(st) and st["queue_n"] == 0
+
+
+@needs_voice_env
+def test_one_mixed_stream_the_languages_take_turns_and_never_overlap(proc):
+    v = proc()                                              # mix is the default
+    assert v.ready["mix"] is True and v.ready["langs"] == ["ro", "en"]
+    for path in ("/listen", "/listen/ro", "/listen/en"):
+        c = http.client.HTTPConnection("127.0.0.1", v.port, timeout=3)
+        c.request("GET", path)
+        assert c.getresponse().status == 200, path
+        c.close()
+    v.state()
+    v.sentence(1, "unu doi trei patru")
+    v.sentence(2, "one two three four", lang="en")
+    v.sentence(3, "cinci sase sapte opt")
+    v.wait("item", 10, n=3)
+    items = sorted(v.of("item"), key=lambda i: i["play_start"])
+    assert [i["sids"] for i in items] == [[1], [2], [3]]   # in the order they were made
+    for a, b in zip(items, items[1:]):                     # one voice at a time in the one stream
+        assert b["play_start"] >= a["play_start"] + a["audio_s"] - 0.05, (a, b)
+    st = v.wait("status", 5, n=len(v.of("status")) + 1)
+    assert st["mix"] is True and st["errors"] == 0 and st["langs"]["en"]["listeners"] == 0
 
 
 @needs_voice_env
