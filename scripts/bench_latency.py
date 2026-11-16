@@ -1,3 +1,13 @@
+#!/usr/bin/env python3
+"""Latency of bench runs, from their logs: recogniser and translator time per Romanian phrase
+(median/p90) and, for a real-time replay (--speed 1), how long the first word of a phrase took
+to reach the screen.
+
+  .venv-mt/bin/python scripts/bench_latency.py RUN [RUN ...]      (names under logs/bench/runs/)
+
+A replay stamps audio on the recording's clock, so first_word_s in the log is off by a constant;
+it is taken out here (see D below). Faster replays share the machine with nothing in real time:
+their recogniser and translator times are only a rough guide."""
 import json, sys, glob, statistics as st
 import numpy as np
 for run in sys.argv[1:]:
