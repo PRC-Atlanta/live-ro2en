@@ -79,7 +79,11 @@ class Live(AIMixin, LifecycleMixin, PipelineMixin, OutputMixin, DisplayMixin, Re
         self.caps = RollingCaptions(cfg["propresenter"]["max_chars_per_line"], cfg["propresenter"]["max_lines"],
                                     min_line_s=float(cfg["live"].get("caption_min_line_s", 0) or 0),
                                     reveal=bool(cfg["live"].get("caption_reveal", True)),
-                                    reveal_wps=float(cfg["live"].get("caption_reveal_wps", 1.5) or 1.5))
+                                    reveal_wps=float(cfg["live"].get("caption_reveal_wps", 1.5) or 1.5),
+                                    read_wps=float(cfg["live"].get("caption_read_wps", 0) or 0),
+                                    min_read_s=float(cfg["live"].get("caption_min_read_s", 1.2) or 0),
+                                    max_lag_s=float(cfg["live"].get("caption_max_lag_s", 20) or 0),
+                                    catchup_wps=float(cfg["live"].get("caption_catchup_wps", 3.3) or 0))
         self.lang = LangTracker(self.lc.get("language_mode", "auto"))
         self.gloss = Glossary(paths.resource(cfg["paths"]["glossary"], ROOT))
         self.tr = None

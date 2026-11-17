@@ -374,25 +374,64 @@ def paginate(units: list[dict], args) -> list[dict]:
     return out
 
 
-def buffer_frames(units: list[dict], args, fix: bool) -> tuple[list[dict], dict]:
+def buffer_frames(units: list[dict], args, fix: bool, read: bool = False) -> tuple[list[dict], dict]:
     """The app's own caption box (captions.RollingCaptions + tidy_clause, as pipeline.py and
     output.py drive them) on a simulated clock, with the live settings (min_line_s 2.5, reveal at
     speaking pace). fix: a line's dwell restarts when words are added to it on screen (today it
     counts from when the line first came up, so a line filled out by a long translation can scroll
-    off at once, its new words never seen). Returns screen frames and the stats."""
+    off at once, its new words never seen). read: the box's own read-time pacing (read_wps =
+    --wps, min_read_s = --min-line-s, lag guard --max-lag-s / --catchup-wps), each translation
+    given how long ago its speech ended, as pipeline.py does. Returns screen frames and the stats.
+
+    Two "cut short" counts: too_short_up (a line in its final form was up less than all its words'
+    reading time) and cut_by_reader (a reader reading the lines in order at --wps, words added to a
+    line read from when they appeared - roll()/read_done() - had not finished it when it went)."""
     from captions import RollingCaptions, tidy_clause  # noqa: PLC0415
     now = [0.0]
     seen: dict[str, float] = {}          # a line's text -> when it was first on screen in that form
     popped: list[dict] = []
     gone_words = [0]
 
+    reader = {"prev": 0.0, "cut": 0, "wprev": 0.0, "wcut": 0, "ex": []}
+
     class Lines(list):
+        meta: list = []                  # per line: show time, [time, words] parts (as roll())
+
+        def append(self, s):
+            super().append(s)
+            self.meta.append({"show": now[0], "parts": [[now[0], s]]})
+
+        def __setitem__(self, i, s):
+            if s != self[i]:
+                self.meta[i]["parts"].append([now[0], s])
+            super().__setitem__(i, s)
+
         def pop(self, i=-1):
             s = super().pop(i)
+            m = self.meta.pop(i)
             if i == 0:
                 gone_words[0] += len(s.split())
                 need = max(args.min_line_s, len(s.split()) / args.wps)
                 popped.append({"up": now[0] - seen[s] if s in seen else 0.0, "need": need, "seen": s in seen})
+                n_all = len(s.split())
+                added = n_all - len(m["parts"][0][1].split())
+                done = max(max(m["show"], reader["prev"]) + max(args.min_line_s, n_all / args.wps),
+                           m["parts"][-1][0] + (max(args.min_line_s, added / args.wps) if added else 0.0))
+                reader["cut"] += now[0] < done - 0.05
+                reader["prev"] = min(done, now[0])
+                # word by word: words added to a line are read from when they appeared, in order
+                (t0, s0), *grown = m["parts"]
+                start = max(t0, reader["wprev"])
+                wd, k = start + len(s0.split()) / args.wps, len(s0.split())
+                for t, sx in grown:
+                    wd = max(wd, t) + (len(sx.split()) - k) / args.wps
+                    k = len(sx.split())
+                wd = max(wd, start + args.min_line_s)
+                reader["wcut"] += now[0] < wd - 0.05
+                reader["wprev"] = min(wd, now[0])
+                if now[0] < done - 0.05 and len(reader["ex"]) < 3:
+                    reader["ex"].append({"gone": round(now[0], 2), "parts": [[round(t, 2), x] for t, x in m["parts"]],
+                                         "ref_done": round(done, 2), "word_done": round(wd, 2)})
             return s
 
     class Box(RollingCaptions):
@@ -402,9 +441,12 @@ def buffer_frames(units: list[dict], args, fix: bool) -> tuple[list[dict], dict]
             if fix and self.lines and before is not None and self.lines[-1] != before and len(self._since) == len(self.lines):
                 self._since[-1] = self.clock()
 
+    pacing = {"read_wps": args.wps, "min_read_s": args.min_line_s, "max_lag_s": args.max_lag_s,
+              "catchup_wps": args.catchup_wps} if read else {}
     box = Box(max_chars=args.chars, max_lines=args.lines, min_line_s=2.5, clock=lambda: now[0],
-              reveal=True, reveal_wps=1.5)
+              reveal=True, reveal_wps=1.5, **pacing)
     box.lines = Lines()
+    box.lines.meta = []
     frames, total, ends = [], [0], []     # ends: (words so far after unit k, t_end, ro)
     last_text = [None]
 
@@ -442,7 +484,8 @@ def buffer_frames(units: list[dict], args, fix: bool) -> tuple[list[dict], dict]
         close = "." if prev_open and not cont else ""
         total[0] += len(text.split())
         ends.append((total[0], u["t_end"], u["ro"]))
-        box.add(text, close, audio_s=max(0.5, u["t_end"] - u["t_start"]))
+        box.add(text, close, audio_s=max(0.5, u["t_end"] - u["t_start"]),
+                spoken_ago=max(0.0, now[0] - u["t_end"]) if read else None)
         record()
         prev_end, prev_open = u["t_end"], is_open
     run_due(float("inf"))
@@ -458,7 +501,8 @@ def buffer_frames(units: list[dict], args, fix: bool) -> tuple[list[dict], dict]
     stats = {"lines": len(popped), "lag_median": p(0.5), "lag_p90": p(0.9), "lag_max": lags[-1],
              "over_20s": sum(1 for x in lags if x > 20),
              "too_short_up": sum(1 for x in popped if x["up"] < x["need"] - 0.05),
-             "never_seen": sum(1 for x in popped if not x["seen"])}
+             "never_seen": sum(1 for x in popped if not x["seen"]), "cut_by_reader": reader["cut"],
+             "cut_by_word_reader": reader["wcut"], "cut_examples": reader["ex"]}
     return frames, stats
 
 
@@ -469,6 +513,7 @@ def gone_words_at(fr: dict) -> int:
 SCREENS = {   # player name: (units, display, translation-score row)
     "today: the app's caption box": ("app", "buffer", "app (as shown)"),
     "today's box, dwell fixed": ("app", "buffer+fix", "app (as shown)"),
+    "the app's box, read-time pacing": ("app", "buffer+read", "app (as shown)"),
     "sentences, today's box, dwell fixed": ("sentences", "buffer+fix", "sentences, no queue"),
     "sentences + line pacing": ("sentences", "grow+pace", "sentences, no queue"),
     "sentences, whole lines, paced": ("sentences", "whole+pace", "sentences, no queue"),
@@ -488,12 +533,15 @@ def page(args) -> None:
           f"{'>20s':>6}{'up<read':>8}")
     for name, (kind, mode, srow) in SCREENS.items():
         if mode.startswith("buffer"):
-            frames, st_ = buffer_frames(data[kind], args, fix=mode.endswith("fix"))
+            frames, st_ = buffer_frames(data[kind], args, fix=mode.endswith("fix"), read=mode.endswith("read"))
+            st_.pop("cut_examples", None)
             sc = data.get("report", {}).get("rows", {}).get(srow, {})
             rows[name] = {"chrf": sc.get("chrf"), "bleu": sc.get("bleu"), **st_}
             r = rows[name]
             print(f"{name:36}{r['chrf'] or 0:7.1f}{r['bleu'] or 0:6.1f}{r['lines']:6d}{r['lag_median']:8.1f}"
-                  f"{r['lag_p90']:6.1f}{r['lag_max']:6.1f}{r['over_20s']:6d}{r['too_short_up']:8d}  never on screen: {r['never_seen']}")
+                  f"{r['lag_p90']:6.1f}{r['lag_max']:6.1f}{r['over_20s']:6d}{r['too_short_up']:8d}  never on screen: "
+                  f"{r['never_seen']}, cut by a {args.wps} w/s reader: {r['cut_by_reader']} (line rule), "
+                  f"{r['cut_by_word_reader']} (word by word)")
             screens[name] = {"mode": "frames", "items": frames}
             continue
         if mode == "pages":
@@ -543,6 +591,8 @@ def main() -> None:
         p.add_argument("--lines", type=int, default=2)
         p.add_argument("--chars", type=int, default=42)
         p.add_argument("--min-line-s", type=float, default=1.2)
+        p.add_argument("--max-lag-s", type=float, default=20.0)
+        p.add_argument("--catchup-wps", type=float, default=3.3)
     args = ap.parse_args()
     {"translate": translate, "report": report, "page": page}[args.cmd](args)
 

@@ -129,7 +129,7 @@ const sides = {};
 for (const el of document.querySelectorAll(".col")) {
   const side = el.dataset.side, pick = el.querySelector(".pick");
   for (const n of names) pick.add(new Option(n, n));
-  pick.value = side === "a" ? "today: the app's caption box" : "sentences, whole lines, paced";
+  pick.value = side === "a" ? "today: the app's caption box" : "the app's box, read-time pacing";
   sides[side] = { pick, l0: el.querySelector(".l0"), l1: el.querySelector(".l1"), lagf: el.querySelector(".lagf"),
                   lagv: el.querySelector(".lagv"), readf: el.querySelector(".readf"), readv: el.querySelector(".readv"),
                   count: el.querySelector(".count"), src: el.querySelector(".src"), top: -9,

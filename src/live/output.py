@@ -42,24 +42,26 @@ class OutputMixin:
                 "corrections_n": self._corrections[str(self.log_path)]}
 
     # --- the pipeline's way onto the screen ------------------------------------------------
-    def _show(self, translation: str, close: str = "", audio_s: float | None = None) -> tuple[str, bool | None, str]:
+    def _show(self, translation: str, close: str = "", audio_s: float | None = None,
+              spoken_ago: float | None = None) -> tuple[str, bool | None, str]:
         """Add a translation to the captions and send them, unless hidden or held.
         Returns (screen text, sent ok or None when nothing was sent, outcome) where outcome
         is "ok", "paused" (Hide is on: not sent; not added either, so Show starts clean, unless
         `display.show_hidden` keeps the captions display going), "song" (Song came on
         while it was translated: not added) or "held".
         `close` ends the previous caption first; with its speaking time `audio_s` the rest
-        of a long translation is revealed by the pace timer (RollingCaptions.add)."""
+        of a long translation is revealed by the pace timer (RollingCaptions.add); `spoken_ago`
+        (seconds since its speech ended) lets the caption box's lag guard see how far behind it is."""
         with self._out_lock:
             if self.paused:
                 if not self._show_hidden():
                     return "", None, "paused"
-                shown = self.caps.add(translation, close, audio_s=audio_s)   # the display only
+                shown = self.caps.add(translation, close, audio_s=audio_s, spoken_ago=spoken_ago)   # the display only
                 self._pace()
                 return shown, None, "paused"
             if self.song_on:
                 return "", None, "song"
-            shown = self.caps.add(translation, close, audio_s=audio_s)
+            shown = self.caps.add(translation, close, audio_s=audio_s, spoken_ago=spoken_ago)
             self._pace()
             if self.held:
                 return shown, None, "held"
@@ -68,7 +70,7 @@ class OutputMixin:
     def _pace(self):
         """One timer for everything the captions bring up later: pending words of the last
         translation (captions reveal) and lines waiting for the one above to have been read
-        (captions.min_line_s). A timer set for later than the new due time is replaced."""
+        (captions read_wps, or min_line_s). A timer set for later than the new due time is replaced."""
         with self._out_lock:
             due = self.caps.next_due() if hasattr(self.caps, "next_due") else None
             t = self._pace_timer
