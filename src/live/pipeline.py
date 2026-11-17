@@ -153,6 +153,16 @@ def seam_word(prev_src: str, src: str, seam: list | None) -> str | None:
     return f"{prev_src[:m1.start(1)].rstrip()} {src.lstrip()}".strip()
 
 
+def _spoken_ago(ev: dict) -> float | None:
+    """Seconds since the chunk's speech ended (its t_end is wall-clock time), for the caption
+    box's lag guard; None when unknown or implausible."""
+    try:
+        ago = time.time() - float(ev["t_end"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return ago if 0.0 <= ago < 120.0 else None
+
+
 _CHRISTMAS = re.compile(r"\bChristmas\b(?!\s+Child)")
 
 
@@ -1241,7 +1251,7 @@ class PipelineMixin:
             if redo:
                 self.caps.retract()                     # the previous caption goes; this replaces it
             shown, ok, outcome = self._show(screen_text, close="." if prev_open and not continues and not redo else "",
-                                            audio_s=ev.get("audio_s"))
+                                            audio_s=ev.get("audio_s"), spoken_ago=_spoken_ago(ev))
             voice_mark = None
             if hasattr(self, "_speech_mark"):           # Live Voice: this chunk's place among the shown ones
                 try:

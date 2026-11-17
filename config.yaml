@@ -65,7 +65,11 @@ live:
   sentence_gap_s: 2.5         # ...a pause this long ends the sentence whatever its last word
   sentence_quiet_s: 1.0       # ...a sentence ending in . ! ? goes after this much silence (else at the next piece)
   sentence_wait_s: 8.0        # ...and in any case after this long with no new piece (an engine without `quiet`)
-  caption_min_line_s: 2.5     # a caption line stays up at least this long before it scrolls off (0 = no pacing)
+  caption_min_line_s: 2.5     # a caption line stays up at least this long before it scrolls off (0 = no pacing; only when caption_read_wps is 0)
+  caption_read_wps: 2.7       # a line scrolls off only once read: lines read in order at this many words a second (0 = off: caption_min_line_s)
+  caption_min_read_s: 1.2     # ...each line at least this long
+  caption_max_lag_s: 20       # ...if waiting lines fall this far behind the speech (seconds)...
+  caption_catchup_wps: 3.3    # ...they are read this fast until caught up
   caption_reveal: true        # a long phrase's words go up a few at a time over its speaking time, not in one jump
   caption_reveal_wps: 1.5     # ...never slower than this many words a second (paced to the speaking time)
   partial_every_s: 0           # >0 shows interim text on the control page (adds load)

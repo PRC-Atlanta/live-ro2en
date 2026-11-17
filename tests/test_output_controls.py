@@ -184,7 +184,7 @@ def test_hold_keeps_the_screen_until_released(tmp_path, mock):
 
 def test_retract_reshows_previous_lines_and_is_logged(tmp_path, mock):
     live = _live(tmp_path, mock.port)
-    live.caps.max_chars, live.caps.max_lines, live.caps.min_line_s = 20, 2, 0
+    live.caps.max_chars, live.caps.max_lines, live.caps.min_line_s, live.caps.read_wps = 20, 2, 0, 0
     for t in ("one two three", "four five six seven", "eight nine ten"):
         live._show(t)
     assert live.retract() is True

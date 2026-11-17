@@ -8,6 +8,16 @@ on screen at least that long before it scrolls off: lines that would push it off
 in `queue` and come up from `advance()` (the caller's timer, at `next_due()`). The wait is
 bounded: more than `max_queue` waiting lines go up at once.
 
+With `read_wps` (read-time pacing, replaces `min_line_s`) a line may scroll off only once it
+has been read: a reader reads the lines in order at `read_wps` words a second, each line at
+least `min_read_s`, so it finishes line i at max(it came up, line i-1 read) + its reading
+time. Words added to a line already on screen are read from when they appeared (the line's
+reading is not counted from when it first came up). Lines that cannot go up yet wait in
+`queue`, in order; none is dropped and `max_queue` does not apply. Lag guard: while a waiting
+line (its speech end: `spoken_ago` given to add(), else
+from when it was added) or the reveal's words behind them would come up more than `max_lag_s`
+behind at `read_wps`, reading is counted at `catchup_wps`, back to `read_wps` once caught up.
+
 With `reveal` a clause given its speaking time (`audio_s`) does not land in one jump: its
 first words go up at once and the rest wait in `pending`, coming up a few at a time from the
 same `advance()`/`next_due()` timer, spread over the speaking time plus REVEAL_SLACK_S (the
@@ -92,7 +102,8 @@ def tidy_clause(text: str, continues: bool, tgt: str = "en", src: str = "") -> t
 class RollingCaptions:
     def __init__(self, max_chars: int = 42, max_lines: int = 2, undo_depth: int = 20,
                  min_line_s: float = 0.0, max_queue: int = 3, clock=time.monotonic,
-                 reveal: bool = False, reveal_wps: float = 1.5):
+                 reveal: bool = False, reveal_wps: float = 1.5, read_wps: float = 0.0,
+                 min_read_s: float = 1.2, max_lag_s: float = 20.0, catchup_wps: float = 3.3):
         self.max_chars = max_chars
         self.max_lines = max_lines
         self.min_line_s = float(min_line_s)
@@ -109,16 +120,27 @@ class RollingCaptions:
         self._step = (2, MIN_STEP_S)               # (words, seconds) per reveal step
         self._reveal_due = 0.0                     # when the next pending words go up
         self._shown_at = float("-inf")             # when the screen last changed
+        self.read_wps = float(read_wps)            # read-time pacing (0 = off: min_line_s)
+        self.min_read_s = float(min_read_s)
+        self.max_lag_s = float(max_lag_s)
+        self.catchup_wps = float(catchup_wps)
+        self._reads: list[list[tuple[float, int]]] = []   # per screen line: (when, words added)
+        self._qspoken: list[float] = []            # per waiting line: when its last words were spoken
+        self._spoken = 0.0                         # when the clause being added was spoken (clock)
+        self._prev_read = float("-inf")            # when the reader finished the last line gone
 
     def _wrap(self, text: str) -> list[str]:
         return textwrap.wrap(text, self.max_chars, break_long_words=False,
                              break_on_hyphens=False) or ([text] if text else [])
 
     def _snap(self) -> tuple:
-        return list(self.lines), list(self.queue), list(self._since), list(self.pending)
+        return (list(self.lines), list(self.queue), list(self._since), list(self.pending),
+                [list(r) for r in self._reads], list(self._qspoken), self._prev_read)
 
     def _restore(self, snap: tuple):
-        self.lines, self.queue, self._since, self.pending = (list(x) for x in snap)
+        self.lines, self.queue, self._since, self.pending = (list(x) for x in snap[:4])
+        self._reads = [list(r) for r in snap[4]]
+        self._qspoken, self._prev_read = list(snap[5]), snap[6]
 
     def _append(self, text: str):
         """Words onto the end of the running text (the last waiting line, else the screen)."""
@@ -126,10 +148,16 @@ class RollingCaptions:
         if stream and len(stream[-1]) <= self.max_chars:
             # continue the last line: wrap() is greedy, so its words stay where they are
             first, *rest = self._wrap(f"{stream[-1]} {text}")
+            if stream is self.queue:
+                self._qspoken[-1] = self._spoken
+            elif first != stream[-1] and len(self._reads) == len(self.lines):
+                # words added on screen: read from now, not from when the line came up
+                self._reads[-1].append((self.clock(), len(first.split()) - len(stream[-1].split())))
             stream[-1] = first
         else:
             rest = self._wrap(text)
         self.queue.extend(rest)
+        self._qspoken.extend([self._spoken] * len(rest))
 
     def _take(self, words: list[str], n: int) -> int:
         """How many of `words` the next step puts up, about `n`: never a new line started
@@ -164,10 +192,12 @@ class RollingCaptions:
         return (self._take(self.pending, k) == len(self.pending)
                 and self._short_new_line(self.pending, len(self.pending)))
 
-    def add(self, clause: str, close: str = "", audio_s: float | None = None) -> str:
+    def add(self, clause: str, close: str = "", audio_s: float | None = None,
+            spoken_ago: float | None = None) -> str:
         """Append a clause. `close` (e.g. ".") first ends the previous caption, which was
         left open (see tidy_clause). With `reveal` and the clause's speaking time `audio_s`,
-        only its first words go up now (see the module docstring)."""
+        only its first words go up now (see the module docstring). `spoken_ago`: how long
+        ago its speech ended (the lag guard; default: now)."""
         clause = " ".join(clause.split())
         if not clause:
             return self.text
@@ -176,6 +206,7 @@ class RollingCaptions:
         revealing = self.reveal and audio_s
         if not revealing or len(self.pending) > CARRY_MAX:
             self._reveal_all()                     # the last clause's words first: none lag behind
+        self._spoken = self.clock() - max(0.0, float(spoken_ago or 0.0))
         self._undo = (self._undo + [self._snap()])[-self._undo_depth:]
         if self.pending:                           # a few words of the last clause roll on into this one
             if close and not self.pending[-1].endswith(tuple(".!?…:;,")):
@@ -241,16 +272,77 @@ class RollingCaptions:
         return changed
 
     def _rise(self, now: float, force: bool):
-        """Waiting lines up as far as the dwell allows."""
+        """Waiting lines up as far as the dwell (or the reading) allows."""
+        self._sync(now)
         while self.queue:
             if len(self.lines) >= self.max_lines:
-                ripe = now - self._since[0] >= self.min_line_s - 1e-6
-                if not (ripe or force or len(self.queue) > self.max_queue):
-                    break
+                if self.read_wps > 0:
+                    done = self._read_done(self._wps(now))
+                    if not (now >= done - 1e-6 or force):
+                        break
+                    self._prev_read = min(done, now)   # forced: the reader goes on from here
+                else:
+                    ripe = now - self._since[0] >= self.min_line_s - 1e-6
+                    if not (ripe or force or len(self.queue) > self.max_queue):
+                        break
                 self.lines.pop(0)
                 self._since.pop(0)
-            self.lines.append(self.queue.pop(0))
+                if self._reads:
+                    self._reads.pop(0)
+            line = self.queue.pop(0)
+            self._qspoken.pop(0)
+            self.lines.append(line)
             self._since.append(now)
+            self._reads.append([(now, len(line.split()))])
+
+    def _sync(self, now: float):
+        """Per-line bookkeeping matches the lines (a caller may set lines/queue directly)."""
+        if len(self._reads) != len(self.lines):
+            self._reads = [[(now, len(ln.split()))] for ln in self.lines]
+        if len(self._qspoken) != len(self.queue):
+            self._qspoken = [now] * len(self.queue)
+
+    def _read_done(self, wps: float) -> float:
+        """When a reader reading the lines in order at `wps` has read the top line: not
+        before it came up and the line above it was read, then its words at `wps` (words added
+        later: from when they appeared), at least min_read_s."""
+        (t0, n0), *grown = self._reads[0]
+        start = max(t0, self._prev_read)
+        done = start + n0 / wps
+        for t, n in grown:
+            done = max(done, t) + n / wps
+        return max(done, start + self.min_read_s)
+
+    def _guard_on(self) -> bool:
+        return self.max_lag_s > 0 and self.catchup_wps > self.read_wps
+
+    def _wps(self, now: float) -> float:
+        """Reading speed now: catchup_wps while a waiting line (or the reveal's words behind
+        them) would come up more than max_lag_s after its speech at read_wps."""
+        if self._guard_on() and self.projected_lag(now) > self.max_lag_s:
+            return self.catchup_wps
+        return self.read_wps
+
+    def projected_lag(self, now: float | None = None) -> float:
+        """How far behind its speech the furthest-behind waiting line will be when it comes up,
+        read at read_wps: waiting line j comes up once the line max_lines above it is read, and
+        the lines are read one after another (each its reading time). 0 when nothing waits."""
+        now = self.clock() if now is None else now
+        if not (self.queue or self.pending) or self.read_wps <= 0:
+            return 0.0
+        seq = self.lines + self.queue
+        spoken = [now] * len(self.lines) + list(self._qspoken)
+        if self.pending:                      # the reveal's words come after the waiting lines
+            more = self._wrap(f"{seq[-1]} {' '.join(self.pending)}")[1:] if seq else \
+                self._wrap(" ".join(self.pending))
+            seq, spoken = seq + more, spoken + [self._spoken] * len(more)
+        if len(self.lines) < self.max_lines or not self._reads:
+            return max(0.0, now - min(spoken[len(self.lines):], default=now))
+        read = [max(now, self._read_done(self.read_wps))]
+        for ln in seq[1:]:
+            read.append(read[-1] + max(self.min_read_s, len(ln.split()) / self.read_wps))
+        return max(0.0, max(read[j - self.max_lines] - spoken[j]
+                            for j in range(len(self.lines), len(seq))))
 
     def next_due(self) -> float | None:
         """When advance() can next change the screen (clock time): the next reveal step or
@@ -259,7 +351,13 @@ class RollingCaptions:
         due = []
         if self.pending and not self.queue:        # a waiting line holds the reveal back
             due.append(self._reveal_due + (ORPHAN_WAIT_S if self._orphan_wait() else 0.0))
-        if self.queue and self._since:
+        if self.queue and self.read_wps > 0:
+            self._sync(self.clock())
+            if len(self.lines) < self.max_lines or not self._reads:
+                due.append(self.clock())       # room on screen: up at once
+            else:
+                due.append(self._read_done(self._wps(self.clock())))
+        elif self.queue and self._since:
             due.append(self._since[0] + self.min_line_s)
         if not due:
             return None
@@ -295,13 +393,15 @@ class RollingCaptions:
         if max_lines:
             self.max_lines = int(max_lines)
         self.lines = self._wrap(" ".join(self.lines + self.queue + self.pending))[-self.max_lines:]
-        self.queue, self.pending = [], []
+        self.queue, self.pending, self._qspoken = [], [], []
         self._since = [self.clock()] * len(self.lines)
+        self._reads = [[(self.clock(), len(ln.split()))] for ln in self.lines]
         self._undo = []
         return self.text
 
     def clear(self) -> str:
         self.lines, self.queue, self._since, self.pending = [], [], [], []
+        self._reads, self._qspoken = [], []
         self._undo = []                            # Blank is final: retract cannot bring it back
         return ""
 

@@ -256,3 +256,16 @@ def test_live_voice_closes_a_whole_sentence_at_once(tmp_path):
     sents = [json.loads(l) for l in open(live.log_path) if '"event": "sentence"' in l]
     assert [s["text"] for s in sents] == ["God is good to us."]
     live._speech_stop()
+
+
+def test_the_caption_lag_guard_gets_the_sentences_own_end(tmp_path):
+    live = _live(tmp_path)
+    seen, show = [], live._show
+    live._show = lambda *a, **k: (seen.append(k.get("spoken_ago")), show(*a, **k))[1]
+    t = time.time() - 20
+    live._on_clause(_p(1, t, t + 3, "Iubită biserică,"))
+    live._on_clause(_p(2, t + 3.2, t + 7, "vă salut pe toți. Astăzi vorbim despre har."))   # cut inside piece 2
+    live._drain()
+    (r,) = _log(live)
+    assert r["source"] == "Iubită biserică, vă salut pe toți." and r["t_end"] < t + 7
+    assert len(seen) == 1 and abs(seen[0] - (time.time() - r["t_end"])) < 1.0
