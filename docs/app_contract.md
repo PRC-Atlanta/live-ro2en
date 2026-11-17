@@ -122,6 +122,9 @@ listed here.
 
 - `ready {stt, multi, source}`
 - `partial {text}`
+- `quiet {t, since}`: silence after the last chunk (all speech before it sent), every 0.5 s up to
+  3 s; `t` and `since` (the last voiced frame) on the engine's clock. The app's sentence buffer
+  (`live.translate_sentences`) sends a sentence that ended there without waiting for the next chunk
 - `clause {id, ro, multi, t_start, t_speech, t_end, t_emit, stt_s, audio_s, final}` (`multi` = Parakeet's
   transcript: language detection and the English text; `final` = the chunk ended at a pause, false
   after a forced cut in mid-speech). Optional: `ro_wait: true` (no Romanian text because the

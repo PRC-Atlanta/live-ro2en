@@ -476,7 +476,9 @@ class SpeechMixin:
                 "t_speech": ev.get("t_speech", ev.get("t_start")), "t_end": ev.get("t_end"),
                 "shown_wall": t_display, "wall": time.time(), "scripture": holy,
                 "ref": (v or {}).get("ref") if isinstance(v, dict) else (ref.name(tgt) if ref is not None else None),
-                "caught_up": ev.get("caught_up", 1)})
+                "caught_up": ev.get("caught_up", 1),
+                # live.translate_sentences: the speaker's sentence ended here (not cut by its length)
+                "sentence_end": ev.get("sentence") in ("end", "quiet", "gap", "flush")})
             self._speech_pump()
 
     def _speech_gap(self, c: dict, nxt: dict | None) -> float | None:
@@ -490,7 +492,8 @@ class SpeechMixin:
                 waiting = list(self._work.queue)
         except Exception:                               # noqa: BLE001
             pass
-        for e in [getattr(self, "_pending", None), getattr(self, "_current", None)] + waiting:
+        held = self._sent_evs() if hasattr(self, "_sent_evs") else []    # the sentence buffer's pieces
+        for e in [getattr(self, "_pending", None), getattr(self, "_current", None)] + held + waiting:
             if isinstance(e, dict) and e.get("id") != c["id"]:
                 s = e.get("t_speech", e.get("t_start"))
                 if isinstance(s, (int, float)) and s >= t_end - 0.05:
@@ -511,7 +514,8 @@ class SpeechMixin:
                 if only is not None and c["lang"] != only:
                     break
                 nxt = self._speech_q[1] if len(self._speech_q) > 1 else None
-                gap = self._speech_gap(c, nxt)
+                # a whole sentence from the sentence buffer: it ended, whatever the pause after it
+                gap = NO_NEXT if c.get("sentence_end") else self._speech_gap(c, nxt)
                 if gap is None:
                     if not force:
                         self._speech_arm(0.15)
@@ -548,6 +552,8 @@ class SpeechMixin:
     def _speech_idle(self) -> bool:
         """Nothing is on its way: no phrase held, queued or being translated, and no speech just now."""
         if getattr(self, "_pending", None) is not None or getattr(self, "_current", None) is not None:
+            return False
+        if hasattr(self, "_sent_evs") and self._sent_evs():
             return False
         try:
             if not self._work.empty():

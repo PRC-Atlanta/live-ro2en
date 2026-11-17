@@ -748,6 +748,10 @@ class LifecycleMixin:
                 self.partial = ev["text"]
             elif t == "clause":
                 self._on_clause(ev)
+            elif t == "quiet":                   # silence after the last piece (the sentence buffer)
+                if current:
+                    self._on_quiet(ev)
+                continue
             elif t == "eof":
                 self._flush()
                 self._drain()                # the last clause is shown and logged before eof

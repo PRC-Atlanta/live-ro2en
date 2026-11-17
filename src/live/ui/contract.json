@@ -229,6 +229,7 @@
     "events": {
       "ready":   {"built": true,  "fields": {"stt": "str", "multi": "bool", "source": "str", "hold": "bool?"}},
       "partial": {"built": true,  "fields": {"text": "str"}},
+      "quiet":   {"built": true,  "fields": {"t": "num", "since": "num"}},
       "clause":  {"built": true,  "fields": {"id": "int", "ro": "str", "multi": "str",
                                              "t_start": "num", "t_speech": "num", "t_end": "num", "t_emit": "num",
                                              "stt_s": "num", "audio_s": "num"}},

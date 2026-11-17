@@ -92,6 +92,7 @@ export const FIELDS = {
       hint: "A long phrase appears a few words at a time instead of all at once." },
     { key: "live.caption_reveal_wps", label: "…at about (words per second)", kind: "number", min: 1, max: 8, step: 0.5 },
     { key: "live.sentence_pause_s", label: "Pause that ends a sentence (seconds)", kind: "number", min: 0, max: 3, step: 0.1 },
+    { key: "live.translate_sentences", label: "Translate whole sentences, not the pieces between pauses", kind: "toggle" },
     { key: "live.gate_min_real", label: "Skip garbled phrases", kind: "choice",
       options: [[0, "Off", "Translate everything heard"], [0.5, "Gentle"], [0.6, "Normal", "Recommended"],
                 [0.7, "Strict", "May skip phrases full of names"]] },

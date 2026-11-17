@@ -183,6 +183,34 @@ def _gist(text: str) -> set[str]:
             if w.lower() not in _FILLER}
 
 
+def verse_ahead(tr, texts: list[str], src: str = "ro", tgt: str = "en") -> bool:
+    """Would one of these pieces, matched one by one as the live pipeline used to, be captioned with a
+    verse's published text? Matched on copies of the translator's verse matcher and reading: its
+    state is left as it was (live.translate_sentences sends such a sentence piece by piece)."""
+    import collections
+    import copy
+    holder = tr
+    if isinstance(tr, ByDirection):
+        m = tr.trs.get((src, tgt))
+        holder = m if getattr(m, "verses", None) is not None else tr
+    mt, rd = getattr(holder, "verses", None), getattr(holder, "reading", None)
+    if mt is None or rd is None or getattr(mt, "bible", None) is None:
+        return False
+    probe, reading = copy.copy(mt), copy.copy(rd)
+    probe.history = collections.deque(mt.history)
+    probe.recent = dict(mt.recent)
+    for text in texts:
+        if src == "ro":
+            text = _CU_DOT.sub(r"\1 cu \2", text)
+        text = probe.take_tail(text, src)
+        if not text.strip():
+            continue
+        reading.update(text)
+        if probe.match(text, src, tgt, reading.ref, reading.announced) is not None:
+            return True
+    return False
+
+
 def around_verse(around: str, caption: str) -> str:
     """The speaker's words next to a captioned verse, translated, unless they say the verse again:
     on 2026-11-08 "Do not be anxious about anything, In nothing be anxious" (Phil 4:6), "we were

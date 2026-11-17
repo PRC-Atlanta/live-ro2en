@@ -19,6 +19,7 @@ import guards
 import names as namelist
 import overlap
 import paths
+import sentences
 import song
 import translate
 from captions import tidy_clause
@@ -277,6 +278,34 @@ def merge_clauses(a: dict, b: dict) -> dict:
             "t_start": a["t_start"], "t_speech": a.get("t_speech", a["t_start"]),
             # stt_s stays b's (what delayed b's t_emit, so vad_wait_s stays right); total kept apart
             "stt_s_total": a.get("stt_s_total", a["stt_s"]) + b["stt_s"], "audio_s": a["audio_s"] + b["audio_s"]}
+
+
+def sentence_fields(ev: dict) -> dict:
+    """For the log: how the sentence buffer closed this phrase, how many pieces it holds and how long
+    its last piece waited in the buffer (live.translate_sentences)."""
+    if not ev.get("sentence"):
+        return {}
+    return {"sentence": ev["sentence"], "sent_pieces": len(ev.get("sent_pieces") or []),
+            "sent_wait_s": ev.get("sent_wait_s"),
+            **({"sent_cut_words": ev["sent_cut_words"]} if ev.get("sent_cut_words") else {})}
+
+
+def piece_parts(text: str, pieces: list[str]) -> list[str]:
+    """A sentence back in its pieces' clauses (a Bible verse in it is matched piece by piece): cut at
+    the pieces' word counts when they add up, else at its clause punctuation."""
+    words, counts = text.split(), [len(p.split()) for p in pieces]
+    segs = [text]
+    if sum(counts) == len(words):
+        segs, i = [], 0
+        for n in counts:
+            if n:
+                segs.append(" ".join(words[i:i + n]))
+            i += n
+    out = []
+    for seg in segs:
+        clauses, tail = split_clauses(seg)
+        out += clauses + ([tail] if tail else [])
+    return out
 
 
 def joint_fields(ev: dict) -> dict:
@@ -598,7 +627,15 @@ class PipelineMixin:
         clause: translating 1-3 words alone is poor. Sentence-final fragments go now.
         Slow speakers (idea 20): a phrase under phrase_min_words, or one that stops on "din",
         "și", "of"..., waits longer (hold_slow_s) and may grow to hold_max_s, because most of
-        a slow speaker's seconds are pauses."""
+        a slow speaker's seconds are pauses.
+        With `live.translate_sentences` a Romanian piece goes to the sentence buffer instead
+        (_on_piece): the translator gets whole sentences, and these holds are not needed."""
+        if self._sentences_on():
+            if self._on_piece(ev):
+                return
+        elif self._sent_evs():                         # the setting was just switched off
+            with self.lock:
+                self._sent_flush("flush")
         with self.lock:
             if self._timer:
                 self._timer.cancel()
@@ -649,6 +686,114 @@ class PipelineMixin:
             ev, self._pending = self._pending, None
             if ev:
                 self._submit(ev)
+            if gen is None:                            # Stop, end of input: the open sentence goes too
+                self._sent_flush("flush")
+
+    # --- whole sentences (live.translate_sentences, sentences.py) --------------------------
+    def _sentences_on(self) -> bool:
+        return bool(self.lc.get("translate_sentences", False))
+
+    def _sent_cutter(self) -> sentences.SentenceCutter:
+        c = getattr(self, "_sent_cut", None)
+        if c is None:
+            c = self._sent_cut = sentences.SentenceCutter()
+        c.cap_s = float(self.lc.get("sentence_cap_s", 12.0) or 12.0)
+        c.gap_s = float(self.lc.get("sentence_gap_s", 2.5) or 2.5)
+        return c
+
+    def _sent_evs(self) -> list[dict]:
+        """The pieces waiting in the sentence buffer (Live Voice asks when the speaker spoke next)."""
+        c = getattr(self, "_sent_cut", None)
+        return list(c.evs) if c is not None else []
+
+    def _on_piece(self, ev: dict) -> bool:
+        """A piece into the sentence buffer; the sentences it closes go to the translator. False when
+        the piece is not for the buffer (English captions, or no Romanian transcript to cut by): the
+        buffer is sent first and the piece takes the usual way."""
+        with self.lock:
+            ro, multi = (ev.get("ro") or "").strip(), (ev.get("multi") or "").strip()
+            if self.lang.current == "en" or (not ro and multi and not ev.get("ro_wait")):
+                self._sent_flush("lang")
+                return False
+            if self._pending:                          # held before the setting was switched on
+                if self._timer:
+                    self._timer.cancel()
+                self._hold_gen += 1
+                p, self._pending = self._pending, None
+                self._submit(p)
+            for unit, why in self._sent_cutter().add({**ev, "_arrived": time.time()}):
+                self._sent_submit(unit, why)
+            self._sent_arm()
+            return True
+
+    def _sent_submit(self, unit: list[dict], why: str):
+        """One sentence (its pieces) to the translator as one clause. Inside it the recogniser's fake
+        full stops go, and a word cut in two at a piece joint is one word again (idea 25)."""
+        lex = gate.lexicon()["ro"] if self.lc.get("cut_word_redo", True) else None
+        ev, fixed = unit[0], []
+        for b in unit[1:]:
+            a_ro, b_ro = ev.get("ro") or "", b.get("ro") or ""
+            if lex is not None and a_ro and b_ro and b.get("t_speech", b["t_start"]) - ev["t_end"] <= CUT_GAP_S:
+                joined = cut_word(a_ro, b_ro, lex)
+                if joined is None and self.lc.get("cut_word_seam", True):
+                    joined = seam_word(a_ro, b_ro, b.get("seam"))
+                if joined is not None:
+                    fixed.append([a_ro.split()[-1], b_ro.split()[0]])
+                    ev = {**ev, "ro": joined[:len(joined) - len(b_ro.lstrip())].rstrip()}
+            ev = merge_clauses(ev, b)
+        arrived = ev.pop("_arrived", None)
+        ev = {**ev, "ro": sentences.sentence_text(ev.get("ro") or ""), "sentence": why,
+              "sent_pieces": [e.get("ro") or "" for e in unit],
+              "sent_wait_s": round(time.time() - arrived, 3) if arrived else None,
+              **({"sent_cut_words": fixed} if fixed else {})}
+        self._submit(ev)
+
+    def _sent_arm(self):
+        """A safety net when no `quiet` event comes (an engine without them): the open sentence goes
+        after sentence_wait_s with no new piece."""
+        t = getattr(self, "_sent_timer", None)
+        if t is not None:
+            t.cancel()
+        self._sent_gen = getattr(self, "_sent_gen", 0) + 1
+        if not self._sent_evs():
+            return
+        self._sent_timer = threading.Timer(float(self.lc.get("sentence_wait_s", 8.0) or 8.0),
+                                           self._sent_timeout, args=(self._sent_gen,))
+        self._sent_timer.daemon = True
+        self._sent_timer.start()
+
+    def _sent_timeout(self, gen: int):
+        with self.lock:
+            if gen == getattr(self, "_sent_gen", 0):
+                self._sent_flush("wait")
+
+    def _sent_flush(self, why: str):
+        """Send the open sentence now (call under self.lock)."""
+        c = getattr(self, "_sent_cut", None)
+        u = c.flush(why) if c is not None else None
+        if u is not None:
+            self._sent_submit(*u)
+        t = getattr(self, "_sent_timer", None)
+        if t is not None:
+            t.cancel()
+            self._sent_timer = None
+
+    def _on_quiet(self, ev: dict):
+        """The engine heard silence (`quiet`: t = now on the audio clock, since = the last voiced
+        frame, everything before it already sent as pieces). A buffered sentence that ends in
+        . ! ? goes after sentence_quiet_s of it, anything after sentence_gap_s."""
+        with self.lock:
+            c = getattr(self, "_sent_cut", None)
+            if c is None or not c.evs or not isinstance(ev.get("t"), (int, float)):
+                return
+            if isinstance(ev.get("since"), (int, float)) and ev["since"] > c.last_end + 0.3:
+                return                                 # speech after the buffer, not here yet
+            silence = ev["t"] - c.last_end
+            gap = float(self.lc.get("sentence_gap_s", 2.5) or 2.5)
+            if silence >= gap:
+                self._sent_flush("gap")
+            elif c.waiting_end and silence >= float(self.lc.get("sentence_quiet_s", 1.0) or 1.0):
+                self._sent_flush("quiet")
 
     def _submit(self, ev: dict):
         self._work.put(ev)
@@ -719,7 +864,7 @@ class PipelineMixin:
         rec = {"id": ev.get("id"), "outcome": outcome, "t_start": ev.get("t_start"), "t_end": ev.get("t_end"),
                "ro": ev.get("ro", ""), "multi": ev.get("multi", ""), "en": ev.get("en", ""),
                "audio_s": ev.get("audio_s"), "stt_s": ev.get("stt_s"), "profile": self.profile,
-               **self._input_fields(ev), **joint_fields(ev),
+               **self._input_fields(ev), **joint_fields(ev), **sentence_fields(ev),
                "time": dt.datetime.now().isoformat(timespec="milliseconds"), **extra}
         with self.lock:
             self.counts[outcome] += 1
@@ -998,6 +1143,15 @@ class PipelineMixin:
         parts = clauses + ([tail] if tail else [])        # at a pause everything is committed
         if _whole_phrase(tr, lang, tgt):             # an online translator: one round trip per phrase
             parts = [src_text]
+        elif ev.get("sentence") and lang == "ro":
+            # a whole sentence in one call, unless one of its pieces is part of a Bible verse: then
+            # piece by piece as before, so the verse keeps its published text (verses.shown)
+            pieces = [apply_spellings(p, self.cfg.get("spellings") or {}) for p in ev.get("sent_pieces") or []]
+            if len(pieces) > 1 and translate.verse_ahead(tr, pieces, lang, tgt):
+                parts = piece_parts(src_text, pieces)
+                src_info["sentence_verse"] = True
+            else:
+                parts = [src_text]
         if ev.get("caught_up"):                           # catching up: few calls, each bounded
             parts = pack_parts(parts, int(self.lc.get("catchup_max_words", 60)))
         t0 = time.time()
@@ -1087,7 +1241,9 @@ class PipelineMixin:
         start = ev.get("t_speech", ev["t_start"])
         prev_end, prev_open = getattr(self, "_cap_end", None), getattr(self, "_cap_open", False)
         continues = prev_open and prev_end is not None and \
-            start - prev_end < float(self.lc.get("sentence_pause_s", 1.0))
+            start - prev_end < float(self.lc.get("sentence_pause_s", 1.0)) and \
+            not getattr(self, "_cap_ended", False)      # the sentence buffer saw the sentence end there
+        self._cap_ended = ev.get("sentence") in sentences.ENDS
         screen_text, self._cap_open = tidy_clause(translation, continues, tgt, src_text)
         self._cap_end = ev["t_end"]
         t1 = time.time()
@@ -1120,7 +1276,7 @@ class PipelineMixin:
                "mt_s": round(t_tr, 3), "pp_s": round(t_disp - t1, 4), "pp_ok": ok,
                "caught_up": ev.get("caught_up", 1), "mt_truncated": truncated, "passthrough": passthrough,
                "pp_error": self.pp.last_error, "audio_s": ev["audio_s"], "glossary": [n_g, ok_g],
-               **self._input_fields(ev), **joint_fields(ev),
+               **self._input_fields(ev), **joint_fields(ev), **sentence_fields(ev),
                **safety, **guard, **({"verse": verse[0] if len(verse) == 1 else verse} if verse else {}),
                "time": dt.datetime.now().isoformat(timespec="milliseconds")}
         warn_s = float(self.lc.get("lag_warn_s", 6.0))
