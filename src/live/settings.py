@@ -86,6 +86,9 @@ FIELDS: dict[str, dict] = {
     "live.caption_min_line_s": {"group": "advanced", "type": "num", "min": 0, "max": 8, "apply": "now"},
     "live.caption_reveal":     {"group": "advanced", "type": "bool", "apply": "now"},
     "live.caption_reveal_wps": {"group": "advanced", "type": "num", "min": 1, "max": 8, "apply": "now"},
+    "live.caption_read_wps":   {"group": "advanced", "type": "num", "min": 0, "max": 8, "apply": "now"},
+    "live.caption_min_read_s": {"group": "advanced", "type": "num", "min": 0, "max": 5, "apply": "now"},
+    "live.caption_max_lag_s":  {"group": "advanced", "type": "num", "min": 0, "max": 60, "apply": "now"},
     "live.partial_every_s":    {"group": "advanced", "type": "num", "min": 0, "max": 5, "apply": "start"},
     "live.lag_warn_s":         {"group": "advanced", "type": "num", "min": 2, "max": 30, "apply": "now"},
     "live.gate_min_real":      {"group": "advanced", "type": "num", "min": 0, "max": 0.9, "apply": "now"},
@@ -444,6 +447,10 @@ class SettingsMixin:
             self.caps.reveal = bool(get(self.cfg, "live.caption_reveal"))   # from the next phrase
         if "live.caption_reveal_wps" in changed and hasattr(self.caps, "reveal_wps"):
             self.caps.reveal_wps = float(get(self.cfg, "live.caption_reveal_wps") or 1.5)
+        for key, attr in (("caption_read_wps", "read_wps"), ("caption_min_read_s", "min_read_s"),
+                          ("caption_max_lag_s", "max_lag_s")):
+            if f"live.{key}" in changed and hasattr(self.caps, attr):
+                setattr(self.caps, attr, float(get(self.cfg, f"live.{key}") or 0))
         if any(k.startswith("ai.") for k in changed) and hasattr(self, "_ai_settings_changed"):
             self._ai_settings_changed(changed)
         if any(k.startswith("voice.") for k in changed) and hasattr(self, "_voice_settings_changed"):
