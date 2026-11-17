@@ -10,6 +10,8 @@ stdout events (one JSON per line; docs/app_contract.md has the full list):
   {"type":"listen","on":bool}                                    hold <-> live acknowledged
   {"type":"partial","text":...}                                  (UI only)
   {"type":"clause","id":n,"ro":..,"multi":..,"t_start":..,"t_end":..,"t_emit":..,"stt_s":..}
+  {"type":"quiet","t":..,"since":..}                             every 0.5 s of silence (up to 3 s) once
+                                                                 all speech is sent: the sentence buffer
   {"type":"eof"} when a --file source ends
 stdin commands: mode, stop, listen {on}, cfg {cfg}, keywords {words, ro}, device {device}, gain {db},
   agc {on, target_db}: automatic input gain (AutoGain) on/off and its target speech level.
@@ -473,6 +475,9 @@ def read_audio(path: str) -> np.ndarray:
     return resample(np.ascontiguousarray(x.mean(1), dtype=np.float32), int(sr))
 
 
+QUIET_STEP_S, QUIET_MAX_S = 0.5, 3.0     # `quiet` events: every 0.5 s of silence, up to 3 s
+
+
 def bench_clock() -> tuple[float, float] | None:
     """(speed, t0) for a test-bench replay (scripts/bench.py), else None. LIVE_FILE_SPEED plays
     a file that many times faster than real time; frames are stamped on the *audio* clock
@@ -824,6 +829,7 @@ class Engine:
         pre: list[tuple[float, np.ndarray]] = []
         last_voiced = 0.0
         last_partial = 0.0
+        quiet_next = QUIET_STEP_S                        # the next silence length to report (`quiet`)
 
         def commit_all() -> None:
             nonlocal frames, probs, times
@@ -921,7 +927,14 @@ class Engine:
             if not frames and p < self.pt.threshold:
                 pre = (pre + [(ts, fr)])[-self.pre_roll:]
                 self.pt.push(p)
+                # everything said is sent: how long the silence after it has lasted (the pipeline's
+                # sentence buffer sends a sentence that ended here without waiting for the next piece)
+                if last_voiced and quiet_next <= QUIET_MAX_S and ts - last_voiced >= quiet_next:
+                    emit({"type": "quiet", "t": round(ts, 3), "since": round(last_voiced, 3)})
+                    quiet_next += QUIET_STEP_S
                 continue
+            if p >= self.pt.threshold:
+                quiet_next = QUIET_STEP_S
             if not frames:
                 times = [t for t, _ in pre]
                 frames = [f for _, f in pre]

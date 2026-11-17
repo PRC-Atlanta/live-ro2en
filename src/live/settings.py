@@ -83,6 +83,7 @@ FIELDS: dict[str, dict] = {
     "live.song_detect":        {"group": "advanced", "type": "bool", "apply": "now", "default": False},
     "live.song_symbol":        {"group": "advanced", "type": "enum", "choices": ["♪", ""], "apply": "now", "default": "♪"},
     "live.sentence_pause_s":   {"group": "advanced", "type": "num", "min": 0, "max": 3, "apply": "now"},
+    "live.translate_sentences": {"group": "advanced", "type": "bool", "apply": "now", "default": False},
     "live.caption_min_line_s": {"group": "advanced", "type": "num", "min": 0, "max": 8, "apply": "now"},
     "live.caption_reveal":     {"group": "advanced", "type": "bool", "apply": "now"},
     "live.caption_reveal_wps": {"group": "advanced", "type": "num", "min": 1, "max": 8, "apply": "now"},

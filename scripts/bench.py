@@ -168,6 +168,7 @@ def run(args) -> pathlib.Path:
         "display.network": False, "live.autostart": False, "live.preload": False,
         "live.lag_warn_s": 0, "live.catchup_max_words": 0,
         "live.hold_s": float(cfg["live"].get("hold_s", 1.2)) / speed,
+        "live.sentence_wait_s": float(cfg["live"].get("sentence_wait_s", 8.0)) / speed,
         "live.input_gain_db": float(args.gain), "live.language_mode": args.mode,
         "live.input_device": None, "live.translator_keepalive_s": 0,
     }
