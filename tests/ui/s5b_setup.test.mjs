@@ -248,10 +248,10 @@ test("settings answers read as nested objects", () => {
 test("settings never expose internals", () => {
   for (const key of fields.allKeys())
     for (const bad of fields.NEVER_EXPOSED) assert.ok(!key.includes(bad), `${key} exposes ${bad}`);
-  const f = fields.FIELDS.advanced.find(x => x.key === "live.partial_every_s");
+  const f = fields.fieldOf("live.partial_every_s");
   assert.equal(fields.stored(f, true), 0.5);
   assert.equal(fields.shown(f, 0), false);
-  const vad = fields.FIELDS.advanced.find(x => x.key === "live.vad_threshold");
+  const vad = fields.fieldOf("live.vad_threshold");
   assert.equal(fields.shown(vad, 0.6), 0.65);
 });
 

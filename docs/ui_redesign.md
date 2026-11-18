@@ -1,6 +1,6 @@
 # UI redesign: every screen except Live
 
-Status: **audit and proposal, waiting for approval.** Nothing is rebuilt yet.
+Status: **approved 2026-11-18, rebuild in progress.** See "Decisions" at the end.
 Branch `worktree-ui-redesign`, based on `main` at `df1ca98`.
 Mockups: `docs/ui_mockup/redesign.html`. Before screenshots: `docs/ui_redesign_shots/`.
 
@@ -111,7 +111,7 @@ Keys do not change. Labels in the last column are the proposed plain-word names.
 | `ai.enabled` (`POST /api/engine`) | Local or AI translator | Sunday (Live knob) | AI | **AI** | Translator |
 | API key (`POST /api/ai/key`) | Anthropic key in the Keychain | Install | AI | **AI** | API key |
 | `ai.timeout_s` | Wait before Local takes a phrase | Tuning | Advanced | AI ▸ More | Wait for AI at most |
-| (usage this service) | Captions and minutes per engine | – | AI | **Moves to the After report** (already shown there) | – |
+| (usage this service) | Captions and minutes per engine | – | AI | **Moves to Monitor → Numbers** | – |
 
 ### Advanced (tuning)
 
@@ -148,7 +148,7 @@ Keys do not change. Labels in the last column are the proposed plain-word names.
 | `ui.show_latency` | – | **nothing** | **Delete as dead** (from `FIELDS` and `defaults.yaml`). Old files still load: unknown keys are dropped on read |
 | `ui.show_counts` | – | **nothing** | **Delete as dead**, same |
 
-Nothing shown today is removed from the UI. Three things move screens: AI usage → After,
+Nothing shown today is removed from the UI. Three things move screens: AI usage → Monitor,
 diagnostics → Monitor, `health_every_s` → Advanced.
 
 ## 4. Proposal
@@ -192,9 +192,7 @@ The toolbar is shared with the Live screen, so its buttons stay as they are. Two
 
 Every gate stays (can't pass Download without models, Sound without hearing sound, and so on).
 
-**After**: reordered. Rating first, Save transcript second, then one summary line
-("45 min · 416 captions · typical delay 2.1 s") with problems only when non-zero and the rest under
-"More numbers" (which gains the AI usage). Free memory last.
+**After**: not used, so left as it is (see Decisions).
 
 **Monitor**: same table. Gains a slim strip with the delay numbers, and a "Numbers" drawer with the
 outcome counts and alerts moved from Settings → Advanced.
@@ -214,17 +212,19 @@ new tab names.
 1. Shared pieces: row, card with status, "More options", ⓘ hint, saved tick (new components + CSS).
 2. Settings: General → Names & words → Screens → Live Voice → AI → Advanced.
 3. Setup wizard (and `tests/ui/s5b_setup.test.mjs` for the four steps).
-4. After, Monitor, Help.
+4. Monitor, Help.
 5. Deep links, then a pass over the Live screen in every mock scenario to confirm it is unchanged.
 
 After each: mock UI at desktop and narrow width, then `tests/test_settings.py`,
 `test_output_controls.py`, `test_ui_setup.py`, `test_ui_live.py`, `test_ui_mock_contract.py`,
 `test_contract.py` (96 pass on the base commit).
 
-## 5. Decisions needed
+## 5. Decisions (2026-11-18)
 
-1. Delete the two dead keys `ui.show_latency` and `ui.show_counts`?
-2. Setup wizard from six steps to four?
-3. Diagnostics from Settings → Advanced to Monitor, AI usage to the After report?
-4. `live.song_detect`, `live.song_symbol`, `live.lag_warn_s`: leave config only, or surface under Advanced?
-5. The app has only a dark theme. Check dark and narrow only, or is a light theme wanted (that would touch the Live screen)?
+1. The two dead keys `ui.show_latency` and `ui.show_counts` are deleted.
+2. The Setup wizard goes from six steps to four.
+3. Diagnostics move from Settings → Advanced to Monitor. **The After report is not used** (Claude
+   monitors the service live and reports at the end), so the After screen is left exactly as it is,
+   not redesigned, and the AI usage numbers go to Monitor's "Numbers" drawer instead of After.
+4. `live.song_detect`, `live.song_symbol` and `live.lag_warn_s` stay config only.
+5. One dark theme: screens are checked in dark at desktop and narrow width.

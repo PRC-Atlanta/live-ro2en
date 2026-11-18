@@ -20,10 +20,10 @@ export function ensureStyles() {
 }
 
 // toolbar button -> the screen it opens (the wide setup button opens Settings)
-const GOES = { live: "live", setup: "settings", names: "settings", monitor: "monitor", settings: "settings", after: "after", help: "help" };
+const GOES = { live: "live", setup: "settings/general", names: "settings/names", monitor: "monitor", settings: "settings", after: "after", help: "help" };
 
 export function frame(el, opts = {}) {
-  const here = (location.hash.slice(1) || "live");
+  const here = (location.hash.slice(1).split("/")[0] || "live");
   el.innerHTML = `
     <div class="unit" style="visibility:hidden">
       <nav class="tbar" aria-label="${S.toolbar.navLabel}">
