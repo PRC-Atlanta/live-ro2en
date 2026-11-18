@@ -98,16 +98,24 @@ The screen controls, side by side: `POST /api/pause {on}` (Hide, H) toggles; `PO
 Live screen's **Clear** button and Esc; also in Live Remote's `APP_CALLS`) is a one-shot wipe of the
 caption box, its Remove-last/Fix-last history and every screen (ProPresenter, the stage display, the
 captions display and its network page), logged as `blank`, and captions carry on with the next
-phrase; `POST /api/clear` is the same wipe without the log record (older callers). `POST /api/correct
-{text, based_on?}`: with `based_on` (the translation the operator started from) it answers **409
-`{"error": "stale"}`** and changes nothing when a newer caption came in meanwhile. `POST /api/mode`
+phrase (during a song the screen keeps the song symbol); `POST /api/clear` is the same wipe without
+the log record (older callers). `POST /api/correct {text, based_on?, based_on_seq?}`: `based_on_seq`
+is the `seq` of the state line the operator started from (each `lines[]` entry carries the caption's
+number in the caption box, or null); unless the caption box's last caption is still that one (a
+newer caption came in, also one not in `lines` yet, or Remove last took it away) it answers **409
+`{"error": "stale"}`** and changes nothing. Without a number, `based_on` (the translation the
+operator started from) must still be the newest translation. The fixed text replaces the last
+caption where it is: on screen it shows at once; still waiting to come up, it waits in its place. `POST /api/mode`
 answers 400 unless `mode` is `auto`, `ro-en` or `en-ro`.
 
-Start (a service or a rehearsal) begins clean: the caption box and the screen are cleared, the
-history and delays reset, the translators forget their context and the engine-restart budget is
-full again. Stop leaves the last caption up. `app.py --autostart` starts captions once the web
+Start (a service or a rehearsal) begins clean: the caption box and the screen are cleared (with Hold
+on the held screen stays; during a song the symbol stays), the history and delays reset, the
+translators forget their context and the engine-restart budget is full again. A profile switch
+that restarts the engine is not a new service: none of that is wiped. Stop leaves the last caption up. `app.py --autostart` starts captions once the web
 server answers; `--resumed` (the Mac app relaunched the app mid-service) adds the warning
-"restarted after a problem: captions resumed", which the Live screen shows once.
+"restarted after a problem: captions resumed", which the Live screen shows once, or, when that Start
+failed, "restarted after a problem: captions did not start again, press Start". Until the autostart's
+Start has run, `phase` is `starting` (the Mac app counts the service as live meanwhile).
 
 ## `problem.code`
 

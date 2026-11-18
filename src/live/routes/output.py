@@ -74,10 +74,13 @@ def router(live) -> APIRouter:
             return _bad("text is required")
         if based_on is not None and not isinstance(based_on, str):
             return _bad("based_on must be text")
+        seq = b.get("based_on_seq")            # the number of the caption being fixed (state lines[].seq)
+        if seq is not None and (not isinstance(seq, int) or isinstance(seq, bool)):
+            return _bad("based_on_seq must be a whole number")
         try:
-            done = await run(live.correct, text, based_on)
+            done = await run(live.correct, text, based_on, seq)
         except StaleCorrection:                # the operator typed over a caption that is gone now
-            return JSONResponse({"error": "stale", "detail": "A newer caption came in, so nothing was changed."}, 409)
+            return JSONResponse({"error": "stale", "detail": "The last caption changed, so nothing was changed."}, 409)
         if not done:
             return JSONResponse({"error": "nothing_to_change", "detail": "there is no caption to fix"}, 409)
         return live.state()

@@ -117,7 +117,8 @@ class RollingCaptions:
         self.lines: list[str] = []                 # on screen
         self.queue: list[str] = []                 # waiting for a line to have been read
         self._since: list[float] = []              # when each screen line came up
-        self._undo: list[tuple] = []               # the state before each add(), newest last
+        self._undo: list[tuple] = []               # (state before, words added, caption seq) per add(), newest last
+        self._seq = 0                              # captions added so far: each add() gets the next number
         self._undo_depth = undo_depth
         self.reveal = bool(reveal)
         self.reveal_wps = float(reveal_wps)
@@ -212,7 +213,8 @@ class RollingCaptions:
         if not revealing or len(self.pending) > CARRY_MAX:
             self._reveal_all()                     # the last clause's words first: none lag behind
         self._spoken = self.clock() - max(0.0, float(spoken_ago or 0.0))
-        self._undo = (self._undo + [self._snap()])[-self._undo_depth:]
+        self._seq += 1
+        self._undo = (self._undo + [(self._snap(), len(words), self._seq)])[-self._undo_depth:]
         if self.pending:                           # a few words of the last clause roll on into this one
             if close and not self.pending[-1].endswith(tuple(".!?…:;,")):
                 self.pending[-1] += close
@@ -387,22 +389,59 @@ class RollingCaptions:
         there is nothing to take back (empty, or just cleared/resized)."""
         if not self._undo:
             return None
-        self._restore(self._undo.pop())
+        self._restore(self._undo.pop()[0])
         self._reveal_all()                         # the caption before it, whole
         # not forced: lines that were waiting come up at reading speed (or after the dwell),
         # as they would have; forcing them up scrolled them past unread
         self.advance(force=False)
         return self.text
 
+    @property
+    def last_seq(self) -> int | None:
+        """The number of the last caption (the one Remove last / Fix last act on), or None
+        when there is none. Fix last keeps the number: the fixed caption is the same caption."""
+        return self._undo[-1][2] if self._undo else None
+
     def replace_last(self, clause: str) -> str | None:
-        """The operator's text in place of the last caption. None when there is no last
-        caption to replace. It goes up at once, in place of all of the last caption (also
-        its words not revealed yet)."""
-        if not self._undo:
+        """The operator's text in place of all of the last caption (also its words not
+        revealed yet), wherever that caption is: when any of it is on screen, the fixed text
+        is shown at once; when all of it is still waiting, the fixed text waits in its place
+        and the screen does not change. None when there is no last caption to replace."""
+        clause = " ".join(str(clause).split())
+        if not self._undo or not clause:
             return None
-        self._restore(self._undo.pop())
-        self.add(clause)                           # add() advances, unforced (see retract)
+        snap, n, seq = self._undo[-1]
+        if len(" ".join(self.queue + self.pending).split()) >= n:
+            # all of it waits (its words are the last n waiting): swap the words, keep the screen
+            self._undo[-1] = (snap, len(clause.split()), seq)
+            self._drop_waiting(n)
+            self._reveal_all()                     # words of the caption before it, before the fix
+            self._append(clause)
+            self.advance(force=False)
+            return self.text
+        self._undo.pop()
+        self._restore(snap)
+        self.add(clause)
+        self._undo[-1] = (*self._undo[-1][:2], seq)
+        self._seq -= 1                             # no new caption was added
+        self.flush()
+        self.advance(force=True)                   # it was on screen: the fix is, at once
         return self.text
+
+    def _drop_waiting(self, n: int):
+        """Take the last `n` waiting words away (pending first, then the waiting lines)."""
+        while n and self.pending:
+            self.pending.pop()
+            n -= 1
+        while n and self.queue:
+            words = self.queue[-1].split()
+            if len(words) <= n:
+                n -= len(words)
+                self.queue.pop()
+                self._qspoken.pop()
+            else:
+                self.queue[-1] = " ".join(words[:-n])
+                n = 0
 
     def resize(self, max_lines: int | None = None, max_chars: int | None = None) -> str:
         """New box size: the current text is wrapped again and only whole lines are kept.

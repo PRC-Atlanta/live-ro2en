@@ -25,8 +25,10 @@ const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "
 
 const DECK = `
   <div class="mirror" data-mirror>
-    <div class="mtabs" role="tablist" aria-label="What to show">
-      ${VIEWS.map(v => `<button class="mtab" role="tab" data-view="${v}">${S.tabs[v]}</button>`).join("")}
+    <div class="mtabs">
+      <div class="mtablist" role="tablist" aria-label="What to show">
+        ${VIEWS.map(v => `<button class="mtab" role="tab" data-view="${v}">${S.tabs[v]}</button>`).join("")}
+      </div>
       <span class="sub tabhint">${S.tabs.hint} <span class="hidtag">${S.tabs.hiddenTag}</span></span>
       <button type="button" class="clearbtn" data-clear title="${S.clearTitle}">${S.clearBtn} <kbd>${S.clearKey}</kbd></button>
     </div>
@@ -195,7 +197,7 @@ export function render(el, store) {
     const res = await send(action, body);
     if (res.ok && res.data && typeof res.data === "object" && "running" in res.data) store.set({ ...store.get(), ...res.data });
     const stale = res.data?.error === "stale";            // Fix last: a newer caption came in meanwhile
-    const msg = stale ? S.fixStale : messageFor(res, action) || DONE[action]?.(body);
+    const msg = stale ? (S.fixChanged || S.fixStale) : messageFor(res, action) || DONE[action]?.(body);
     const calm = res.notBuilt || stale || res.data?.error === "nothing_to_change";
     toast(msg, res.ok ? "ok" : calm ? "info" : "warn");
     if (res.ok && msg) say(msg);
@@ -226,8 +228,12 @@ export function render(el, store) {
       const last = [...(s.lines || [])].reverse().find(l => l.dst);
       if (!last) return toast(S.toast.nothingToFix, "info");
       const r = await ask({ title: S.fix.title, hint: S.fix.hint, value: last.dst, ok: S.fix.ok, cancel: S.fix.cancel });
-      // based_on: what the operator was fixing; the app changes nothing if a newer caption came in
-      if (r && r.text.trim()) { const [a, b] = callFor("correct", s, { text: r.text.trim() }); post([a, { ...b, based_on: last.dst }]); }
+      // based_on(_seq): the caption the operator was fixing (its number in the caption box); the app
+      // changes nothing if the last caption is another one by now (a newer one, or this one removed)
+      if (r && r.text.trim()) {
+        const [a, b] = callFor("correct", s, { text: r.text.trim() });
+        post([a, { ...b, based_on: last.dst, ...(Number.isInteger(last.seq) ? { based_on_seq: last.seq } : {}) }]);
+      }
       return;
     }
     if (intent === "terms") {
@@ -406,9 +412,12 @@ export function render(el, store) {
     } else { delete bn.dataset.code; }
     if (ps) strip.querySelector("button").hidden = REMOTE && !!routeFor(ps.action.id);
 
-    if (!resumedSeen && (s.warnings || []).some(w => String(w).startsWith(RESUMED))) {
-      resumedSeen = true;                                // the app was restarted mid-service and went live again
-      toast(S.resumed, "info", 10000); say(S.resumed);
+    const resumedW = !resumedSeen && (s.warnings || []).find(w => String(w).startsWith(RESUMED));
+    if (resumedW) {
+      resumedSeen = true;                                // the app was restarted mid-service: live again, or
+      // (lifecycle.RESUMED_FAILED_WARNING) Start failed and the operator must press it
+      const t = String(resumedW).includes("press Start") ? (S.resumedFailed || S.resumed) : S.resumed;
+      toast(t, "info", 10000); say(t);
     }
 
     f.update(s);

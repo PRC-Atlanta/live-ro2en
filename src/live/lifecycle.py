@@ -47,6 +47,7 @@ START_PRELOAD_WAIT_S = 120.0             # Start waits this long for a preload, 
 EVENT_ERRORS_LOGGED = 20                 # engine events that failed: this many tracebacks in app_errors.log
 EVENT_FAILED_WARNING = "an engine event could not be handled (see logs/app_errors.log); captions carry on"
 RESUMED_WARNING = "restarted after a problem: captions resumed"   # app.py --resumed (the Mac app relaunched it)
+RESUMED_FAILED_WARNING = "restarted after a problem: captions did not start again, press Start"   # ... and Start failed
 # problem.code -> (severity, action id, action label); the UI has the words (strings.en.js)
 PROBLEMS = {
     "models_missing": ("error", "setup", "Open Setup"),
@@ -138,7 +139,8 @@ class LifecycleMixin:
         self._models_cache: tuple[float, list] = (-1e9, [])
         self._engine_warnings: list[str] = []    # from loading: kept across services
         self._send_lock = threading.Lock()       # one writer at a time on the engine's stdin (_send)
-        self._event_errors = 0                   # engine events that raised (_event_failed)
+        self._event_errors = 0                   # engine events that raised (_event_failed), this service
+        self._autostart_pending = False          # app.py's autostart has not run Start yet (phase "starting")
         self._preload_t0 = 0.0                   # when the warm engine was spawned (PRELOAD_READY_S)
         self._pid_dir: pathlib.Path | None = None
         self._t_launch = time.time()
@@ -184,7 +186,7 @@ class LifecycleMixin:
             self._log_event({"event": "profile", "from": old, "to": name,
                              "hot": self.running and not restart, "engine_cfg": sent, **info})
             if restart:
-                self.start()
+                self.start(fresh=False)                # the same service goes on: nothing is wiped
             self._broadcast()
 
     def _translator_lost(self, e: Exception):
@@ -302,7 +304,10 @@ class LifecycleMixin:
         ms.cancel()
         return True
 
-    def start(self, device=None):
+    def start(self, device=None, fresh: bool = True):
+        """Start captions. `fresh`: a new service (the operator's Start, autostart), which
+        begins clean (_new_run). A profile switch that restarts the engine passes False: the
+        same service goes on, with its caption box, history and translator context."""
         paused = self._pause_download()                # the service gets the network and the CPU
         self._await_preload(START_PRELOAD_WAIT_S)      # Start pressed while still loading: wait (a hung
                                                        # engine is then not _warm_usable: it is replaced)
@@ -318,12 +323,12 @@ class LifecycleMixin:
                 self._drain()                          # a previous run's clauses finish first
                 src = getattr(self.args, "file", None)
                 if self._warm_usable(src):
-                    self._go_live(device)
+                    self._go_live(device, fresh)
                 else:
                     self._retire_engine()              # warm on another input or model: replace it
                     self._await_spare()
                     self.load_translator()
-                    self._start_engine(device)
+                    self._start_engine(device, fresh)
                 if paused:                             # after _new_run, which resets the warnings
                     self._warn("the model download was paused for the service; resume it in Setup")
             except Exception as e:
@@ -333,6 +338,8 @@ class LifecycleMixin:
                 self._start_error = self.status
                 self._broadcast()
                 raise
+        if hasattr(self, "_send_wanted_screen"):
+            self._send_wanted_screen()                 # the new service's blank screen, outside _control
 
     def _await_spare(self):
         """A spare that is loading may be this profile's translator: take it, not a second copy."""
@@ -340,12 +347,12 @@ class LifecycleMixin:
         if self.tr is None and sp is not None and sp.is_alive() and sp is not threading.current_thread():
             sp.join()
 
-    def _go_live(self, device=None):
+    def _go_live(self, device=None, fresh: bool = True):
         """Start on the warm engine: a new service log, then {"cmd":"listen","on":true}."""
         self._await_spare()
         self.load_translator()                         # loaded by preload; reloaded after an unload
         want = device if device is not None else self.lc.get("input_device")
-        self._new_run()
+        self._new_run(fresh)
         self._run_src, self._run_device = self._engine_src, want
         if self._engine_src is None and want != self._engine_device:
             self._send({"cmd": "device", "device": want})
@@ -360,11 +367,13 @@ class LifecycleMixin:
             self.status = f"listening ({self.input_name or self._engine_src or 'default'})"
         self._broadcast()
 
-    def _new_run(self):
-        """A new service: its own log file, fresh counters and warnings, and nothing left over
-        from the last service or rehearsal: an empty caption box (Remove last / Fix last cannot
-        reach back into it) and screen, no history or delays, translators that remember nothing,
-        and the full engine-restart budget. Stop leaves the last caption up; Start takes it down."""
+    def _new_run(self, fresh: bool = True):
+        """A new service log, fresh counters and warnings. With `fresh` (the operator's Start,
+        autostart) also a new service: nothing left over from the last service or rehearsal: an
+        empty caption box (Remove last / Fix last cannot reach back into it) and screen, no
+        history or delays, translators that remember nothing, and the full engine-restart
+        budget. Stop leaves the last caption up; Start takes it down. A profile switch that
+        restarts the engine (fresh False) keeps all that: the service goes on."""
         logdir = paths.services_dir(self.lc["transcript_log_dir"], self.root)
         logdir.mkdir(parents=True, exist_ok=True)
         stem = f"{dt.datetime.now():%Y-%m-%d_%H%M%S}"
@@ -374,16 +383,19 @@ class LifecycleMixin:
             path = logdir / f"{stem}_{n}.jsonl"           # sorts after the first one
         self.log_path = path
         self.warnings, self.counts = list(self._engine_warnings), collections.Counter()
+        self._event_errors = 0                         # the first failures of this log get their tracebacks
         if hasattr(self, "_speech_reset"):
             self._speech_reset()                       # Live Voice: no sentence of the last service is left
         if hasattr(self, "_voice_new_run"):
             self._voice_new_run()
         if hasattr(self, "_engine_new_run"):
-            self._engine_new_run()
+            self._engine_new_run(fresh)
         self.behind_s = self.stt_behind = None
         self.eof.clear()
         self._stopping = False
         self._ran = True
+        if not fresh:
+            return
         self._restarts.clear()                         # crashes before this service do not count against it
         with self.lock:
             self.history, self.lat, self.partial = [], [], ""
@@ -396,9 +408,9 @@ class LifecycleMixin:
                 "input_gain_db": self._gain_now(),     # a restarted engine carries on from the auto gain
                 "ro_names": list(self.cfg.get("ro_names") or [])}   # boosted by the Romanian recogniser
 
-    def _start_engine(self, device=None):
+    def _start_engine(self, device=None, fresh: bool = True):
         """A service on a new engine (file runs, or nothing warm): live as soon as it is ready."""
-        self._new_run()
+        self._new_run(fresh)
         self.audio_fault = None
         self._audio_kind = None
         want = device or self.lc.get("input_device")
@@ -979,6 +991,10 @@ class LifecycleMixin:
     def _phase(self) -> str:
         if self._unloading:
             return "unloading"
+        if self._autostart_pending and not self.running:
+            # a relaunch that resumes the service (app.py autostart_when_up): live from the
+            # start, so the Mac app keeps it awake and, after a second crash, resumes it again
+            return "starting"
         if self.running:
             if self.phase_hint == "stopping":
                 return "stopping"

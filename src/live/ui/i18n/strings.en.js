@@ -285,7 +285,9 @@ export const S = {
   clearBtn: "Clear", clearKey: "Esc",
   clearTitle: "Wipe the captions now: the big screen, the stage display and the captions display. Remove last can't bring them back. New captions start with the next phrase.",
   fixStale: "A newer caption came in, so nothing was changed.",
+  fixChanged: "The last caption changed while you typed (a newer one came in, or it was removed), so nothing was changed.",
   resumed: "Restarted after a problem — captions resumed",
+  resumedFailed: "Restarted after a problem — captions did not start again: press Start",
   connClosed: "This window lost its connection for good (the PIN changed, or Live Remote was turned off). Close it and open it again.",
 };
 

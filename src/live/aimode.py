@@ -147,12 +147,14 @@ class AIMixin:
         self._ai_used[e]["s"] += min(max(float(span or 0.0), 0.0), 30.0)
         self._ai_used_prev = t
 
-    def _engine_new_run(self):
+    def _engine_new_run(self, fresh: bool = True):
         self._ai_used = {k: {"phrases": 0, "s": 0.0} for k in self._ai_used}
         self._ai_used_prev = None
         # a new service: the AI translator is made again at its first phrase, so nothing of the last
-        # service (its context, the Bible reading and verse it was following) carries over
-        self._ai_tr = None
+        # service (its context, the Bible reading and verse it was following) carries over. A
+        # profile switch that restarts the engine (fresh False) is the same service: it keeps it.
+        if fresh:
+            self._ai_tr = None
 
     # --- the voice's summaries follow the same rule (voicelink.py) ---------------------------------------
     def _voice_summary(self, texts: list[str], lang: str, deadline: float) -> dict:

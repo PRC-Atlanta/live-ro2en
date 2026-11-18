@@ -45,7 +45,7 @@ if os.environ.get("LIVE_HOME"):        # loaders and the model downloader share 
 import security                                      # noqa: E402
 from captions import RollingCaptions                 # noqa: E402
 from langid import LangTracker                       # noqa: E402
-from lifecycle import RESUMED_WARNING, LifecycleMixin   # noqa: E402
+from lifecycle import RESUMED_FAILED_WARNING, RESUMED_WARNING, LifecycleMixin   # noqa: E402
 from output import OutputMixin                       # noqa: E402
 from display import DisplayMixin                     # noqa: E402
 from remote import RemoteMixin                       # noqa: E402
@@ -191,7 +191,7 @@ def main():
         if autostart:
             live.start()
         if a.resumed:
-            live._warn(RESUMED_WARNING)
+            live._warn(RESUMED_WARNING if live.running else RESUMED_FAILED_WARNING)
         while not (a.exit_on_eof and live.eof.is_set()):
             time.sleep(0.2)
         time.sleep(3)          # let the last clause finish translating
@@ -206,6 +206,7 @@ def main():
     server = uvicorn.Server(uvicorn.Config(build_app(live), host=cfg["live"]["web_host"], port=cfg["live"]["web_port"],
                                            log_level="warning"))
     if autostart or a.resumed:
+        live._autostart_pending = bool(autostart)   # phase "starting" from the first state the Mac app reads
         threading.Thread(target=autostart_when_up, args=(live, server, bool(autostart), a.resumed),
                          daemon=True, name="autostart").start()
     server.run()
@@ -216,19 +217,26 @@ def autostart_when_up(live: Live, server, start: bool, resumed: bool, wait_s: fl
     take long (it waits for the models) or fail; before, it ran ahead of the web server, so the
     Mac app saw no answer, and a failing Start ended the process before the page could show why
     (a relaunch loop). A failed Start is in the state (phase error), like a Start from the page.
-    --resumed: the warning that says the app was restarted, after Start (which clears warnings)."""
-    end = time.monotonic() + wait_s
-    while not server.started and not server.should_exit and time.monotonic() < end:
-        time.sleep(0.05)
-    if not server.started:
-        return
-    if start:
-        try:
-            live.start()
-        except Exception:                  # noqa: BLE001  start() keeps the error for the Live screen
-            pass
+    --resumed: the warning that says the app was restarted, after Start (which clears warnings);
+    when captions did not start again, a warning that asks for Start instead.
+    Until Start has run, the phase is "starting" (not "loading" while the models load): the Mac
+    app counts the service as live, so a second crash in the meantime is resumed again."""
+    live._autostart_pending = bool(start)
+    try:
+        end = time.monotonic() + wait_s
+        while not server.started and not server.should_exit and time.monotonic() < end:
+            time.sleep(0.05)
+        if not server.started:
+            return
+        if start:
+            try:
+                live.start()
+            except Exception:              # noqa: BLE001  start() keeps the error for the Live screen
+                pass
+    finally:
+        live._autostart_pending = False
     if resumed:
-        live._warn(RESUMED_WARNING)
+        live._warn(RESUMED_WARNING if live.running else RESUMED_FAILED_WARNING)
         live._broadcast()
 
 

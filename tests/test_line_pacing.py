@@ -7,7 +7,7 @@ import random
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src" / "live"))
-from captions import RollingCaptions  # noqa: E402
+from captions import HARD_QUEUE, RollingCaptions  # noqa: E402
 
 
 def _caps(**kw):
@@ -147,7 +147,7 @@ def test_nothing_is_lost_and_every_line_is_up_long_enough_to_read():
     c = RollingCaptions(max_chars=42, max_lines=2, read_wps=2.7, min_read_s=1.2, max_lag_s=20,
                         catchup_wps=3.3, reveal=True, reveal_wps=1.5, clock=lambda: now[0])
     c.lines = Lines()
-    sent, lags = [], []
+    sent, lags, queued = [], [], []
     t = 0.0
 
     def seen():
@@ -163,6 +163,7 @@ def test_nothing_is_lost_and_every_line_is_up_long_enough_to_read():
         c.add(clause, audio_s=n / 3.5, spoken_ago=1.5)
         seen()
         lags.append(c.projected_lag())
+        queued.append(len(c.queue))
     for _ in range(2000):
         if not (c.queue or c.pending):
             break
@@ -175,4 +176,7 @@ def test_nothing_is_lost_and_every_line_is_up_long_enough_to_read():
     assert all(u >= 1.2 - 0.05 for _, u in gone)
     short = [(s, u) for s, u in gone if u < max(1.2, len(s.split()) / 3.3) - 0.05]
     assert len(short) < len(gone) // 10
-    assert max(lags) <= 2 * 20 + 6
+    # the hard limit holds: without it this speaker leaves the box ~42 s behind with 22 lines
+    # waiting; with it ~25 s and at most HARD_QUEUE lines plus what one clause adds (2 lines)
+    assert max(lags) <= 30
+    assert max(queued) <= HARD_QUEUE + 2

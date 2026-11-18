@@ -104,14 +104,15 @@ def test_autostart_waits_for_the_server_and_survives_a_failing_start(tmp_path, m
     server.started = True
     th.join(3)
     assert calls == [True] and not th.is_alive()
-    assert lifecycle.RESUMED_WARNING in live.warnings      # said after Start (which resets the warnings)
+    # said after Start (which resets the warnings); Start failed: the operator is asked to press it
+    assert lifecycle.RESUMED_FAILED_WARNING in live.warnings and lifecycle.RESUMED_WARNING not in live.warnings
 
 
 def test_resumed_alone_starts_nothing_and_a_dead_server_starts_nothing(tmp_path, monkeypatch):
     live = _live(tmp_path, monkeypatch)
     live.start = lambda: pytest.fail("must not start")
     autostart_when_up(live, types.SimpleNamespace(started=True, should_exit=False), False, True)
-    assert lifecycle.RESUMED_WARNING in live.warnings and not live.running
+    assert lifecycle.RESUMED_FAILED_WARNING in live.warnings and not live.running   # nothing started: say so
     autostart_when_up(live, types.SimpleNamespace(started=False, should_exit=True), True, False)
 
 
@@ -155,7 +156,9 @@ def test_new_run_starts_clean(tmp_path, monkeypatch):
     live._new_run()
     st = live.state()
     assert st["screen"] == "" and live.caps.retract() is None     # no undo into the last service
-    assert live.pp.shown == [""]                                    # the screen is cleared
+    assert live.pp.shown == [] and live.pp._want == ""             # nothing sent under _control ...
+    live._send_wanted_screen()
+    assert live.pp.shown == [""]                                    # ... the screen is cleared after it
     assert st["lines"] == [] and live.lat == [] and st["latency_last"] is None
     assert len(live._restarts) == 0
     assert "local" in resets and live._ai_tr is None                # the AI translator is made anew
@@ -330,3 +333,188 @@ def test_network_page_feed_closes_when_turned_off(tmp_path, monkeypatch):
         live._show("A new caption")                       # would be sent if the feed went on
         with pytest.raises(WebSocketDisconnect):
             ws.receive_json()
+
+
+# === round 2 ===================================================================================
+# --- P2: a resumed relaunch is "starting" (live for the Mac app) until its Start has run -------
+def test_autostart_pending_reports_starting_even_while_loading(tmp_path, monkeypatch):
+    live = _live(tmp_path, monkeypatch)
+    server = types.SimpleNamespace(started=False, should_exit=False)
+    go, phases = threading.Event(), []
+
+    def start():
+        phases.append(live._phase())
+        go.wait(3)
+        live.running = True                               # a Start that went live
+    live.start = start
+    live.phase_hint = "loading"                           # the preload is still loading the models
+    th = threading.Thread(target=autostart_when_up, args=(live, server, True, True), daemon=True)
+    th.start()
+    assert until(lambda: live._autostart_pending)
+    assert live._phase() == "starting" and live.state()["phase"] == "starting"   # LiveActivity.isLive
+    server.started = True
+    assert until(lambda: phases)
+    assert phases == ["starting"]
+    go.set()
+    th.join(3)
+    assert not live._autostart_pending
+    assert lifecycle.RESUMED_WARNING in live.warnings and lifecycle.RESUMED_FAILED_WARNING not in live.warnings
+
+
+def test_autostart_that_fails_ends_starting(tmp_path, monkeypatch):
+    live = _live(tmp_path, monkeypatch)
+    live.start = lambda: (_ for _ in ()).throw(RuntimeError("no input"))
+    live._start_error = "start failed: no input"
+    autostart_when_up(live, types.SimpleNamespace(started=True, should_exit=False), True, True)
+    assert not live._autostart_pending and live._phase() == "error"
+    assert lifecycle.RESUMED_FAILED_WARNING in live.warnings
+
+
+# --- P2: Fix last checks the caption box's last caption by its number ---------------------------
+def _shown(live, text):
+    """What the pipeline does: the caption into the box, then its line into the history."""
+    live._show(text)
+    live.history.append({"source": "x", "translation": text, "latency_s": 1.0, "lang": "ro",
+                         "caption_seq": live.caps.last_seq})
+
+
+def test_fix_last_refuses_after_a_remove_last_in_between(tmp_path, monkeypatch):
+    live = _live(tmp_path, monkeypatch)
+    _shown(live, "First caption.")
+    _shown(live, "Second caption.")
+    seq = live.state()["lines"][-1]["seq"]
+    assert seq == live.caps.last_seq
+    live.retract()                                        # Remove last while the operator types
+    with pytest.raises(output.StaleCorrection):
+        live.correct("Fixed second.", based_on="Second caption.", based_on_seq=seq)
+    assert live.caps.text == "First caption."             # the caption under it is untouched
+
+
+def test_fix_last_refuses_a_newer_caption_not_in_the_lines_yet(tmp_path, monkeypatch):
+    live = _live(tmp_path, monkeypatch)
+    _shown(live, "First caption.")
+    seq = live.state()["lines"][-1]["seq"]
+    live._show("Second caption.")                         # on screen, its line not appended yet
+    with pytest.raises(output.StaleCorrection):
+        live.correct("Fixed first.", based_on="First caption.", based_on_seq=seq)
+    assert "Second caption." in live.caps.text
+
+
+def test_fix_last_by_number_fixes_that_line_and_can_fix_it_again(tmp_path, monkeypatch):
+    live = _live(tmp_path, monkeypatch)
+    _shown(live, "First caption.")
+    _shown(live, "Second caption.")
+    live.history.append({"source": "song", "translation": "", "latency_s": 1.0, "lang": "ro"})   # not in the box
+    seq = live.caps.last_seq
+    assert live.correct("Fixed second.", based_on="Second caption.", based_on_seq=seq) is True
+    assert live.caps.text.endswith("Fixed second.") and live.caps.last_seq == seq   # the same caption
+    assert live.history[1]["translation"] == "Fixed second." and live.history[1]["corrected"]
+    assert live.correct("Fixed twice.", based_on_seq=seq) is True
+    assert live.correct("No numbers.") is True                       # older pages: as before
+
+
+def test_fix_last_route_takes_the_number(tmp_path, monkeypatch):
+    TestClient = pytest.importorskip("fastapi.testclient").TestClient
+    live = _live(tmp_path, monkeypatch)
+    _shown(live, "Only caption.")
+    c = TestClient(build_app(live), base_url="http://127.0.0.1:8765")
+    seq = live.caps.last_seq
+    r = c.post("/api/correct", json={"text": "Fixed.", "based_on_seq": "1"}, headers=ME)
+    assert r.status_code == 400
+    r = c.post("/api/correct", json={"text": "Fixed.", "based_on": "Only caption.", "based_on_seq": seq + 1}, headers=ME)
+    assert r.status_code == 409 and r.json()["error"] == "stale"
+    r = c.post("/api/correct", json={"text": "Fixed.", "based_on": "Only caption.", "based_on_seq": seq}, headers=ME)
+    assert r.status_code == 200 and live.caps.text == "Fixed."
+    js = (ROOT / "src" / "live" / "ui" / "screens" / "live.js").read_text()
+    assert "based_on_seq: last.seq" in js
+
+
+# --- P3: Fix last's text shows where the caption it replaces is ---------------------------------
+def test_replace_last_on_screen_shows_at_once():
+    import captions
+    now = [0.0]
+    c = captions.RollingCaptions(max_chars=14, max_lines=1, read_wps=1.0, min_read_s=1.0, max_lag_s=0,
+                                 clock=lambda: now[0])
+    c.add("one two three")
+    c.add("four five six seven eight")
+    now[0] = 10.0                                         # "one two three" read: its first line comes up
+    assert c.advance() and c.lines == ["four five six"] and c.queue == ["seven eight"]
+    assert c.replace_last("FIXED words") == "FIXED words"   # at once, not after a read
+    assert not c.queue and c.retract() == "one two three"
+
+
+def test_replace_last_waiting_stays_in_its_place():
+    import captions
+    now = [0.0]
+    c = captions.RollingCaptions(max_chars=20, max_lines=1, read_wps=1.0, min_read_s=1.0, max_lag_s=0,
+                                 clock=lambda: now[0])
+    c.add("one two three four five six seven eight nine ten")
+    c.add("eleven twelve")                                # all of it waits behind the lines before it
+    screen, waiting = c.text, " ".join(c.queue)
+    assert screen == "one two three four" and waiting.endswith("ten eleven twelve")
+    assert c.replace_last("ELEVEN") == screen             # the screen does not change
+    assert " ".join(c.queue) == waiting[:-len("eleven twelve")] + "ELEVEN"   # in its place, still waiting
+    assert c.last_seq == 2
+
+
+# --- P3: a profile switch that restarts the engine is not a new service -------------------------
+def test_profile_switch_restart_does_not_wipe_the_service(tmp_path, monkeypatch):
+    live = _live(tmp_path, monkeypatch)
+    monkeypatch.setattr(lifecycle.paths, "services_dir", lambda d, root: tmp_path / "services")
+    other = next(n for n in live.cfg["profiles"] if n != live.profile)
+    key = live.RESTART_KEYS[0]
+    live.cfg["profiles"][other] = {**(live.cfg["profiles"][other] or {}), key: "another-model"}
+    live.running, live.engine = True, types.SimpleNamespace(poll=lambda: None)
+    calls = []
+    live.stop = lambda: calls.append("stop")
+    live.start = lambda device=None, fresh=True: calls.append(("start", fresh))
+    live._swap_profile = lambda name, new: {}
+    live.set_profile(other)
+    assert calls == ["stop", ("start", False)]
+    _shown(live, "Mid-service caption.")
+    live.pp.shown.clear()
+    live._ai_tr = ai_tr = types.SimpleNamespace(reset_context=lambda: pytest.fail("context kept"))
+    live._new_run(fresh=False)
+    assert live.caps.text == "Mid-service caption." and live.history and live.pp.shown == []
+    assert live._ai_tr is ai_tr
+    assert not live._screen_due
+
+
+# --- P3: Start with Hold on keeps the held screen; Clear during a song keeps ♪ ------------------
+def test_new_run_with_hold_on_clears_the_box_but_not_the_held_screen(tmp_path, monkeypatch):
+    live = _live(tmp_path, monkeypatch)
+    _shown(live, "Held caption.")
+    live.hold(True)
+    live.pp.shown.clear()
+    live._new_run_screen()
+    live._send_wanted_screen()
+    assert live.caps.text == "" and live.pp.shown == [] and live.pp._want == "Held caption."
+
+
+def test_clear_during_a_song_keeps_the_song_symbol(tmp_path, monkeypatch):
+    live = _live(tmp_path, monkeypatch)
+    live.song(True)
+    live.pp.shown.clear()
+    live.blank()
+    assert live.pp.shown == ["♪"]
+    live.song(False)
+    live.blank()
+    assert live.pp.shown[-1] == ""
+
+
+# --- P3: the event-failure count is per service -------------------------------------------------
+def test_event_errors_reset_for_a_new_service(tmp_path, monkeypatch):
+    live = _live(tmp_path, monkeypatch)
+    monkeypatch.setattr(lifecycle.paths, "services_dir", lambda d, root: tmp_path / "services")
+    live._event_errors = lifecycle.EVENT_ERRORS_LOGGED + 5
+    live._new_run()
+    assert live._event_errors == 0
+
+
+# --- P3: the Clear button is not inside the tablist ---------------------------------------------
+def test_clear_button_sits_outside_the_tablist():
+    js = (ROOT / "src" / "live" / "ui" / "screens" / "live.js").read_text()
+    i = js.index('role="tablist"')
+    tablist = js[i:js.index("</div>", i)]
+    assert 'role="tab"' in tablist and "data-clear" not in tablist and "tabhint" not in tablist
+    assert "data-clear" in js
