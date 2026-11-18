@@ -116,7 +116,7 @@ Both apps update themselves with **Sparkle 2.10.1** (pinned in `macos/Package.sw
 - **Key.** Every update is EdDSA-signed. The private key is in the release Mac's login
   keychain under the account `live-ro2en` (created with Sparkle's `generate_keys --account
   live-ro2en`); its public half is `SUPublicEDKey` in both `Info.plist`s. **Back it up**
-  (`build/cache/sparkle-2.10.1/bin/generate_keys --account live-ro2en -x <file>`, kept
+  (`macos/.build/artifacts/sparkle/Sparkle/bin/generate_keys --account live-ro2en -x <file>`, kept
   offline): without it no installed copy can ever be updated again.
 - **Copies before 0.1.4** have no updater: install 0.1.4 by hand once; later versions arrive
   on their own.
@@ -150,10 +150,13 @@ xcrun stapler staple "remote/build/Live Remote.dmg"
 cp "remote/build/Live Remote.dmg" build/dist/LiveRemote-<version>.dmg
 ```
 
-`make_appcast.sh` also checks the Sparkle tools it uses (`sign_update` reads the private key):
-the `Sparkle-2.10.1.tar.xz` it downloads into `build/cache` must match `SPARKLE_SHA256_PIN` in
-the script, every run, cached or not. Set that pin (from the Sparkle release, or a download you
-verified) when you change `SPARKLE_VER`; with no pin the script stops.
+`make_appcast.sh` signs with Sparkle's `sign_update` (it reads the private key) from
+`macos/.build/artifacts/sparkle/Sparkle/bin/`: the copy SwiftPM fetched for the app build, pinned
+exactly in `macos/Package.swift` (2.10.1) and checked by SwiftPM against the checksum in
+Sparkle's own manifest. It downloads nothing. If that folder is missing, run
+`swift package resolve` (or `swift build`) in `macos/` first; the script stops with that hint.
+To change the Sparkle version, change the pin in `macos/Package.swift` (the app and the tools
+move together).
 
 Attach **both DMGs and both appcasts** to the GitHub release `v<version>` and publish it (not
 as a pre-release). The appcast's download URL is

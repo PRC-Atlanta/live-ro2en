@@ -76,28 +76,102 @@ def _appcast_copy(tmp_path):
     return root
 
 
-def test_make_appcast_needs_a_sparkle_pin(tmp_path):
+def _fake_sparkle(root):
+    """A stand-in sign_update where SwiftPM puts Sparkle's tools (macos/.build/artifacts)."""
+    bin_dir = root / "macos/.build/artifacts/sparkle/Sparkle/bin"
+    bin_dir.mkdir(parents=True)
+    tool = bin_dir / "sign_update"
+    tool.write_text('#!/bin/sh\necho \'sparkle:edSignature="x" length="1"\'\n')
+    tool.chmod(0o755)
+    return tool
+
+
+def _fake_info_plist(root, version="9.9.9", build="99"):
+    (root / "macos").mkdir(exist_ok=True)
+    (root / "macos/Info.plist").write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleShortVersionString</key><string>{version}</string>
+<key>CFBundleVersion</key><string>{build}</string>
+<key>LSMinimumSystemVersion</key><string>14.0</string>
+</dict></plist>
+""")
+
+
+def test_make_appcast_uses_the_swiftpm_sparkle_and_says_how_to_get_it(tmp_path):
     root = _appcast_copy(tmp_path)
-    script = root / "packaging/make_appcast.sh"
-    text = script.read_text()
-    # whatever the pin is now, an empty one must stop the script before any download
-    import re
-    script.write_text(re.sub(r'^SPARKLE_SHA256_PIN=".*"$', 'SPARKLE_SHA256_PIN=""', text, flags=re.M))
-    env = {k: v for k, v in os.environ.items() if k != "SPARKLE_SHA256"}
-    r = subprocess.run(["bash", str(script), str(tmp_path / "dist")], capture_output=True, text=True, env=env)
+    text = (root / "packaging/make_appcast.sh").read_text()
+    assert "macos/.build/artifacts/sparkle/Sparkle/bin" in text
+    assert "curl" not in text and "SPARKLE_SHA256" not in text     # no tarball download any more
+    r = subprocess.run(["bash", str(root / "packaging/make_appcast.sh"), str(tmp_path / "dist")],
+                       capture_output=True, text=True)
     assert r.returncode != 0
-    assert "no sha256 pinned" in r.stderr
+    assert "no Sparkle sign_update" in r.stderr and "swift package resolve" in r.stderr
     assert not (root / "build").exists()          # nothing downloaded or created
 
 
-def test_make_appcast_rejects_a_cached_tarball_that_does_not_match(tmp_path):
+def test_make_appcast_finds_the_swiftpm_sign_update(tmp_path):
     root = _appcast_copy(tmp_path)
-    cache = root / "build/cache"
-    cache.mkdir(parents=True)
-    tarball = cache / "Sparkle-2.10.1.tar.xz"
-    tarball.write_bytes(b"not sparkle")
-    r = subprocess.run(["bash", str(root / "packaging/make_appcast.sh"), str(tmp_path / "dist")],
-                       capture_output=True, text=True, env={**os.environ, "SPARKLE_SHA256": "0" * 64})
+    _fake_sparkle(root)
+    _fake_info_plist(root)
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    r = subprocess.run(["bash", str(root / "packaging/make_appcast.sh"), str(dist)],
+                       capture_output=True, text=True, env={**os.environ, "APPCAST_ONLY": "ro2en"})
+    # past the tools check, stopped at the missing DMG
     assert r.returncode != 0
-    assert "does not match its sha256 pin" in r.stderr
-    assert not (cache / "sparkle-2.10.1").exists()   # never unpacked
+    assert "no Sparkle sign_update" not in r.stderr
+    assert "LiveRO2EN-9.9.9.dmg" in r.stdout + r.stderr
+
+
+@pytest.mark.skipif(shutil.which("hdiutil") is None, reason="needs macOS hdiutil")
+def test_make_appcast_detaches_and_removes_the_mount_when_the_dmg_has_no_app(tmp_path):
+    root = _appcast_copy(tmp_path)
+    _fake_sparkle(root)
+    _fake_info_plist(root)
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "readme.txt").write_text("no app here\n")
+    subprocess.run(["hdiutil", "create", "-quiet", "-volname", "T", "-srcfolder", str(src),
+                    "-format", "UDZO", str(dist / "LiveRO2EN-9.9.9.dmg")], check=True)
+    tmpdir = tmp_path / "tmp"
+    tmpdir.mkdir()
+    r = subprocess.run(["bash", str(root / "packaging/make_appcast.sh"), str(dist)],
+                       capture_output=True, text=True,
+                       env={**os.environ, "APPCAST_ONLY": "ro2en", "TMPDIR": str(tmpdir),
+                            "APPCAST_URL_PREFIX": "http://127.0.0.1:8799/"})
+    assert r.returncode != 0
+    assert "no .app inside" in r.stderr
+    assert list(tmpdir.iterdir()) == []          # the mount point was detached and removed
+    mounts = subprocess.run(["mount"], capture_output=True, text=True).stdout
+    assert str(tmpdir) not in mounts and str(tmpdir.resolve()) not in mounts
+
+
+def test_make_appcast_cleans_the_mount_on_every_exit():
+    text = (REPO / "packaging/make_appcast.sh").read_text()
+    assert "trap unmount EXIT" in text
+    assert "detach -quiet -force" in text        # a busy volume is forced off
+    assert 'die "could not mount' in text
+
+
+# --- Swift shell (no Swift test target: pin the source) --------------------------------------
+SWIFT = REPO / "macos/Sources/LiveRO2EN"
+
+
+def test_resumed_launch_keeps_resuming_until_it_goes_live():
+    src = (SWIFT / "ProcessSupervisor.swift").read_text()
+    assert "resumePending = resume" in src                     # set by a resumed launch
+    assert src.count("self.noteState(obj)") == 2               # readiness and every poll use it
+    note = src[src.index("private func noteState"):src.index("private func getJSON")]
+    # while the models load, a second crash resumes again; error/needs setup/Stop end it
+    assert '"loading"' in note and "wasLive = true; return" in note
+    assert "resumePending = false" in note
+
+
+def test_display_crash_reloads_go_through_the_backoff():
+    src = (SWIFT / "DisplayWindow.swift").read_text()
+    body = src[src.index("func webViewWebContentProcessDidTerminate"):src.index("func webView(_ webView")]
+    assert "retryLater(after:" in body and "load(url)" not in body
+    assert "crashesBeforeSlowing" in body and "slowRetry" in body

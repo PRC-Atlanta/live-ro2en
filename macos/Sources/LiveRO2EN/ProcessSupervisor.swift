@@ -39,6 +39,11 @@ final class ProcessSupervisor {
     private var restarts: [Date] = []
     /// The captions were live at the last /api/state answer: a crash or hang restart resumes them.
     private var wasLive = false
+    /// This child was launched to resume the captions and has not reported live yet. While the
+    /// models load (minutes) its state is not live, but a second crash then must resume again,
+    /// not restart idle: wasLive stays true until a state is live once, or shows that the
+    /// captions will not come back on their own (error, needs setup, the operator's Stop).
+    private var resumePending = false
     private var pollTimer: Timer?
     private var launchStarted = Date()
     private let session: URLSession = {
@@ -63,6 +68,7 @@ final class ProcessSupervisor {
     func start() {
         stopping = false
         wasLive = false                        // a normal launch (or Try again) starts idle
+        resumePending = false
         ShellLog.rotate()
         do {
             config = try LaunchConfig.resolve()
@@ -111,6 +117,7 @@ final class ProcessSupervisor {
 
         let argv = config.arguments(port: port, resume: resume)
         if resume { ShellLog.write("captions were live: the new orchestrator resumes them") }
+        resumePending = resume
         do {
             appendLog("\n=== \(Date()) shell starting: \(argv.joined(separator: " "))\n")
             pid = try Spawn.spawn(argv, env: config.environment, cwd: config.workingDirectory.path,
@@ -230,7 +237,7 @@ final class ProcessSupervisor {
                 ShellLog.write("orchestrator ready on port \(self.port) after "
                     + String(format: "%.1f", Date().timeIntervalSince(self.launchStarted)) + " s")
                 self.status = .ready(port: self.port)
-                self.wasLive = LiveActivity.isLive(obj)
+                self.noteState(obj)
                 self.onState?(obj)
                 self.startStatePolling(gen)
             } else {
@@ -252,7 +259,7 @@ final class ProcessSupervisor {
             lastTick = Date()
             self.getJSON("/api/state") { obj, _ in
                 guard gen == self.generation else { return }
-                if let obj { lastGood = Date(); self.wasLive = LiveActivity.isLive(obj); self.onState?(obj); return }
+                if let obj { lastGood = Date(); self.noteState(obj); self.onState?(obj); return }
                 guard !ending, Date().timeIntervalSince(lastGood) > Self.hangTimeout, self.pid != 0 else { return }
                 // alive but not answering (a deadlock, a stuck event loop): restart it like a crash
                 ending = true
@@ -261,6 +268,23 @@ final class ProcessSupervisor {
                 self.terminateGroup(self.pid)
             }
         }
+    }
+
+    /// Remember whether the captions are live, for a crash or hang restart (wasLive).
+    private func noteState(_ obj: [String: Any]) {
+        let live = LiveActivity.isLive(obj)
+        if resumePending {
+            // "loading"/"unloading" (or no phase yet): the resumed Start is still on its way
+            // (the orchestrator reports "starting" while its autostart is pending). Anything
+            // else that is not live (error, needs_setup, stopping, stopped, ready) means it will
+            // not go live by itself: an error or the operator's Stop. Then it is a normal idle.
+            let phase = obj["phase"] as? String
+            let waiting = !live && (phase == nil || phase == "loading" || phase == "unloading")
+            if waiting { wasLive = true; return }
+            resumePending = false
+            if !live { ShellLog.write("resumed captions did not go live (\(phase ?? "?")): a restart now stays idle") }
+        }
+        wasLive = live
     }
 
     private func getJSON(_ path: String, _ done: @escaping ([String: Any]?, Int) -> Void) {

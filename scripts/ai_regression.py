@@ -38,23 +38,57 @@ def _paid_calls(path: pathlib.Path) -> int:
         return 0
 
 
-def replay(cmd: list[str], env: dict, usage: pathlib.Path, max_calls: int) -> tuple[int, int]:
+TERM_GRACE_S = 30.0   # after SIGTERM, how long the bench and the app it started get to end
+
+
+def _group_alive(pgid: int) -> bool:
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:                        # still there (a member we may not signal)
+        return True
+    return True
+
+
+def _stop_group(p: subprocess.Popen, grace: float = TERM_GRACE_S) -> None:
+    """SIGTERM the replay's process group; SIGKILL whatever of it is still there after `grace` s.
+    The bench exiting is not enough: the app it started (and its engine) are in the same group and
+    may still be running, holding the models in memory."""
+    pgid = p.pid
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    end = time.monotonic() + grace
+    try:
+        p.wait(max(0.0, end - time.monotonic()))
+    except subprocess.TimeoutExpired:
+        pass
+    while _group_alive(pgid) and time.monotonic() < end:
+        time.sleep(0.1)
+    if _group_alive(pgid):
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    p.wait()
+
+
+def replay(cmd: list[str], env: dict, usage: pathlib.Path, max_calls: int,
+           grace: float = TERM_GRACE_S) -> tuple[int, int, bool]:
     """Run one bench replay; stop it (the bench and the app it started, as a group) once it has paid
-    for more than max_calls API calls (0 = no cap). (return code, calls paid in this replay)."""
+    for more than max_calls API calls (0 = no cap). (return code, calls paid in this replay, capped:
+    whether it was stopped for the cap; the return code alone cannot say, -1 is also a signal)."""
     before = _paid_calls(usage)                    # a re-run of the same name appends to the same file
     p = subprocess.Popen(cmd, cwd=str(ROOT), env=env, start_new_session=True)
     while p.poll() is None:
         n = _paid_calls(usage) - before
         if max_calls and n > max_calls:
-            os.killpg(p.pid, signal.SIGTERM)
-            try:
-                p.wait(30)
-            except subprocess.TimeoutExpired:
-                os.killpg(p.pid, signal.SIGKILL)
-                p.wait()
-            return -1, n
+            _stop_group(p, grace)
+            return p.returncode, n, True
         time.sleep(1.0)
-    return p.returncode, _paid_calls(usage) - before
+    return p.returncode, _paid_calls(usage) - before, False
 
 
 def main() -> int:
@@ -88,8 +122,8 @@ def main() -> int:
                 if v:
                     cmd += [flag, v]
             env = {**os.environ, "LIVE_AI_CACHE": str(ROOT / "logs" / "bench" / "ai_cache.jsonl")}
-            rc, paid = replay(cmd, env, bench.BENCH / "runs" / name / "claude_usage.jsonl", a.max_calls)
-            if rc == -1:
+            rc, paid, capped = replay(cmd, env, bench.BENCH / "runs" / name / "claude_usage.jsonl", a.max_calls)
+            if capped:
                 print(f"ai_regression: the {mode} replay was stopped after {paid} paid API calls "
                       f"(--max-calls {a.max_calls}); nothing scored", file=sys.stderr)
                 return 4

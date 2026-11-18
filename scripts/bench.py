@@ -255,8 +255,9 @@ def run(args) -> pathlib.Path:
 
 
 # what a run's result depends on, for the "+dirty" mark: the code, its config and the data files
-# at the checkout's root that the app reads (the glossary, keyword and term lists, the defaults)
-PROVENANCE = ("src", "config.yaml", "defaults.yaml", "glossary.csv", "keywords_en.txt",
+# at the checkout's root that the app reads (the glossary, keyword and term lists, the defaults),
+# and data/ (idioms, lexicon, Bible books, the MT data the translation uses)
+PROVENANCE = ("src", "data", "config.yaml", "defaults.yaml", "glossary.csv", "keywords_en.txt",
               "blocklist.txt", "terms.txt")
 
 

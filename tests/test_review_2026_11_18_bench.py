@@ -86,7 +86,7 @@ def test_every_wall_clock_wait_follows_the_replay_speed():
 
 
 def test_dirty_mark_covers_the_data_files_the_app_reads():
-    assert {"src", "config.yaml", "defaults.yaml", "glossary.csv", "keywords_en.txt", "blocklist.txt",
+    assert {"src", "data", "config.yaml", "defaults.yaml", "glossary.csv", "keywords_en.txt", "blocklist.txt",
             "terms.txt"} <= set(bench.PROVENANCE)
 
 
@@ -152,11 +152,11 @@ def test_ai_regression_stops_a_replay_past_its_call_cap(tmp_path):
     writer = ("import sys, time\n"
               "for i in range(200):\n"
               "    open(sys.argv[1], 'a').write('{}\\n'); time.sleep(0.02)\n")
-    rc, paid = air.replay([sys.executable, "-c", writer, str(usage)], {}, usage, max_calls=10)
-    assert rc == -1 and 10 < paid < 200
+    rc, paid, capped = air.replay([sys.executable, "-c", writer, str(usage)], {}, usage, max_calls=10)
+    assert capped and rc != 0 and 10 < paid < 200
     usage.write_text("")
-    rc, paid = air.replay([sys.executable, "-c", "pass"], {}, usage, max_calls=10)
-    assert rc == 0 and paid == 0
+    rc, paid, capped = air.replay([sys.executable, "-c", "pass"], {}, usage, max_calls=10)
+    assert rc == 0 and paid == 0 and not capped
 
 
 def test_ai_regression_counts_dropped_as_wrong_and_fixed_maybe_as_neither(tmp_path, monkeypatch, capsys):
@@ -180,3 +180,63 @@ def test_ai_regression_counts_dropped_as_wrong_and_fixed_maybe_as_neither(tmp_pa
     out = capsys.readouterr().out
     assert "right with Local, wrong with AI: e1\n" in out       # e2 was only "fixed?" with Local
     assert "wrong with Local, right with AI: e3" in out and "fixed? 1" in out
+
+
+def _replay_with_stubborn_child(tmp_path, child_secs, grace):
+    """A capped replay whose bench has a child (the app) that ignores SIGTERM for child_secs."""
+    air = _load("ai_regression")
+    usage, pidf = tmp_path / "claude_usage.jsonl", tmp_path / "child.pid"
+    usage.write_text("")
+    child = f"import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep({child_secs})"
+    bench_like = ("import subprocess, sys, time\n"
+                  f"c = subprocess.Popen([sys.executable, '-c', {child!r}])\n"
+                  "open(sys.argv[2], 'w').write(str(c.pid))\n"
+                  "time.sleep(0.3)\n"
+                  "for i in range(200):\n"
+                  "    open(sys.argv[1], 'a').write('{}\\n'); time.sleep(0.02)\n")
+    import time as _t
+    t0 = _t.monotonic()
+    rc, paid, capped = air.replay([sys.executable, "-c", bench_like, str(usage), str(pidf)], {}, usage,
+                                  max_calls=5, grace=grace)
+    return capped, int(pidf.read_text()), _t.monotonic() - t0
+
+
+def _gone(pid, wait=2.0):
+    import os
+    import time as _t
+    end = _t.monotonic() + wait
+    while _t.monotonic() < end:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        _t.sleep(0.05)
+    return False
+
+
+def test_ai_regression_waits_for_the_whole_group_after_the_cap(tmp_path):
+    # the child ignores SIGTERM for 2 s, then ends on its own: replay returns only after that
+    capped, child, took = _replay_with_stubborn_child(tmp_path, child_secs=2, grace=10)
+    assert capped and _gone(child, wait=0.5)
+    assert took < 10                                   # it did not sit out the whole grace
+
+
+def test_ai_regression_kills_the_group_when_it_outlives_the_grace(tmp_path):
+    capped, child, took = _replay_with_stubborn_child(tmp_path, child_secs=60, grace=1)
+    assert capped and _gone(child)
+    assert took < 20
+
+
+# --- ref WER compares key tokens --------------------------------------------------------------
+def test_ref_wer_counts_digits_and_spelled_numbers_as_the_same_word(tmp_path, monkeypatch):
+    # «12» in the Romanian transcript against «doisprezece» in the corrected text is not an error
+    log = tmp_path / "run" / "logs" / "x.jsonl"
+    log.parent.mkdir(parents=True)
+    lines = [{"t": None, "ro": "Au fost doisprezece apostoli.", "en": ""}]
+    ph = [{"id": 1, "outcome": "ok", "t_start": 1.0, "t_end": 3.0, "source": "Au fost 12 apostoli."}]
+    monkeypatch.setattr(bench, "ref_phrases", lambda arg: (log, {"git": "x"}, "s", lines, ph, 0.0))
+    out = bench.ref_score("run", quiet=True)
+    assert out["ro_wer_all"]["wer"] == 0 and out["ro_wer_shown"]["wer"] == 0
+    # a real word difference still counts
+    ph[0]["source"] = "Au fost 11 apostoli."
+    assert bench.ref_score("run", quiet=True)["ro_wer_all"]["sub"] == 1

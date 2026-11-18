@@ -17,43 +17,36 @@
 #                        (default https://github.com/PRC-Atlanta/live-ro2en/releases/download/v<version>/)
 #   SPARKLE_ACCOUNT      keychain account of the key (default live-ro2en)
 #   APPCAST_ONLY         "ro2en" or "remote": write only that one
-#   SPARKLE_SHA256       sha256 of Sparkle-$SPARKLE_VER.tar.xz (default: the pin below)
+#
+# sign_update (which reads the private key) is the Sparkle copy SwiftPM fetched for the app
+# build, in macos/.build/artifacts: run `swift package resolve` in macos/ first.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(dirname "$HERE")"
 DIST="${1:-$REPO/build/dist}"
-SPARKLE_VER=2.10.1
-# sha256 of the official Sparkle-$SPARKLE_VER.tar.xz (the GitHub release asset). sign_update
-# reads the private signing key, so the tarball it comes from must be the real one.
-# TODO(release): fill in from the Sparkle release page (or a verified download) and keep it
-# with SPARKLE_VER; the script refuses to run while it is empty.
-SPARKLE_SHA256_PIN=""
-SPARKLE_SHA256="${SPARKLE_SHA256:-$SPARKLE_SHA256_PIN}"
-CACHE="$REPO/build/cache"
-TARBALL="$CACHE/Sparkle-$SPARKLE_VER.tar.xz"
-TOOLS="$CACHE/sparkle-$SPARKLE_VER/bin"
+# sign_update reads the private signing key, so it must be the real Sparkle tool. Use the copy
+# SwiftPM fetched for the app build: macos/Package.swift pins Sparkle exactly (2.10.1) and
+# SwiftPM checks the binary artifact against the checksum in Sparkle's own manifest before it
+# unpacks it. Nothing is downloaded here.
+TOOLS="$REPO/macos/.build/artifacts/sparkle/Sparkle/bin"
 ACCOUNT="${SPARKLE_ACCOUNT:-live-ro2en}"
 die() { printf '\nmake_appcast: %s\n\n' "$*" >&2; exit 1; }
 
-[ -n "$SPARKLE_SHA256" ] || die "no sha256 pinned for Sparkle-$SPARKLE_VER.tar.xz.
-Set SPARKLE_SHA256_PIN in packaging/make_appcast.sh (or SPARKLE_SHA256 in the environment) to the
-official tarball's sha256 before signing an appcast: sign_update handles the private key."
-sha_ok() { [ "$(shasum -a 256 "$1" | awk '{print $1}')" = "$SPARKLE_SHA256" ]; }
+[ -x "$TOOLS/sign_update" ] || die "no Sparkle sign_update at $TOOLS.
+Run \`swift package resolve\` (or \`swift build\`) in macos/ first: SwiftPM fetches the pinned,
+checksum-verified Sparkle there."
 
-# Checked every run, cached or not; the tools are unpacked again from the checked tarball.
-mkdir -p "$CACHE"
-if [ ! -f "$TARBALL" ]; then
-  echo "== Sparkle $SPARKLE_VER tools (sign_update) -> build/cache"
-  curl -fsSL -o "$TARBALL.partial" \
-    "https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_VER/Sparkle-$SPARKLE_VER.tar.xz"
-  sha_ok "$TARBALL.partial" || { rm -f "$TARBALL.partial"; die "the downloaded Sparkle-$SPARKLE_VER.tar.xz does not match its sha256 pin (deleted)"; }
-  mv "$TARBALL.partial" "$TARBALL"
-fi
-sha_ok "$TARBALL" || die "$TARBALL does not match its sha256 pin: delete it and run again"
-rm -rf "$CACHE/sparkle-$SPARKLE_VER"
-mkdir -p "$CACHE/sparkle-$SPARKLE_VER"
-tar -xJf "$TARBALL" -C "$CACHE/sparkle-$SPARKLE_VER"
-[ -x "$TOOLS/sign_update" ] || die "no bin/sign_update in Sparkle-$SPARKLE_VER.tar.xz"
+# The DMG being checked is mounted here; detached and removed on every exit, failures included.
+MNT=""
+MOUNTED=0
+unmount() {
+  if [ "$MOUNTED" = 1 ]; then
+    hdiutil detach -quiet "$MNT" 2>/dev/null || hdiutil detach -quiet -force "$MNT" 2>/dev/null || true
+    MOUNTED=0
+  fi
+  if [ -n "$MNT" ]; then rmdir "$MNT" 2>/dev/null || true; MNT=""; fi
+}
+trap unmount EXIT
 
 # a test feed served from this Mac may use an ad hoc DMG; a published one never
 case "${APPCAST_URL_PREFIX:-}" in
@@ -86,15 +79,17 @@ appcast() {
   dmg="$DIST/$prefix-$ver.dmg"
   [ -f "$dmg" ] || { echo "make_appcast: no $dmg"; exit 1; }
   # the app inside must be the version the appcast announces
-  local mnt; mnt=$(mktemp -d)
-  hdiutil attach -quiet -nobrowse -readonly -mountpoint "$mnt" "$dmg"
-  local inside; inside=$(find "$mnt" -maxdepth 1 -name '*.app' | head -1)
-  local ib; ib=$(plist "$inside/Contents/Info.plist" CFBundleVersion)
+  MNT=$(mktemp -d)
+  hdiutil attach -quiet -nobrowse -readonly -mountpoint "$MNT" "$dmg" ||
+    die "could not mount $dmg"
+  MOUNTED=1
+  local inside; inside=$(find "$MNT" -maxdepth 1 -name '*.app' | head -1)
+  [ -n "$inside" ] || die "no .app inside $dmg"
+  local ib; ib=$(plist "$inside/Contents/Info.plist" CFBundleVersion) ||
+    die "cannot read CFBundleVersion of $(basename "$inside") in $dmg"
   local feed; feed=$(plist "$inside/Contents/Info.plist" SUFeedURL 2>/dev/null || true)
-  local checked=0
-  ( require_notarized "$dmg" "$inside" ) && checked=1     # subshell: detach even when it fails
-  hdiutil detach -quiet "$mnt"; rmdir "$mnt"
-  [ "$checked" = 1 ] || exit 1                            # the reason is printed above
+  require_notarized "$dmg" "$inside"       # dies with the reason; the EXIT trap detaches
+  unmount
   [ "$ib" = "$build" ] || { echo "make_appcast: $dmg holds build $ib, $pl says $build"; exit 1; }
   [ -n "$feed" ] || { echo "make_appcast: the app in $dmg has no SUFeedURL"; exit 1; }
   url="${APPCAST_URL_PREFIX:-https://github.com/PRC-Atlanta/live-ro2en/releases/download/v$ver/}$(basename "$dmg")"

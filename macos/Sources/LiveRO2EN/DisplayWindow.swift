@@ -13,6 +13,12 @@ final class DisplayWindowController: NSObject, NSWindowDelegate, WKNavigationDel
     /// web content crash, so retarget and the retries use this instead.
     private var target: URL?
     private var retry: DispatchWorkItem?
+    /// Recent web content crashes: a page that crashes the process as soon as it loads must not
+    /// become a tight reload loop.
+    private var crashes: [Date] = []
+    static let crashWindow: TimeInterval = 60
+    static let crashesBeforeSlowing = 3
+    static let slowRetry: TimeInterval = 30
 
     /// Open (or bring forward) the display at `url` (http://127.0.0.1:<port>/ui/display.html).
     func show(_ url: URL) {
@@ -67,24 +73,29 @@ final class DisplayWindowController: NSObject, NSWindowDelegate, WKNavigationDel
         webView?.load(URLRequest(url: url))
     }
 
-    /// Load the intended page again in 1 s (unless something else loads first).
-    private func retryLater() {
+    /// Load the intended page again in `delay` s (unless something else loads first).
+    private func retryLater(after delay: TimeInterval = 1) {
         retry?.cancel()
         let item = DispatchWorkItem { [weak self] in
             guard let self, let url = self.target else { return }
             self.load(url)
         }
         retry = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: item)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
     }
 
     // MARK: WKNavigationDelegate
 
     /// The web content process crashed (or was killed for memory): the view is blank now.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        ShellLog.write("captions display: web content process ended; reloading")
-        guard let url = target else { return }
-        load(url)
+        guard target != nil else { return }
+        let now = Date()
+        crashes = crashes.filter { now.timeIntervalSince($0) < Self.crashWindow } + [now]
+        // a crash or two: reload after the usual second; more than that in a minute: wait longer
+        let delay: TimeInterval = crashes.count > Self.crashesBeforeSlowing ? Self.slowRetry : 1
+        ShellLog.write("captions display: web content process ended (\(crashes.count) in a minute); "
+                       + "reloading in \(Int(delay)) s")
+        retryLater(after: delay)
     }
 
     /// The page could not be reached (e.g. the orchestrator is restarting): try again.

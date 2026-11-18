@@ -338,18 +338,58 @@ def _repo_writable_state() -> dict:
     return out
 
 
-def test_nothing_is_written_into_the_repo_when_live_home_is_set(home, tmp_path):
+# Big or busy folders the app never writes to with LIVE_HOME set (and too large to walk fast).
+_SCAN_PRUNE = {".git", "models", "build", "BibleAudio", "work", "node_modules"}
+
+
+def _repo_files_containing(marker: bytes, since: float) -> list[str]:
+    """Files under the checkout modified since `since` whose bytes contain `marker`."""
+    import os
+    hits = []
+    for dp, dns, fns in os.walk(ROOT):
+        here = pathlib.Path(dp)
+        dns[:] = [d for d in dns if d not in _SCAN_PRUNE and not d.startswith((".venv", "Audio"))
+                  and (here / d) != ROOT / "logs" / "bench"]
+        for f in fns:
+            p = here / f
+            try:
+                if p.is_symlink() or p.stat().st_mtime < since:
+                    continue
+                if marker in p.read_bytes():
+                    hits.append(str(p.relative_to(ROOT)))
+            except OSError:
+                continue
+    return hits
+
+
+def test_nothing_is_written_into_the_repo_when_live_home_is_set(home, tmp_path, monkeypatch):
+    import uuid
+    for var in ("LIVE_USER_DIR", "LIVE_LOG_DIR", "LIVE_CACHE_DIR"):
+        monkeypatch.delenv(var, raising=False)
+    # every path the app writes the user's things to resolves under LIVE_HOME
+    for fn in (paths.user_dir, paths.settings_file, paths.user_keywords, paths.user_glossary,
+               paths.log_dir, paths.cache_dir):
+        assert fn().resolve().is_relative_to(home.resolve()), fn.__name__
+    # a word nobody else writes, in letters only so every list accepts it
+    marker = "Zq" + "".join(chr(ord("a") + int(c, 16)) for c in uuid.uuid4().hex)
+    start = time.time() - 1                    # mtime granularity
     before = _repo_writable_state()
     live = make_live(home, running=True)
     live.engine = FakeEngine()
     c = client(live)
-    assert c.put("/api/settings", json={"values": {"live.hold_s": 2.0}}, headers=ME).status_code == 200
-    assert c.put("/api/keywords", json={"user": ["Corinth"]}, headers=ME).status_code == 200
-    assert c.put("/api/spellings", json={"user": {"Corint": "Corinth"}}, headers=ME).status_code == 200
-    assert c.post("/api/terms", json={"lines": ["Ionuț Pop"], "save": True}, headers=ME).status_code == 200
-    assert c.post("/api/import_config", json={"text": "propresenter: {port: 50009}\n"}, headers=ME).status_code == 200
+    assert c.put("/api/settings", json={"values": {"live.hold_s": 2.0}, "note": marker}, headers=ME).status_code == 200
+    assert c.put("/api/keywords", json={"user": ["Corinth", marker]}, headers=ME).status_code == 200
+    assert c.put("/api/spellings", json={"user": {"Corint": "Corinth", marker + "x": marker}},
+                 headers=ME).status_code == 200
+    assert c.post("/api/terms", json={"lines": ["Ionuț Pop", f"{marker} Pop"], "save": True},
+                  headers=ME).status_code == 200
+    assert c.post("/api/import_config", json={"text": f"# {marker}\npropresenter: {{port: 50009}}\n"},
+                  headers=ME).status_code == 200
     assert sorted(p.name for p in home.iterdir()) == ["glossary.csv", "keywords_en.txt", "settings.yaml"]
+    # the marker did reach the user's files (so the scan below would see a stray copy)
+    assert any(marker in p.read_text(encoding="utf-8") for p in home.iterdir())
     assert _repo_writable_state() == before
+    assert _repo_files_containing(marker.encode(), start) == []
 
 
 # --- review regressions -------------------------------------------------------------------
