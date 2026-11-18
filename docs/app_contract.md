@@ -130,6 +130,7 @@ listed here.
 | `mic_ask` | an audio fault while the microphone permission is still `undetermined`: macOS's question is open (S1) |
 | `recognition_behind` | engine `backlog ok: false` |
 | `captions_behind` | `behind_s` over `lag_warn_s` |
+| `translator_stuck` | one clause's translator call has run over 20 s (`pipeline.TR_STUCK_S`) while captions run: a hung local model call; ranked above `recognition_behind`/`captions_behind`. Action `restart_captions` = `POST /api/restart_captions` (a new process resumes the captions) |
 | `engine_stopped` | the engine exited without `eof` |
 | `english_unavailable` | engine `mode` event / multilingual `warn` |
 | `voice_stopped` | Live Voice is on and its process is not running: it died 3 times in 2 minutes, could not start, or its model is not downloaded (`voicelink.py`) |

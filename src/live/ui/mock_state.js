@@ -13,7 +13,7 @@ const PROBLEMS = {
   no_sound: "warn", device_lost: "error", mic_denied: "error", mic_ask: "error", recognition_behind: "warn",
   captions_behind: "warn", engine_stopped: "error", english_unavailable: "info",
   pp_unreachable: "error", pp_message_missing: "error", disk_full: "error", models_missing: "error",
-  voice_stopped: "warn", voice_behind: "info", voice_failing: "warn",
+  voice_stopped: "warn", voice_behind: "info", voice_failing: "warn", translator_stuck: "error",
 };
 
 export function baseState() {
@@ -134,7 +134,7 @@ const MOCK_FIELDS = {
   "live.song_detect": { group: "advanced", type: "bool", apply: "now" },
   "live.song_symbol": { group: "advanced", type: "enum", choices: ["♪", ""], apply: "now" },
   "live.sentence_pause_s": { group: "advanced", type: "num", min: 0, max: 3, apply: "now" },
-  "live.translate_sentences": { group: "advanced", type: "bool", apply: "now", default: false },
+  "live.translate_sentences": { group: "advanced", type: "bool", apply: "now", default: true },
   "live.caption_min_line_s": { group: "advanced", type: "num", min: 0, max: 8, apply: "now" },
   "live.caption_reveal": { group: "advanced", type: "bool", apply: "now" },
   "live.caption_reveal_wps": { group: "advanced", type: "num", min: 1, max: 8, apply: "now" },
@@ -160,7 +160,7 @@ const MOCK_DEFAULTS = {
   "propresenter.host": "127.0.0.1", "propresenter.port": 50001, "propresenter.message_id": "Live Translation",
   "propresenter.token_name": "Text", "propresenter.max_lines": 2, "propresenter.max_chars_per_line": 42,
   "propresenter.stage_message": false, "live.vad_threshold": 0.5,
-  "live.hold_min_words": 4, "live.hold_s": 1.2, "live.phrase_min_words": 6, "live.hold_dangling": true, "live.hold_slow_s": 6.5, "live.overlap_trim": true, "live.song_detect": false, "live.song_symbol": "♪", "live.sentence_pause_s": 1.0, "live.translate_sentences": false, "live.caption_min_line_s": 2.5, "live.caption_reveal": true, "live.caption_reveal_wps": 1.5, "live.caption_read_wps": 2.7, "live.caption_min_read_s": 1.2, "live.caption_max_lag_s": 20, "live.partial_every_s": 0, "live.lag_warn_s": 6.0, "live.gate_min_real": 0.6,
+  "live.hold_min_words": 4, "live.hold_s": 1.2, "live.phrase_min_words": 6, "live.hold_dangling": true, "live.hold_slow_s": 6.5, "live.overlap_trim": true, "live.song_detect": false, "live.song_symbol": "♪", "live.sentence_pause_s": 1.0, "live.translate_sentences": true, "live.caption_min_line_s": 2.5, "live.caption_reveal": true, "live.caption_reveal_wps": 1.5, "live.caption_read_wps": 2.7, "live.caption_min_read_s": 1.2, "live.caption_max_lag_s": 20, "live.partial_every_s": 0, "live.lag_warn_s": 6.0, "live.gate_min_real": 0.6,
   "propresenter.health_every_s": 5, "live.keep_both_translators": "auto", "live.engine_restarts": 2,
   "propresenter.enabled": true, "display.size": "large", "display.lines": 2, "display.colors": "white_on_black",
   "display.network": false, "display.show_hidden": false, "display.remote": false,
@@ -529,6 +529,9 @@ export async function mockApi(method, path, body = {}) {
     case "POST rehearsal":
       if (stateNow().running) return status(409, { error: "busy", detail: "Stop captioning before starting a rehearsal." });
       return live({ running: true, phase: "captioning", rehearsal: true });
+    case "POST restart_captions":
+      if (!stateNow().running) return status(409, { error: "not_running", detail: "Captions are not running." });
+      return status(200, { ok: true });
     case "POST diagnostics":
       return status(200, { ok: true, path: "/Users/church/Desktop/Live RO2EN diagnostics 2026-10-25 1102.zip" });
 
@@ -621,6 +624,8 @@ Object.assign(SCENARIOS, {
                         problem: { code: "voice_behind", severity: "info", action: { id: "help", label: "What this means" } } }),
   voice_failing: t => ({ ...SCENARIOS.live(t), voice: { ...voiceOf("behind", { ro: 5, en: 2 }), error: "sentences keep failing to generate: synth error" },
                          problem: { code: "voice_failing", severity: "warn", action: { id: "help", label: "What this means" } } }),
+  translator_stuck: t => ({ ...SCENARIOS.live(t), latency_last: 24.0, pace: { state: "behind", behind_s: 24.0 },
+                            problem: { code: "translator_stuck", severity: "error", action: { id: "restart_captions", label: "Restart captions" } } }),
   voice_stopped: t => ({ ...SCENARIOS.live(t), voice: { ...voiceOf("stopped", { ro: 0, en: 0 }), error: "the voice stopped (exit 9) and was not restarted again" },
                          problem: { code: "voice_stopped", severity: "warn", action: { id: "settings", label: "Open Settings" } } }),
   ai_on: t => ({ ...SCENARIOS.live(t), ai: aiOf("ai", "ai"), voice: voiceOf("speaking", { ro: 14, en: 3 }) }),

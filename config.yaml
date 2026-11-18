@@ -60,7 +60,7 @@ live:
   song_detect: false          # hold captions by themselves while a song is sung (loud, steady, slow, repeated lines)
   song_symbol: "♪"            # what the big screen shows during a song ("" = nothing)
   sentence_pause_s: 1.0       # a chunk's final period is shown only if the next one starts after this long a pause
-  translate_sentences: false  # translate whole sentences, not the pieces between pauses (sentences.py; Romanian only)
+  translate_sentences: true   # translate whole sentences, not the pieces between pauses (sentences.py; Romanian only)
   sentence_cap_s: 12.0        # ...a longer sentence is cut at a comma + conjunction, a pause or a comma
   sentence_gap_s: 2.5         # ...a pause this long ends the sentence whatever its last word
   sentence_quiet_s: 1.0       # ...a sentence ending in . ! ? goes after this much silence (else at the next piece)

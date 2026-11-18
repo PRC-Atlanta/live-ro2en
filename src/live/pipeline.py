@@ -23,7 +23,7 @@ import sentences
 import song
 import translate
 from captions import tidy_clause
-from langid import score as lang_score
+from langid import looks_romanian, score as lang_score
 from segmenter import DANGLING, NEGATION_END, split_clauses
 from speech import GOD_CAP_RO
 from textnorm import apply_spellings, fold_diacritics, tokens
@@ -398,6 +398,8 @@ def mask(text: str, pat: re.Pattern | None, sub: str = "***") -> tuple[str, int]
 
 
 DRAIN_TIMEOUT_S = 30.0                   # Start/Stop/eof give up after this long with no clause finished
+TR_STUCK_S = 20.0                        # one clause's model work running this long: the translator hung
+                                         # (translator_stuck; a slow Gemma call is a few seconds)
 _WORKER = threading.local()              # .gen: the queue generation the worker thread on it serves
 KEEPALIVE_TICK_S = 15.0                  # how often idle translators are checked
 OVERLAP_GAP_S = 2.0
@@ -416,6 +418,8 @@ class PipelineMixin:
         self._keepalive: threading.Thread | None = None
         self._recent_out: collections.deque = collections.deque(maxlen=2)   # (source key, output key)
         self._current: dict | None = None      # the clause the worker is on (backlog)
+        self._tr_t0: float | None = None       # monotonic: when the model work for that clause began (_handle)
+        self._tr_stuck_logged: float | None = None   # the _tr_t0 already reported in app_errors.log
         self._work_gen = 0                     # bumped when _drain retires a stuck worker and its queue
         self._block: tuple = (None, None)      # (words, compiled pattern)
         self._pending_cap = 0.0                # the span a held phrase may grow to (_on_clause)
@@ -433,6 +437,25 @@ class PipelineMixin:
         evs = ([cur] if cur else []) + waiting
         ends = [e["t_end"] for e in evs if isinstance(e, dict) and isinstance(e.get("t_end"), (int, float))]
         return {"n": len(evs), "oldest_s": round(max(0.0, time.time() - min(ends)), 1) if ends else None}
+
+    def translator_stuck(self) -> bool:
+        """The clause in the translator has run past TR_STUCK_S while captions run: a local model call
+        (MLX or CTranslate2) that never returns. It holds _proc_lock, so nothing in-process can help
+        (Switch to Quickest waits for that lock too); only a new process can (POST /api/restart_captions).
+        AI mode is covered by the same clock: its network part is bounded by ai.phrase_s (a few s),
+        so only its local fallback can hang this long. Logged once per call."""
+        t0 = self._tr_t0
+        if t0 is None or not self.running:
+            return False
+        ran = time.monotonic() - t0
+        if ran < TR_STUCK_S:
+            return False
+        if self._tr_stuck_logged != t0:
+            self._tr_stuck_logged = t0
+            cur = self._current
+            self._app_error(f"translator_stuck: one call has run {ran:.0f} s (limit {TR_STUCK_S:.0f} s): "
+                            f"{str(cur.get('ro', '') if isinstance(cur, dict) else '')[:120]!r}")
+        return True
 
     def _pipeline_state(self) -> dict:
         backlog = self._backlog()
@@ -733,7 +756,7 @@ class PipelineMixin:
         buffer is sent first and the piece takes the usual way."""
         with self.lock:
             ro, multi = (ev.get("ro") or "").strip(), (ev.get("multi") or "").strip()
-            if self.lang.current == "en" or (not ro and multi and not ev.get("ro_wait")):
+            if self.lang.current == "en" or (not ro and multi and not ev.get("ro_wait")) or self._piece_english(ro, multi):
                 self._sent_flush("lang")
                 return False
             if self._pending:                          # held before the setting was switched on
@@ -746,6 +769,20 @@ class PipelineMixin:
                 self._sent_submit_safe(unit, why)
             self._sent_arm()
             return True
+
+    def _piece_english(self, ro: str, multi: str) -> bool:
+        """Auto mode, captions still Romanian, but this piece reads as English: the speaker (or an
+        interpreter) switched. Merged into the open Romanian sentence it would be translated as
+        Romanian and cast one language vote for the whole sentence; sent on its own, the usual
+        way, it votes as a piece. Same test as LangTracker.update: the multilingual transcript
+        scores English and the Romanian recogniser's transcript does not read as Romanian.
+        Under min_vote_words words ("Amen.") it neither votes nor breaks the sentence."""
+        lang = self.lang
+        if lang.mode != "auto" or lang.home != "ro" or not multi:
+            return False
+        if len(multi.split()) < lang.min_vote_words or lang_score(multi) >= -lang.margin:
+            return False
+        return not looks_romanian(ro)
 
     def _sent_submit(self, unit: list[dict], why: str):
         """One sentence (its pieces) to the translator as one clause. Inside it the recogniser's fake
@@ -966,6 +1003,7 @@ class PipelineMixin:
         with self._proc_lock:
             if self._stale():                           # retired while it waited for the lock: its
                 return                                  # clause was dropped (drain_timeout), no model work
+            self._tr_t0 = time.monotonic()              # the stuck-translator clock (translator_stuck)
             try:
                 self._handle_locked(ev)
             except Exception as e:                       # noqa: BLE001
@@ -977,6 +1015,8 @@ class PipelineMixin:
                     self._log_failure(ev, "error", error=f"{type(e).__name__}: {e}")
                 except Exception:                       # noqa: BLE001
                     self._app_error(f"logging the error failed\n{traceback.format_exc()}")
+            finally:
+                self._tr_t0 = None
 
     def _log_failure(self, ev: dict, outcome: str, **extra):
         """A clause that produced no caption still gets a log record and a count, so empty

@@ -23,6 +23,7 @@ import os
 import pathlib
 import signal
 import subprocess
+import sys
 import threading
 import time
 import traceback
@@ -48,6 +49,7 @@ EVENT_ERRORS_LOGGED = 20                 # engine events that failed: this many 
 EVENT_FAILED_WARNING = "an engine event could not be handled (see logs/app_errors.log); captions carry on"
 RESUMED_WARNING = "restarted after a problem: captions resumed"   # app.py --resumed (the Mac app relaunched it)
 RESUMED_FAILED_WARNING = "restarted after a problem: captions did not start again, press Start"   # ... and Start failed
+RESTART_EXIT_CODE = 75                   # /api/restart_captions under the Mac app: it relaunches with --resumed
 # problem.code -> (severity, action id, action label); the UI has the words (strings.en.js)
 PROBLEMS = {
     "models_missing": ("error", "setup", "Open Setup"),
@@ -59,6 +61,7 @@ PROBLEMS = {
     "pp_unreachable": ("error", "reconnect", "Try again"),
     "pp_message_missing": ("error", "settings", "Open Settings"),
     "disk_full": ("error", "help", "What to do"),
+    "translator_stuck": ("error", "restart_captions", "Restart captions"),   # a model call hung (pipeline.TR_STUCK_S)
     "recognition_behind": ("warn", "quickest", "Switch to Quickest"),
     "captions_behind": ("warn", "quickest", "Switch to Quickest"),
     "english_unavailable": ("info", "lock_ro", "Romanian speaker only"),
@@ -101,6 +104,29 @@ def _terminate(pid: int, wait_s: float = 2.0) -> None:
             os.kill(pid, signal.SIGKILL)
         except OSError:
             pass
+
+
+def _supervised() -> bool:
+    """Launched by the Mac app (LaunchConfig sets LIVE_SUPERVISED=1): it relaunches us on exit."""
+    return os.environ.get("LIVE_SUPERVISED") == "1"
+
+
+def _relaunch():
+    """A fresh process that resumes the captions: under the Mac app, exit and let it relaunch
+    (`--autostart --resumed`, as after a crash); from a terminal, exec this command line again
+    with those two flags (sys.orig_argv keeps the interpreter's own flags)."""
+    for f in (sys.stdout, sys.stderr):
+        try:
+            f.flush()
+        except Exception:                    # noqa: BLE001
+            pass
+    if _supervised():
+        os._exit(RESTART_EXIT_CODE)
+    argv = list(getattr(sys, "orig_argv", None) or [sys.executable, *sys.argv])[1:]
+    for flag in ("--autostart", "--resumed"):
+        if flag not in argv:
+            argv.append(flag)
+    os.execv(sys.executable, [sys.executable, *argv])
 
 
 class LifecycleMixin:
@@ -147,6 +173,7 @@ class LifecycleMixin:
         self._pid_dir: pathlib.Path | None = None
         self._t_launch = time.time()
         self.exit_process = lambda: os.kill(os.getpid(), signal.SIGTERM)   # /api/shutdown; tests replace it
+        self.relaunch_process = _relaunch        # /api/restart_captions; tests replace it
         self.register_state(self._lifecycle_state)
 
     def _profile_cfg(self, name: str) -> dict:
@@ -630,6 +657,49 @@ class LifecycleMixin:
                 self._bonjour_stop()              # Live Remote stops finding this Mac
             self._drop_pidfiles()
 
+    def restart_captions(self):
+        """POST /api/restart_captions, after its answer (translator_stuck): a hung MLX/CTranslate2 call
+        can't be ended in-process, and a second copy of the model beside it would be two MLX jobs at
+        once, so the process starts again and resumes the captions. Nothing here waits for _proc_lock,
+        _control or _drain (shutdown does, behind the hung call): the engine and Live Voice are ended
+        directly, then relaunch_process()."""
+        if getattr(self, "_restarting", False):  # a second click while the first one runs
+            return                               # (no lock: nothing here may wait on another thread)
+        self._restarting = True
+        self._shutting_down = True               # no engine or Live Voice restart from here on
+        self._keep_warm = False
+        ended = []
+        for name, proc in (("engine", self.engine), ("voice", getattr(self, "voice", None))):
+            if proc is None or proc.poll() is not None:
+                continue
+            if name == "voice":                  # its own clean stop first (as at Quit), bounded
+                t = threading.Thread(target=self.voice_stop, daemon=True, name="voice-stop")
+                t.start()
+                t.join(4.0)
+            else:
+                proc.retired = True              # its exit is ours, not a crash to restart
+            if proc.poll() is None:
+                _terminate(proc.pid, 3.0)        # SIGTERM, then SIGKILL
+            try:
+                proc.wait(1.0)                   # reaped: no zombie across exec
+            except Exception:                    # noqa: BLE001
+                pass
+            ended.append(name)
+        if hasattr(self, "_bonjour_stop"):
+            try:
+                self._bonjour_stop()             # its watcher follows our pid, which exec keeps
+            except Exception:                    # noqa: BLE001
+                pass
+        try:
+            self._log_event({"event": "restart_captions", "ended": ended})
+        except Exception:                        # noqa: BLE001
+            pass
+        self._app_error(f"restart_captions: the operator restarted the captions (ended: {', '.join(ended) or 'nothing'}); "
+                        f"{'the Mac app relaunches it' if _supervised() else 'exec'} with --autostart --resumed")
+        if all(p is None or p.poll() is not None for p in (self.engine, getattr(self, "voice", None))):
+            self._drop_pidfiles()                # else the next launch's claim_pidfiles ends what is left
+        self.relaunch_process()
+
     def set_mode(self, mode: str):
         self.lang.set_mode(mode)
         self._send({"cmd": "mode", "mode": mode})
@@ -1097,6 +1167,8 @@ class LifecycleMixin:
         pre = getattr(self, "_preflight", None) or {}
         if any(c.get("code") == "disk_full" and not c.get("ok") for c in pre.get("checks") or []):
             return "disk_full"
+        if hasattr(self, "translator_stuck") and self.translator_stuck():
+            return "translator_stuck"           # above *_behind: Switch to Quickest waits behind the hung call
         if self.running and self.stt_behind:
             return "recognition_behind"
         if self.running:

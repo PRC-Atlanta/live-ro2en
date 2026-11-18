@@ -19,7 +19,7 @@
     "line": {"object": {"src": "str", "dst": "str", "lat": "num", "lang": {"enum": ["ro", "en"]}}},
     "problem_code": {"enum": ["no_sound", "device_lost", "mic_denied", "mic_ask", "recognition_behind", "captions_behind",
                               "engine_stopped", "english_unavailable", "pp_unreachable", "pp_message_missing",
-                              "voice_stopped", "voice_behind", "voice_failing",
+                              "voice_stopped", "voice_behind", "voice_failing", "translator_stuck",
                               "disk_full", "models_missing"]},
     "not_built": {"object": {"error": {"enum": ["not_implemented"]}, "endpoint": "str", "owner": "str"}},
     "pp_status": {"object": {"connected": "bool", "since": "num|null", "last_ms": "num|null",
@@ -76,6 +76,7 @@
     "nothing_to_change": {"object": {"error": {"enum": ["nothing_to_change"]}, "detail": "str"}},
     "write_failed":  {"object": {"error": {"enum": ["write_failed"]}, "detail": "str"}},
     "busy":          {"object": {"error": {"enum": ["busy"]}, "detail": "str"}},
+    "not_running":   {"object": {"error": {"enum": ["not_running"]}, "detail": "str"}},
     "no_sample":     {"object": {"error": {"enum": ["no_sample"]}, "detail": "str", "samples": {"list": "str"}}}
   },
 
@@ -146,6 +147,9 @@
      "about": "load the translator and a warm engine (hold) in the background; watch phase/progress. Does nothing while models are missing (phase needs_setup)"},
     {"method": "POST", "path": "/api/shutdown",     "owner": "S1", "built": true, "response": {"object": {"ok": "bool"}},
      "about": "stop the service and the engine, then the process exits (the shell's Quit)"},
+    {"method": "POST", "path": "/api/restart_captions", "owner": "S1", "built": true, "response": {"object": {"ok": "bool"}},
+     "errors": {"409": ["@not_running"]},
+     "about": "translator_stuck's action: answers, then ends the engine and Live Voice without waiting for the hung translator and starts a new process that resumes the captions (the Mac app relaunches it with --autostart --resumed; a terminal run re-execs itself). 409 when captions are not running"},
     {"method": "POST", "path": "/api/unload",       "owner": "S1", "built": true, "response": "@state",
      "about": "free the memory: engine ended, translator dropped; phase -> unloading -> stopped"},
     {"method": "GET",  "path": "/api/health",       "owner": "S1", "built": true, "response": "@health"},

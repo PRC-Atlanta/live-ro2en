@@ -32,6 +32,7 @@ class PP:
 
 def _live(tmp_path, translate=lambda t, *a, **k: f"EN: {t}"):
     live = Live(yaml.safe_load(open(CFG)), types.SimpleNamespace(file=None))
+    live.lc["translate_sentences"] = False      # these test the piece-by-piece holds (sentence mode: test_sentences.py)
     live.log_path = tmp_path / "log.jsonl"
     live.tr = types.SimpleNamespace(translate=translate)
     live.pp = PP()

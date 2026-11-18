@@ -41,6 +41,9 @@ struct LaunchConfig {
         let fm = FileManager.default
         var env = ProcessInfo.processInfo.environment
         env["PYTHONUNBUFFERED"] = "1"
+        // Restart captions (POST /api/restart_captions) then just exits: the supervisor relaunches
+        // it with --autostart --resumed, as after a crash (a terminal run re-execs itself instead)
+        env["LIVE_SUPERVISED"] = "1"
         env.removeValue(forKey: "PYTHONHOME")
 
         // Packaged app

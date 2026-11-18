@@ -187,6 +187,7 @@ export function render(el, store) {
   const DONE = {
     pause: b => (b.on ? S.toast.hidden : S.toast.shown), blank: () => S.toast.blanked,
     retract: () => S.toast.removed, correct: () => S.toast.fixed, reconnect: () => S.toast.reconnecting,
+    restart_captions: () => S.toast.restarting,
     start: () => S.toast.started, stop: () => S.toast.stopped,
     mode: b => S.toast.mode(S.mode.long[b.mode]), profile: b => S.toast.quality(S.quality.long[b.profile] || b.profile),
     engine: b => S.toast.engine(S.engine.long[b.engine] || b.engine),

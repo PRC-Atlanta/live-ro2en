@@ -269,3 +269,51 @@ def test_the_caption_lag_guard_gets_the_sentences_own_end(tmp_path):
     (r,) = _log(live)
     assert r["source"] == "Iubită biserică, vă salut pe toți." and r["t_end"] < t + 7
     assert len(seen) == 1 and abs(seen[0] - (time.time() - r["t_end"])) < 1.0
+
+
+def test_an_english_piece_mid_sentence_ends_the_sentence_and_votes_alone(tmp_path):
+    """Auto mode, Romanian captions: an interpreter's English piece is not merged into the open
+    Romanian sentence (it would be translated as Romanian and vote once for the whole sentence)."""
+    live = _live(tmp_path)
+    live.lang.set_mode("auto")
+    t = time.time() - 20
+    live._on_clause(_p(1, t, t + 3, "Doresc să vorbesc despre părtășia cu noi,",
+                       multi="Doresc să vorbesc despre părtășia cu noi,"))
+    assert live._sent_evs()
+    live._on_clause(_p(2, t + 3.3, t + 6, "Do resc. tu wat",
+                       multi="I want to talk about the fellowship with us."))
+    assert not live._sent_evs()                                # the Romanian sentence went first
+    live._flush()
+    live._drain()
+    recs = _log(live)
+    assert recs[0]["sentence"] == "lang" and recs[0]["sent_pieces"] == 1
+    assert recs[1].get("sentence") is None                     # the English piece took the usual way
+
+
+def test_a_short_english_looking_piece_stays_in_the_sentence(tmp_path):
+    live = _live(tmp_path)
+    live.lang.set_mode("auto")
+    t = time.time() - 20
+    live._on_clause(_p(1, t, t + 3, "Doresc să vorbesc despre părtășia,", multi="Doresc să vorbesc despre părtășia,"))
+    live._on_clause(_p(2, t + 3.3, t + 4, "amin și", multi="Amen and"))
+    assert len(live._sent_evs()) == 2
+
+
+def test_garbled_romanian_written_as_english_stays_in_the_sentence(tmp_path):
+    """The Romanian recogniser's transcript still reads as Romanian: the multilingual model's English
+    is a mishearing (langid idea 12), not a language switch."""
+    live = _live(tmp_path)
+    live.lang.set_mode("auto")
+    t = time.time() - 20
+    live._on_clause(_p(1, t, t + 3, "Doresc să vorbesc despre părtășia,", multi="Doresc să vorbesc despre părtășia,"))
+    live._on_clause(_p(2, t + 3.3, t + 6, "și experiența pe care o avem cu Dumnezeu",
+                       multi="and the experience that we have with God"))
+    assert len(live._sent_evs()) == 2
+
+
+def test_a_locked_romanian_mode_never_breaks_the_sentence_on_language(tmp_path):
+    live = _live(tmp_path)                                     # ro-en
+    t = time.time() - 20
+    live._on_clause(_p(1, t, t + 3, "Doresc să vorbesc despre părtășia,", multi="Doresc să vorbesc despre părtășia,"))
+    live._on_clause(_p(2, t + 3.3, t + 6, "Do resc. tu wat", multi="I want to talk about the fellowship with us."))
+    assert len(live._sent_evs()) == 2

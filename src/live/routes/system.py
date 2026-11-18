@@ -54,6 +54,17 @@ def router(live, hosts: set[str], port: int) -> APIRouter:
         t.start()
         return {"ok": True}
 
+    @r.post("/api/restart_captions")
+    async def restart_captions():
+        """translator_stuck's action: a new process that resumes the captions (lifecycle.restart_captions).
+        Answers first; the restart then runs on its own thread and never waits for the hung call."""
+        if not live.running:
+            return JSONResponse({"error": "not_running", "detail": "Captions are not running."}, 409)
+        t = threading.Timer(0.2, live.restart_captions)  # after this answer has been sent
+        t.daemon = True
+        t.start()
+        return {"ok": True}
+
     @r.get("/api/health")
     def health():
         return live.health()
