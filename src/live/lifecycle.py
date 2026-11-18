@@ -140,7 +140,9 @@ class LifecycleMixin:
         self._engine_warnings: list[str] = []    # from loading: kept across services
         self._send_lock = threading.Lock()       # one writer at a time on the engine's stdin (_send)
         self._event_errors = 0                   # engine events that raised (_event_failed), this service
-        self._autostart_pending = False          # app.py's autostart has not run Start yet (phase "starting")
+        self._autostart_pending = False          # app.py's resumed autostart has not run Start yet (phase "starting")
+        self._autostart_waiting = False          # app.py's autostart has not run Start yet
+        self._autostart_cancel = False           # the operator's Stop came first: autostart does not go live
         self._preload_t0 = 0.0                   # when the warm engine was spawned (PRELOAD_READY_S)
         self._pid_dir: pathlib.Path | None = None
         self._t_launch = time.time()
@@ -304,16 +306,17 @@ class LifecycleMixin:
         ms.cancel()
         return True
 
-    def start(self, device=None, fresh: bool = True):
+    def start(self, device=None, fresh: bool = True, autostart: bool = False):
         """Start captions. `fresh`: a new service (the operator's Start, autostart), which
         begins clean (_new_run). A profile switch that restarts the engine passes False: the
-        same service goes on, with its caption box, history and translator context."""
+        same service goes on, with its caption box, history and translator context.
+        `autostart`: app.py's autostart, which the operator's Stop cancels (stop) while it waits."""
         paused = self._pause_download()                # the service gets the network and the CPU
         self._await_preload(START_PRELOAD_WAIT_S)      # Start pressed while still loading: wait (a hung
                                                        # engine is then not _warm_usable: it is replaced)
         with self._control:
-            if self.running:
-                return
+            if self.running or (autostart and self._autostart_cancel):
+                return                                 # (Stop pressed while the autostart waited)
             self.running = True                        # Start is disabled while loading
             self.status = "starting"
             self.phase_hint = "starting"
@@ -518,6 +521,9 @@ class LifecycleMixin:
                 and self._engine_spec == self._spec())
 
     def stop(self):
+        if self._autostart_waiting:                    # before app.py's autostart went live: it is
+            self._autostart_cancel = True              # cancelled (start checks after the preload), and
+            self._autostart_pending = False            # the phase no longer reads "starting"
         with self._control:
             eng = self.engine
             if not self.running and self._warm_alive() and not self._shutting_down:

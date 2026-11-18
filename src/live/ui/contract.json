@@ -92,6 +92,7 @@
     "latency_median": {"type": "num|null", "built": true},
     "lines":          {"type": {"list": "@line"}, "built": true},
     "screen":         {"type": "str", "built": true},
+    "last_seq":       {"type": "int|null", "built": true},
     "pp_error":       {"type": "str|null", "built": true},
     "warnings":       {"type": {"list": "str"}, "built": true},
     "counts":         {"type": {"map": "int"}, "built": true},

@@ -93,7 +93,7 @@ def test_autostart_waits_for_the_server_and_survives_a_failing_start(tmp_path, m
     server = types.SimpleNamespace(started=False, should_exit=False)
     calls = []
 
-    def start():
+    def start(**kw):
         calls.append(server.started)
         raise RuntimeError("no input")
     live.start = start
@@ -110,7 +110,7 @@ def test_autostart_waits_for_the_server_and_survives_a_failing_start(tmp_path, m
 
 def test_resumed_alone_starts_nothing_and_a_dead_server_starts_nothing(tmp_path, monkeypatch):
     live = _live(tmp_path, monkeypatch)
-    live.start = lambda: pytest.fail("must not start")
+    live.start = lambda **kw: pytest.fail("must not start")
     autostart_when_up(live, types.SimpleNamespace(started=True, should_exit=False), False, True)
     assert lifecycle.RESUMED_FAILED_WARNING in live.warnings and not live.running   # nothing started: say so
     autostart_when_up(live, types.SimpleNamespace(started=False, should_exit=True), True, False)
@@ -342,7 +342,7 @@ def test_autostart_pending_reports_starting_even_while_loading(tmp_path, monkeyp
     server = types.SimpleNamespace(started=False, should_exit=False)
     go, phases = threading.Event(), []
 
-    def start():
+    def start(**kw):
         phases.append(live._phase())
         go.wait(3)
         live.running = True                               # a Start that went live
@@ -363,11 +363,69 @@ def test_autostart_pending_reports_starting_even_while_loading(tmp_path, monkeyp
 
 def test_autostart_that_fails_ends_starting(tmp_path, monkeypatch):
     live = _live(tmp_path, monkeypatch)
-    live.start = lambda: (_ for _ in ()).throw(RuntimeError("no input"))
+    live.start = lambda **kw: (_ for _ in ()).throw(RuntimeError("no input"))
     live._start_error = "start failed: no input"
     autostart_when_up(live, types.SimpleNamespace(started=True, should_exit=False), True, True)
     assert not live._autostart_pending and live._phase() == "error"
     assert lifecycle.RESUMED_FAILED_WARNING in live.warnings
+
+
+# === round 3 ===================================================================================
+# --- P3: only a --resumed relaunch is "starting" before its Start; a plain autostart is not -------
+def test_plain_autostart_is_not_starting_before_its_start(tmp_path, monkeypatch):
+    live = _live(tmp_path, monkeypatch)
+    server = types.SimpleNamespace(started=False, should_exit=False)
+    go, phases = threading.Event(), []
+
+    def start(**kw):
+        phases.append(live._phase())
+        go.wait(3)
+    live.start = start
+    live.phase_hint = "loading"                           # a first model load
+    th = threading.Thread(target=autostart_when_up, args=(live, server, True, False), daemon=True)
+    th.start()
+    assert until(lambda: live._autostart_waiting)
+    assert not live._autostart_pending and live._phase() == "loading"   # not live for sleep/quit
+    server.started = True
+    assert until(lambda: phases)
+    assert phases == ["loading"]
+    go.set()
+    th.join(3)
+    assert not live._autostart_waiting
+
+
+def test_main_marks_only_a_resumed_autostart_as_pending():
+    src = (ROOT / "src" / "live" / "app.py").read_text()
+    main = src[src.index("def main"):src.index("def autostart_when_up")]
+    assert "live._autostart_pending = bool(autostart) and a.resumed" in main
+
+
+# --- P3: Stop while an autostart waits for the preload: it does not go live ----------------------
+def test_stop_during_a_pending_autostart_cancels_it(tmp_path, monkeypatch):
+    live = _live(tmp_path, monkeypatch)
+    server = types.SimpleNamespace(started=True, should_exit=False)
+    loaded = threading.Event()
+    live._preload_thread = threading.Thread(target=lambda: loaded.wait(5), daemon=True)
+    live._preload_thread.start()                          # the models are still loading
+    went = []
+    live._go_live = lambda *a, **k: went.append("go_live")
+    live._start_engine = lambda *a, **k: went.append("engine")
+    live.load_translator = lambda *a, **k: None
+    th = threading.Thread(target=autostart_when_up, args=(live, server, True, True), daemon=True)
+    th.start()
+    assert until(lambda: live._autostart_pending)
+    assert live._phase() == "starting"
+    live.stop()                                           # the operator's Stop, before Start has run
+    assert live._autostart_cancel and not live._autostart_pending
+    assert live._phase() != "starting"
+    loaded.set()                                          # the preload ends: start() goes on, and returns
+    th.join(5)
+    assert not th.is_alive()
+    assert went == [] and not live.running
+    assert lifecycle.RESUMED_FAILED_WARNING not in live.warnings      # the operator stopped it
+    live._retire_engine = lambda: None
+    live.start()                                          # the operator's own Start is not cancelled
+    assert went == ["engine"] and live.running
 
 
 # --- P2: Fix last checks the caption box's last caption by its number ---------------------------
@@ -427,6 +485,26 @@ def test_fix_last_route_takes_the_number(tmp_path, monkeypatch):
     assert r.status_code == 200 and live.caps.text == "Fixed."
     js = (ROOT / "src" / "live" / "ui" / "screens" / "live.js").read_text()
     assert "based_on_seq: last.seq" in js
+
+
+# --- round 3, P3: after Remove last, Fix last fixes the caption still on screen -----------------
+def test_state_carries_last_seq_and_fix_last_works_after_a_remove_last(tmp_path, monkeypatch):
+    live = _live(tmp_path, monkeypatch)
+    assert live.state()["last_seq"] is None                # nothing in the caption box yet
+    _shown(live, "First caption.")
+    first = live.caps.last_seq
+    _shown(live, "Second caption.")
+    assert live.state()["last_seq"] == live.caps.last_seq != first
+    live.retract()                                        # Remove last
+    st = live.state()
+    assert st["last_seq"] == first                        # the caption on screen now
+    line = next(l for l in st["lines"] if l["seq"] == st["last_seq"])   # what the Fix dialog picks
+    assert line["dst"] == "First caption."
+    assert live.correct("Fixed first.", based_on=line["dst"], based_on_seq=line["seq"]) is True
+    assert live.caps.text == "Fixed first."
+    assert live.history[0]["translation"] == "Fixed first." and live.history[0]["corrected"]
+    js = (ROOT / "src" / "live" / "ui" / "screens" / "live.js").read_text()
+    assert "l.seq === s.last_seq" in js
 
 
 # --- P3: Fix last's text shows where the caption it replaces is ---------------------------------

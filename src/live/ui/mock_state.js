@@ -19,7 +19,7 @@ const PROBLEMS = {
 export function baseState() {
   return {
     running: false, status: "idle", mode: "auto", profile: "fast", profiles: ["fast", "quality"],
-    lang: "ro", partial: "", latency_last: null, latency_median: null, lag_s: null, lines: [], screen: "",
+    lang: "ro", partial: "", latency_last: null, latency_median: null, lag_s: null, lines: [], screen: "", last_seq: null,
     pp_error: null, warnings: [], counts: {}, alerts: [],
     translator: "nllb:nllb-200-distilled-1.3B", stt: "jackrabbit-ctc-lm-b8",
     phase: "ready", progress: null,

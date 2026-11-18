@@ -535,15 +535,14 @@ class PipelineMixin:
                     n += 1
         tr = self.tr                                  # one, or one per direction: each on its own
         idle = [m for m in self._live_members().values() if now - self._last_used(m) >= every]
-        lock = self._proc_lock                        # _drain may swap it (a stuck worker): release this one
-        if idle and lock.acquire(blocking=False):
+        if idle and self._proc_lock.acquire(blocking=False):
             try:
                 if tr is self.tr:
                     for m in idle:
                         self._ping(m)
                         n += 1
             finally:
-                lock.release()
+                self._proc_lock.release()
         return n
 
     def _ping(self, tr):
@@ -914,7 +913,8 @@ class PipelineMixin:
         a bench replay, catch-up off) is translated to the end; only a worker that finishes
         nothing for timeout_s is given up on. Then what is still waiting is dropped and logged
         (`drain_timeout`), and the stuck worker is retired with its queue: the next clauses go to
-        a new worker on a new queue, and the old one's late result is never shown or logged."""
+        a new worker on a new queue (it waits for the shared _proc_lock until the hung call
+        returns), and the old one's late result is never shown or logged."""
         work = self._work
         left = work.unfinished_tasks
         deadline = time.time() + timeout_s
@@ -932,9 +932,11 @@ class PipelineMixin:
             time.sleep(0.05)
 
     def _give_up(self, work: queue.Queue, timeout_s: float):
-        """_drain's deadline passed with nothing finishing: drop and log what waits, retire the
-        stuck worker (a new generation, queue and _proc_lock: it keeps the old lock until its call
-        returns, and the next run's clauses do not wait behind it)."""
+        """_drain's deadline passed with nothing finishing: drop and log what waits (and the clause
+        the stuck worker is on), retire the stuck worker (a new generation and queue). The one
+        _proc_lock stays: two threads must never run one MLX model at once, so the next run's first
+        clause waits for the hung call to return (its captions resume then); the retired worker
+        then shows nothing, and a retired worker that gets the lock does no model work (_handle)."""
         dropped = []
         with self._worker_lock:
             while True:
@@ -945,11 +947,12 @@ class PipelineMixin:
                 work.task_done()
                 dropped.append(ev)
             if self._worker and self._worker.is_alive():
+                if isinstance(self._current, dict):     # the clause it is stuck on never shows either
+                    dropped.insert(0, self._current)
                 self._work_gen = getattr(self, "_work_gen", 0) + 1
                 self._work = queue.Queue()
                 self._worker = None
                 self._current = None
-                self._proc_lock = threading.Lock()
         for ev in dropped:
             try:
                 self._log_failure(ev, "drain_timeout")
@@ -961,6 +964,8 @@ class PipelineMixin:
     def _handle(self, ev: dict):
         """Never let one bad chunk stop the service: log it and carry on."""
         with self._proc_lock:
+            if self._stale():                           # retired while it waited for the lock: its
+                return                                  # clause was dropped (drain_timeout), no model work
             try:
                 self._handle_locked(ev)
             except Exception as e:                       # noqa: BLE001

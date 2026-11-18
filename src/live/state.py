@@ -30,6 +30,9 @@ class StateMixin:
                   # seq: the caption's number in the caption box (Fix last sends it back), when it got one
                   "lines": [{"src": h["source"], "dst": h["translation"], "lat": h["latency_s"],
                              "lang": h["lang"], "seq": h.get("caption_seq")} for h in self.history],
+                  # last_seq: the caption box's last caption (the one Fix last acts on); after Remove
+                  # last it is the caption before, which the Fix dialog then starts from
+                  "last_seq": self.caps.last_seq,
                   "screen": self.caps.text, "pp_error": self.pp.last_error,
                   "warnings": list(self.warnings), "counts": dict(self.counts),
                   "alerts": self.alerts(),

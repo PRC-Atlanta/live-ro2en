@@ -225,7 +225,11 @@ export function render(el, store) {
       return;
     }
     if (intent === "fix") {
-      const last = [...(s.lines || [])].reverse().find(l => l.dst);
+      // the caption box's last caption (after Remove last, the one before it, still on screen);
+      // an older app (no last_seq) or a caption not in the lines yet: the newest line
+      const lines = [...(s.lines || [])].reverse();
+      const last = (Number.isInteger(s.last_seq) && lines.find(l => l.dst && l.seq === s.last_seq))
+        || lines.find(l => l.dst);
       if (!last) return toast(S.toast.nothingToFix, "info");
       const r = await ask({ title: S.fix.title, hint: S.fix.hint, value: last.dst, ok: S.fix.ok, cancel: S.fix.cancel });
       // based_on(_seq): the caption the operator was fixing (its number in the caption box); the app

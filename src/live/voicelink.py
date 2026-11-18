@@ -433,8 +433,7 @@ class VoiceMixin:
             while time.time() < deadline - summarize.MIN_TIME_LEFT_S:
                 idle = (getattr(self, "_current", None) is None and getattr(self, "_pending", None) is None
                         and self._work.empty())
-                lock = self._proc_lock              # _drain may swap it (a stuck worker): release this one
-                if idle and lock.acquire(timeout=0.05):
+                if idle and self._proc_lock.acquire(timeout=0.05):
                     try:
                         gen = self._voice_summarizer()
                         if gen is None:
@@ -445,7 +444,7 @@ class VoiceMixin:
                             self._tr_used[id(gen.tr)] = time.time()
                         return res
                     finally:
-                        lock.release()
+                        self._proc_lock.release()
                 time.sleep(0.05)
         return {"ok": False, "reason": "busy", "text": "", "gemma_s": 0.0, "engine": None}
 

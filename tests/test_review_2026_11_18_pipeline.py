@@ -284,11 +284,16 @@ def test_drain_waits_for_a_slow_queue_that_keeps_moving(tmp_path, monkeypatch):
 
 
 def test_a_stuck_worker_is_retired_and_its_late_result_never_lands(tmp_path, monkeypatch):
+    # Round 3: one _proc_lock is kept (two threads must never run one MLX model at once). A truly
+    # hung translator call therefore holds the next run's first clause until it returns: the next
+    # run's captions resume then, and the hung call's late result is never shown or logged.
     monkeypatch.setenv("LIVE_LOG_DIR", str(tmp_path / "logs"))
     live = _live(tmp_path, lag_warn_s=0)
     release = threading.Event()
+    calls = []
 
     def tr(t, *a, **k):
+        calls.append(t)
         if "unu" in t:
             release.wait(10)                               # a translator call that hangs
         return f"EN: {t}"
@@ -298,18 +303,34 @@ def test_a_stuck_worker_is_retired_and_its_late_result_never_lands(tmp_path, mon
     live._submit(_p(2, t + 1, t + 2, "patru cinci șase"))
     time.sleep(0.2)
     old = live._worker
-    live._drain(timeout_s=0.3)                             # gives up: 2 dropped, the worker retired
-    assert [r["outcome"] for r in _log(live)] == ["drain_timeout"]
+    live._drain(timeout_s=0.3)                             # gives up: 1 (stuck) and 2 dropped, retired
+    assert sorted((r["id"], r["outcome"]) for r in _log(live)) == [(1, "drain_timeout"), (2, "drain_timeout")]
     t2 = time.time()
     live._submit(_p(3, t2 - 2, t2 - 1, "șapte opt nouă"))  # the next run
+    time.sleep(0.3)
+    assert not any(r["id"] == 3 for r in _log(live))       # waits for the one lock, behind the hung call
+    assert not any("șapte" in c for c in calls)            # no second model call at the same time
+    threading.Timer(0.2, release.set).start()              # the hung call returns
     live._drain(timeout_s=5)
-    assert time.time() - t2 < 3                            # not behind the hung call's _proc_lock
-    release.set()
     old.join(5)
     assert not old.is_alive()
     recs = _log(live)
-    assert [(r["id"], r["outcome"]) for r in recs] == [(2, "drain_timeout"), (3, "ok")]
+    assert sorted((r["id"], r["outcome"]) for r in recs) == [(1, "drain_timeout"), (2, "drain_timeout"),
+                                                              (3, "ok")]
     assert all("unu" not in r.get("translation", "") for r in recs + live.history)
+
+
+def test_a_retired_worker_that_gets_the_lock_does_no_model_work(tmp_path):
+    live = _live(tmp_path)
+    pl = sys.modules[type(live)._stale.__module__]         # the module the app imported
+    worked = []
+    live._handle_locked = lambda ev: worked.append(ev)
+    pl._WORKER.gen = live._work_gen - 1                    # this thread: a retired worker
+    try:
+        live._handle(_p(1, 0, 1, "unu"))
+    finally:
+        pl._WORKER.gen = None
+    assert worked == []
 
 
 # --- round 2: a cut word may go on capitalised when it is a word for God or Christ ----------------
