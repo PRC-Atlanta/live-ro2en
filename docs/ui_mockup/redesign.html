@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Redesign mockups</title>
+<style>
+:root {
+  --bg-0:#060d12; --bg-1:#0a1a22; --bg-2:#10262f; --bg-3:#16323d;
+  --edge:#2b6f7e; --edge-glow:rgba(70,214,236,.28);
+  --cyan:#46d6ec; --cyan-hi:#9df1ff; --cyan-dim:#1f7f92;
+  --lime:#a3e635; --amber:#f5b83d; --red:#ff5d52;
+  --ink:#d9eef2; --label:#b9cbd0; --mute:#6f8b93; --line:#0f2a33;
+  --font:-apple-system,"SF Pro Display","Helvetica Neue",system-ui,sans-serif;
+  --num:"SF Pro Rounded",ui-rounded,-apple-system,system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg-0);color:var(--ink);font:15px/1.4 var(--font)}
+.page{max-width:1500px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:22px;margin:0 0 4px}
+.lede{color:var(--mute);margin:0 0 24px}
+.pair{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:18px;align-items:start;margin-bottom:44px}
+@media(max-width:900px){.pair{grid-template-columns:1fr}}
+.pair h2{grid-column:1/-1;font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan-hi);margin:0;
+  padding-bottom:6px;border-bottom:1px solid var(--line)}
+.tag{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin:0 0 6px}
+.tag b{color:var(--ink)}
+.before img{width:100%;display:block;border:1px solid var(--line);opacity:.9}
+
+/* the app frame, as on every screen */
+.unit{border:1px solid var(--edge);border-radius:4px;box-shadow:0 0 12px var(--edge-glow);
+  background:radial-gradient(120% 90% at 50% 55%,var(--bg-3) 0%,var(--bg-2) 35%,var(--bg-1) 100%);padding:14px}
+.tabs{display:flex;flex-wrap:wrap;margin-bottom:14px}
+.tab{flex:1 1 auto;padding:10px 12px;font:600 12px var(--font);letter-spacing:.1em;text-transform:uppercase;text-align:center;
+  color:var(--mute);background:linear-gradient(#1a2024,#101417);border:1px solid #2c3438;margin-left:-1px}
+.tab.on{color:var(--cyan-hi);border-color:var(--cyan-dim);background:linear-gradient(#123742,#0b2028);position:relative}
+
+/* new pieces: card, row, status, more */
+.card{background:rgba(5,11,14,.4);border:1px solid var(--line);border-radius:4px;margin-bottom:10px}
+.card-h{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.card-h strong{font:600 12px var(--font);letter-spacing:.14em;text-transform:uppercase;color:var(--label)}
+.card-h .sp{flex:1}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--label)}
+.st::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--mute)}
+.st.good{color:var(--lime)}.st.good::before{background:var(--lime);box-shadow:0 0 6px var(--lime)}
+.st.warn{color:var(--amber)}.st.warn::before{background:var(--amber)}
+.row{display:flex;align-items:center;gap:14px;min-height:52px;padding:6px 14px;border-bottom:1px solid rgba(15,42,51,.7)}
+.row:last-child{border-bottom:0}
+.row>.l{flex:1 1 40%;min-width:0;color:var(--ink)}
+.row>.l small{display:block;color:var(--mute);font-size:12.5px}
+.row>.c{flex:0 1 auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.i{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;border:1px solid var(--cyan-dim);
+  color:var(--cyan);font:600 11px var(--font);margin-left:6px;vertical-align:1px}
+select,input.t{font:15px var(--font);color:var(--ink);min-height:38px;padding:6px 10px;background:#050b0e;
+  border:1px solid #1d3f49;border-radius:3px}
+input.n{width:76px;text-align:right;font-family:var(--num)}
+.unit-s{color:var(--mute);font-size:13px}
+.seg{display:inline-flex}
+.seg span{padding:8px 13px;font:600 12px var(--font);letter-spacing:.06em;color:var(--label);
+  background:linear-gradient(#1a2024,#101417);border:1px solid #2c3438;margin-left:-1px}
+.seg span:first-child{border-radius:3px 0 0 3px;margin-left:0}.seg span:last-child{border-radius:0 3px 3px 0}
+.seg span.on{color:var(--cyan-hi);border-color:var(--cyan-dim);background:linear-gradient(#123742,#0b2028);position:relative}
+.sw{width:46px;height:26px;border-radius:13px;background:#0d2a33;border:1px solid #2b5d68;position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#6f8b93}
+.sw.on{background:#14505c;border-color:var(--cyan)}.sw.on::after{left:22px;background:var(--cyan-hi);box-shadow:0 0 8px var(--cyan)}
+.btn{font:600 13px var(--font);letter-spacing:.04em;color:var(--ink);padding:8px 14px;background:linear-gradient(#1a2a31,#101d23);
+  border:1px solid var(--cyan-dim);border-radius:3px}
+.btn.p{color:#04161c;background:linear-gradient(var(--cyan-hi),var(--cyan));border-color:var(--cyan-hi)}
+.lvl{display:inline-flex;gap:2px}.lvl i{width:5px;height:16px;background:#0d2a33}.lvl i.g{background:var(--lime)}
+.more{display:flex;align-items:center;gap:8px;padding:12px 14px;color:var(--cyan);font-size:14px}
+.more::before{content:"▸";color:var(--cyan-dim)}
+.more small{color:var(--mute);margin-left:auto;text-align:right}
+.more.open::before{content:"▾"}
+.saved{color:var(--lime);font-size:13px}
+.stars{display:flex;gap:8px}.stars span{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;
+  border:1px solid var(--cyan-dim);font:600 16px var(--num);color:var(--label)}
+.stars span.on{background:var(--cyan);color:#04161c;border-color:var(--cyan-hi)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}.chips span{padding:6px 12px;border:1px solid #2c3438;border-radius:16px;font-size:13px;color:var(--label)}
+.sum{font:600 19px var(--num);color:var(--ink)}
+.notes{color:var(--mute);font-size:13px;margin:8px 2px 0}
+</style>
+</head>
+<body>
+<div class="page">
+<h1>Redesign mockups: before and after</h1>
+<p class="lede">Left: the screen today (mock data). Right: the proposal. Static pictures of the layout, nothing here is wired.</p>
+
+<!-- 1 -->
+<section class="pair">
+  <h2>1 · Settings → General (was Basic)</h2>
+  <div class="before"><p class="tag"><b>Before</b> · 108 words · one block per setting</p><img src="../ui_redesign_shots/before_settings_basic.jpg" alt="Settings Basic today"></div>
+  <div><p class="tag"><b>After</b> · about 45 words · one row per setting</p>
+  <div class="unit">
+    <div class="tabs"><span class="tab on">General</span><span class="tab">Names &amp; words</span><span class="tab">Screens</span><span class="tab">Live Voice</span><span class="tab">AI</span><span class="tab">Advanced</span></div>
+    <div class="card">
+      <div class="card-h"><strong>Sound</strong><span class="sp"></span><span class="st good">Sound OK</span></div>
+      <div class="row"><div class="l">Sound input</div><div class="c">
+        <span class="lvl"><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i></i><i></i><i></i><i></i><i></i></span>
+        <select><option>Behringer UMC204HD</option></select></div></div>
+      <div class="row"><div class="l">Auto gain<span class="i">i</span></div><div class="c"><span class="sw on"></span></div></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><strong>When the app opens</strong></div>
+      <div class="row"><div class="l">Speaker</div><div class="c"><span class="seg"><span class="on">Auto-detect</span><span>Romanian</span><span>English</span></span></div></div>
+      <div class="row"><div class="l">Quality</div><div class="c"><span class="seg"><span>Quickest</span><span class="on">Best</span></span></div></div>
+      <div class="row"><div class="l">Start captions by itself</div><div class="c"><span class="sw"></span></div></div>
+      <div class="row"><div class="l">Open the app when the Mac starts</div><div class="c"><span class="sw on"></span></div></div>
+    </div>
+    <div class="card"><div class="more">More options<small>Auto gain target · Ignore music and singing</small></div></div>
+  </div>
+  <p class="notes">The level bar shows the chosen input is alive. The gain number appears only while Auto gain is off. "Hide swear words" moves to Names &amp; words, next to your own hidden words.</p>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="pair">
+  <h2>2 · Settings → Screens (was ProPresenter)</h2>
+  <div class="before"><p class="tag"><b>Before</b> · 226 words · 27 controls · 1420 px tall</p><img src="../ui_redesign_shots/before_settings_propresenter.jpg" alt="Settings ProPresenter today"></div>
+  <div><p class="tag"><b>After</b> · three cards, connection details folded into one line</p>
+  <div class="unit">
+    <div class="tabs"><span class="tab">General</span><span class="tab">Names &amp; words</span><span class="tab on">Screens</span><span class="tab">Live Voice</span><span class="tab">AI</span><span class="tab">Advanced</span></div>
+    <div class="card">
+      <div class="card-h"><strong>ProPresenter</strong><span class="st good">Connected</span><span class="sp"></span><span class="sw on"></span></div>
+      <div class="row"><div class="l">Lines on the big screen</div><div class="c"><span class="seg"><span>1</span><span class="on">2</span><span>3</span></span></div></div>
+      <div class="row"><div class="l">Check it works</div><div class="c"><span class="btn p">Test connection</span><span class="btn">Send test caption</span></div></div>
+      <div class="more">Connection<small>This Mac · port 50001 · message “Live Translation”</small></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><strong>Captions display</strong><span class="sp"></span><span class="btn">Open</span></div>
+      <div class="row"><div class="l">Text size</div><div class="c"><span class="seg"><span>Medium</span><span class="on">Large</span><span>Extra large</span></span></div></div>
+      <div class="row"><div class="l">Lines</div><div class="c"><span class="seg"><span>1</span><span class="on">2</span><span>3</span></span></div></div>
+      <div class="row"><div class="l">Colours</div><div class="c"><select><option>White on black</option></select></div></div>
+      <div class="row"><div class="l">Show on other devices<small>Open http://192.168.1.40:8765/display on the church Wi-Fi</small></div><div class="c"><span class="sw on"></span></div></div>
+      <div class="more">More options<small>Keep showing while hidden</small></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><strong>Live Remote</strong><span class="st">1 connected</span><span class="sp"></span><span class="sw on"></span></div>
+      <div class="row"><div class="l">PIN</div><div class="c"><span class="sum">482 913</span><span class="btn">New PIN</span></div></div>
+    </div>
+  </div>
+  <p class="notes">With a switch off, its card shrinks to the header alone. A failed test shows the one fix under the buttons, as today.</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="pair">
+  <h2>3 · Settings → Advanced</h2>
+  <div class="before"><p class="tag"><b>Before</b> · 321 words · 20 settings in one column · 2810 px tall</p><img src="../ui_redesign_shots/before_settings_advanced.jpg" alt="Settings Advanced today"></div>
+  <div><p class="tag"><b>After</b> · four groups, each closed with a summary; one shown open</p>
+  <div class="unit">
+    <div class="tabs"><span class="tab">General</span><span class="tab">Names &amp; words</span><span class="tab">Screens</span><span class="tab">Live Voice</span><span class="tab">AI</span><span class="tab on">Advanced</span></div>
+    <p class="notes" style="margin:0 2px 10px">For whoever tunes the system. Nothing here is needed on a Sunday.</p>
+    <div class="card">
+      <div class="more open" style="color:var(--ink)">Caption pacing<small>6 settings · 1 changed</small></div>
+      <div class="row"><div class="l">Reading pace<span class="i">i</span></div><div class="c"><input class="t n" value="2.7"><span class="unit-s">words / s</span></div></div>
+      <div class="row"><div class="l">Shortest time per line</div><div class="c"><input class="t n" value="1.2"><span class="unit-s">s</span></div></div>
+      <div class="row"><div class="l">Speed up when behind by</div><div class="c"><span class="saved">✓ Saved</span><input class="t n" value="8"><span class="unit-s">s</span></div></div>
+      <div class="row"><div class="l">Reveal words gradually<span class="i">i</span></div><div class="c"><span class="sw on"></span></div></div>
+      <div class="row"><div class="l">Reveal pace</div><div class="c"><input class="t n" value="3.5"><span class="unit-s">words / s</span></div></div>
+    </div>
+    <div class="card"><div class="more">Phrase building<small>7 settings · all default</small></div></div>
+    <div class="card"><div class="more">Filters<small>Skip garbled: Normal · Drop repeated words: on</small></div></div>
+    <div class="card"><div class="more">System<small>4 settings · all default</small></div></div>
+    <div class="row" style="border:0;padding:8px 2px"><div class="l"></div><div class="c"><span class="btn" style="border-color:var(--red)">Reset Advanced to defaults</span></div></div>
+  </div>
+  <p class="notes">Units sit beside the number instead of in the label. "Time per line" is hidden because reading pace is not 0. Delay numbers, outcome counts and alerts move to Monitor.</p>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="pair">
+  <h2>4 · After the service</h2>
+  <div class="before"><p class="tag"><b>Before</b> · seven numbers first, the rating second</p><img src="../ui_redesign_shots/before_after.jpg" alt="After screen today"></div>
+  <div><p class="tag"><b>After</b> · what we ask of the operator first</p>
+  <div class="unit">
+    <div class="card">
+      <div class="card-h"><strong>How did it go?</strong></div>
+      <div class="row"><div class="l"><div class="stars"><span>1</span><span>2</span><span>3</span><span class="on">4</span><span>5</span></div></div><div class="c"><span class="btn p">Save rating</span></div></div>
+      <div class="row"><div class="l"><div class="chips"><span>Names wrong</span><span>Too slow</span><span>Wrong language</span><span>Missed phrases</span><span>Odd translations</span><span>+ Add a note</span></div></div></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><strong>Transcript</strong></div>
+      <div class="row"><div class="l">Save to the Desktop</div><div class="c"><span class="btn">Word</span><span class="btn">Text</span><span class="btn">Subtitles</span></div></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><strong>This service</strong><span class="sp"></span><span class="st warn">5 skipped · 1 ProPresenter error</span></div>
+      <div class="row"><div class="l"><span class="sum">45 min · 416 captions · typical delay 2.1 s</span></div></div>
+      <div class="more">More numbers<small>First words · corrections · AI and Local · Live Voice</small></div>
+    </div>
+    <div class="card">
+      <div class="row"><div class="l">Done for today?<small>Frees memory for other programs</small></div><div class="c"><span class="btn">Free memory</span></div></div>
+    </div>
+  </div>
+  </div>
+</section>
+
+</div>
+</body>
+</html>
