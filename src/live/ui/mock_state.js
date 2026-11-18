@@ -79,7 +79,7 @@ export function startMock(store, name = "live") {
   return setInterval(tick, 250);
 }
 
-// ---- S5b: mock backend for the Setup, Settings and After screens ---------------------------
+// ---- S5b: mock backend for the Setup and Settings screens ---------------------------
 // screens/setup/kit.js call() routes /api/* here when ?mock=... is set. Every answer has the
 // real backend's shape and status (src/live/routes/*.py; contract.json types, checked by
 // tests/test_ui_mock_contract.py), including 400/404/409 refusals and 501 for planned endpoints.

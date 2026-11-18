@@ -192,7 +192,7 @@ The toolbar is shared with the Live screen, so its buttons stay as they are. Two
 
 Every gate stays (can't pass Download without models, Sound without hearing sound, and so on).
 
-**After**: not used, so left as it is (see Decisions).
+**After**: not used; later removed (see Decisions and Result).
 
 **Monitor**: same table. Gains a slim strip with the delay numbers, and a "Numbers" drawer with the
 outcome counts and alerts moved from Settings → Advanced.
@@ -224,8 +224,7 @@ After each: mock UI at desktop and narrow width, then `tests/test_settings.py`,
 1. The two dead keys `ui.show_latency` and `ui.show_counts` are deleted.
 2. The Setup wizard goes from six steps to four.
 3. Diagnostics move from Settings → Advanced to Monitor. **The After report is not used** (Claude
-   monitors the service live and reports at the end), so the After screen is left exactly as it is,
-   not redesigned, and the AI usage numbers go to Monitor's "Numbers" drawer instead of After.
+   monitors the service live and reports at the end), so the After screen was not redesigned (and was then removed, see Result), and the AI usage numbers go to Monitor's "Numbers" drawer instead of After.
 4. `live.song_detect`, `live.song_symbol` and `live.lag_warn_s` stay config only.
 5. One dark theme: screens are checked in dark at desktop and narrow width.
 
@@ -251,7 +250,11 @@ What was built:
   from the six-step wizard starts again at step 1.
 - **Monitor**: a delay strip and a "Numbers" drawer (outcomes, who translated, alerts).
 - **Help**: grouped symptoms, two-column shortcuts, ProPresenter steps folded.
-- **After**: untouched.
+- **After**: removed on 2026-11-18 at Ben's request (screen, `#after` route, toolbar button, its
+  styles and tests). `#after` now opens Live. Three things were only on that screen and are no
+  longer in the UI: the 1–5 rating, "Save transcript" (Word / text / subtitles) and "Free memory".
+  Their endpoints (`POST /api/rate`, `/api/export`, `/api/unload`) are kept and tested; quitting
+  the app frees memory as before.
 - **Backend**: only the two dead keys removed from `settings.py`, `defaults.yaml` and the mock, and
   the tab name in the header line of the user's word-list files.
 

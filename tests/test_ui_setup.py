@@ -11,7 +11,7 @@ import yaml
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 UI = ROOT / "src" / "live" / "ui"
 S5B_FILES = [*(UI / "screens" / "setup").glob("*.js"), *(UI / "screens" / "settings").glob("*.js"),
-             UI / "screens" / "after.js", UI / "components" / "listeditor.js"]
+             UI / "components" / "listeditor.js"]
 
 
 def test_s5b_flows_under_node():
@@ -56,6 +56,6 @@ def test_settings_keys_exist_in_config():
 
 
 def test_s5b_screens_are_not_placeholders():
-    for f in [UI / "screens" / "setup" / "index.js", UI / "screens" / "settings" / "index.js", UI / "screens" / "after.js"]:
+    for f in [UI / "screens" / "setup" / "index.js", UI / "screens" / "settings" / "index.js"]:
         src = f.read_text()
         assert "_placeholder.js" not in src and "export function render(" in src, f

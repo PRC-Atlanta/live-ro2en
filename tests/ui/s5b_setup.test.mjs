@@ -1,6 +1,5 @@
 // S5b acceptance tests against the mock backend (run by tests/test_ui_setup.py with `node --test`).
-// The screens keep their decisions in DOM-free modules (setup/flow.js, settings/fields.js,
-// after.js summary), so these drive the same logic the wizard uses, step by step. The mock
+// The screens keep their decisions in DOM-free modules (setup/flow.js, settings/fields.js), so these drive the same logic the wizard uses, step by step. The mock
 // answers with the real backend's shapes (tests/test_ui_mock_contract.py checks that).
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -10,7 +9,6 @@ const mock = await import(new URL("mock_state.js", UI));
 const flow = await import(new URL("screens/setup/flow.js", UI));
 const kit = await import(new URL("screens/setup/kit.js", UI));
 const fields = await import(new URL("screens/settings/fields.js", UI));
-const after = await import(new URL("screens/after.js", UI));
 
 const { mockBackend: B, mockApi, startMock } = mock;
 B.delayMs = 0;
@@ -257,14 +255,7 @@ test("settings never expose internals", () => {
   assert.equal(fields.shown(vad, 0.6), 0.65);
 });
 
-test("after-sermon summary", () => {
-  const s = after.summary(stateOf("after"));
-  assert.equal(s.duration, "45:12");
-  assert.equal(s.phrases, 416);
-  assert.equal(s.skipped, 5);
-  assert.equal(s.delay, "2.1 s");
-  assert.equal(s.ppErrors, 1);
-  assert.equal(after.summary({}).duration, "–");
+test("clock", () => {
   assert.equal(kit.clock(3725), "1:02:05");
 });
 

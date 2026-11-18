@@ -1,4 +1,4 @@
-// Shared pieces for the Setup, Settings and After screens (S5b): backend calls that never
+// Shared pieces for the Setup and Settings screens (S5b): backend calls that never
 // throw, a tiny element builder, and the plugin-look form controls. No top-level DOM access,
 // so the logic can be imported by the node tests.
 

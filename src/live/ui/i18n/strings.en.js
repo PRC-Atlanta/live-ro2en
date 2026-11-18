@@ -10,7 +10,6 @@ export const S = {
     rehearsalStopHint: "Stop the rehearsal",
     names: "Names & words", settings: "Settings", help: "?", helpHint: "Help",
     navLabel: "Screens", live: "Live", liveHint: "The Live screen", setupHint: "Sound input and ProPresenter (Settings)",
-    after: "After", afterHint: "Summary, rating and transcript of the last service",
     setupName: (device, pp) => `${device || "No sound input"} → ${pp === "off" ? "this Mac only" : pp ? "ProPresenter" : "ProPresenter (not connected)"}`,
     display: "Captions display", displayHint: "A captions-only window for a second screen or projector",
     monitor: "Monitor", monitorHint: "Every segment: what was heard, what was translated and what Live Voice said",

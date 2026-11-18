@@ -117,14 +117,6 @@
 .fx-heard i { width: 10px; height: 10px; border-radius: 50%; background: #0d2a33; border: 2px solid #2b5d68; }
 .fx-heard.on i { background: var(--lime); border-color: #d4f59a; box-shadow: 0 0 8px var(--lime); }
 
-/* facts table (hardware check, summary) */
-.fx-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 0 0 12px; }
-.fx-fact { padding: 8px 10px; background: #08151b; border: 1px solid #0f2a33; }
-.fx-fact dt { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--mute); }
-.fx-fact dd { margin: 2px 0 0; font: 600 20px var(--num); color: var(--cyan-hi); }
-.fx-fact dd small { font: 13px var(--font); color: var(--label); }
-.fx-fact.warn dd { color: var(--amber); } .fx-fact.bad dd { color: var(--red); } .fx-fact.good dd { color: var(--lime); }
-
 /* tabs (Settings) */
 .fx-tabs { display: flex; gap: 0; margin: 0 0 12px; flex-wrap: wrap; }
 .fx-tab { font: 600 11px var(--font); letter-spacing: .12em; text-transform: uppercase; color: var(--mute);
@@ -155,17 +147,6 @@
 .fx-x { min-width: 44px; min-height: 44px; font: 600 18px var(--font); color: var(--mute); background: none;
   border: 1px solid transparent; border-radius: 3px; cursor: pointer; }
 .fx-x:hover { color: var(--red); border-color: var(--red); }
-
-/* rating */
-.fx-stars { display: flex; gap: 6px; flex-wrap: wrap; }
-.fx-star { width: 52px; height: 52px; font: 600 18px var(--num); color: var(--mute); cursor: pointer;
-  background: radial-gradient(circle at 50% 40%, #1d5a6a 0%, #0f3440 60%, #0a2730 100%);
-  border: 2px solid #2b5d68; border-radius: 50%; }
-.fx-star[aria-checked="true"], .fx-star.lit { color: var(--ink); border-color: var(--cyan); box-shadow: 0 0 12px var(--edge-glow); }
-.fx-tags { display: flex; gap: 6px; flex-wrap: wrap; }
-.fx-tag { min-height: 44px; padding: 8px 12px; font: 13px var(--font); color: var(--label); cursor: pointer;
-  background: #08151b; border: 1px solid #22303a; border-radius: 22px; }
-.fx-tag[aria-pressed="true"] { color: var(--amber); border-color: var(--amber); background: rgba(245,184,61,.08); }
 
 .fx-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
@@ -231,10 +212,6 @@ p.fx-note[data-tone="bad"] { color: var(--red); }
 .fx-ppbox.calm.off .fx-ppbox-t span { color: var(--label); font-weight: 400; }
 .fx-ppbox.calm .fx-ppsw[aria-checked="false"] { border-color: #2c3438; color: var(--mute); }
 .fx-ppbox.calm .fx-ppsw[aria-checked="false"] b { background: #3a4144; }
-/* a fact whose value is a sentence (After: which engine translated, and for how long) */
-.fx-fact.wide { grid-column: span 3; }
-.fx-fact.wide dd { font-size: 17px; line-height: 1.35; }
-@media (max-width: 760px) { .fx-fact.wide { grid-column: 1 / -1; } }
 
 /* ---- rows and cards (kit.js card / row / toggle / seg / more): one row per setting ---- */
 .sx-stack { display: grid; gap: 10px; }

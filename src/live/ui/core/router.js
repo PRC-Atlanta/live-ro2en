@@ -1,10 +1,9 @@
 // Hash routes -> screen modules. Each screen exports render(el, store) and may return a
-// cleanup function. S5a owns live/help, S5b owns setup/settings/after.
+// cleanup function. S5a owns live/help, S5b owns setup/settings.
 const ROUTES = {
   live: () => import("../screens/live.js"),
   setup: () => import("../screens/setup/index.js"),
   settings: () => import("../screens/settings/index.js"),
-  after: () => import("../screens/after.js"),
   help: () => import("../screens/help.js"),
   monitor: () => import("../screens/monitor.js"),
 };
