@@ -13,12 +13,14 @@ import { dialFor, delayOf, pillsFor, bannerFor, heardLines, ppStrip } from "../c
 import { send, messageFor, routeFor } from "../components/actions.js";
 import { toast } from "../components/toast.js";
 import { ask } from "../components/dialog.js";
-import { get } from "../core/api.js";
+import { get, REMOTE } from "../core/api.js";
 import { call as settingsCall } from "./setup/kit.js";
 
 const VIEWS = ["heard", "screen", "both"];
 const HOLD_MS = 600;
 const setHTML = (node, html) => { if (node._html !== html) { node._html = html; node.innerHTML = html; } };
+let resumedSeen = false;                               // "restarted after a problem": said once per page
+const RESUMED = "restarted after a problem";            // lifecycle.RESUMED_WARNING (the Mac app relaunched it)
 const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 const DECK = `
@@ -26,6 +28,7 @@ const DECK = `
     <div class="mtabs" role="tablist" aria-label="What to show">
       ${VIEWS.map(v => `<button class="mtab" role="tab" data-view="${v}">${S.tabs[v]}</button>`).join("")}
       <span class="sub tabhint">${S.tabs.hint} <span class="hidtag">${S.tabs.hiddenTag}</span></span>
+      <button type="button" class="clearbtn" data-clear title="${S.clearTitle}">${S.clearBtn} <kbd>${S.clearKey}</kbd></button>
     </div>
     <div class="views" data-views>
       <div class="view v-heard" role="tabpanel">
@@ -191,8 +194,9 @@ export function render(el, store) {
     const [action, body] = call;
     const res = await send(action, body);
     if (res.ok && res.data && typeof res.data === "object" && "running" in res.data) store.set({ ...store.get(), ...res.data });
-    const msg = messageFor(res, action) || DONE[action]?.(body);
-    const calm = res.notBuilt || res.data?.error === "nothing_to_change";
+    const stale = res.data?.error === "stale";            // Fix last: a newer caption came in meanwhile
+    const msg = stale ? S.fixStale : messageFor(res, action) || DONE[action]?.(body);
+    const calm = res.notBuilt || stale || res.data?.error === "nothing_to_change";
     toast(msg, res.ok ? "ok" : calm ? "info" : "warn");
     if (res.ok && msg) say(msg);
     return res;
@@ -203,6 +207,7 @@ export function render(el, store) {
       toast(S.engine.noKey, "info", 4000); say(S.engine.noKey); return;
     }
     if (intent === "view") return setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]);
+    if (intent === "voice" && REMOTE) return;            // Live Remote may not change it (the knob is hidden there)
     if (intent === "voice") {                            // the Live Voice knob (L)
       const on = !(voiceWant ?? voiceOn());
       voiceWant = on; setVoice(on ? "on" : "off");
@@ -221,7 +226,8 @@ export function render(el, store) {
       const last = [...(s.lines || [])].reverse().find(l => l.dst);
       if (!last) return toast(S.toast.nothingToFix, "info");
       const r = await ask({ title: S.fix.title, hint: S.fix.hint, value: last.dst, ok: S.fix.ok, cancel: S.fix.cancel });
-      if (r && r.text.trim()) post(callFor("correct", s, { text: r.text.trim() }));
+      // based_on: what the operator was fixing; the app changes nothing if a newer caption came in
+      if (r && r.text.trim()) { const [a, b] = callFor("correct", s, { text: r.text.trim() }); post([a, { ...b, based_on: last.dst }]); }
       return;
     }
     if (intent === "terms") {
@@ -238,7 +244,7 @@ export function render(el, store) {
     const call = callFor(intent, s);
     if (call) return post(call);
     const route = routeFor(intent);
-    if (route) { location.hash = route; return; }
+    if (route) { if (!REMOTE) location.hash = route; return; }   // Live Remote shows the Live screen only
     return post([intent, {}]);                           // a backend-named action we don't know yet
   }
 
@@ -296,6 +302,7 @@ export function render(el, store) {
   unbind.push(() => { removeEventListener("keydown", onKey); removeEventListener("keyup", onKeyUp); });
 
   q("[data-hide]").onclick = () => run("pause");
+  q("[data-clear]").onclick = () => run("blank");       // Clear: the same one-shot wipe as Esc
   q("[data-banner] .bbtn").onclick = () => { const b = bannerFor(s); if (b) run(b.action.id); };
   q("[data-ppstrip] button").onclick = () => { const p = ppStrip(s); if (p) run(p.action.id); };
 
@@ -395,7 +402,14 @@ export function render(el, store) {
       bn.dataset.severity = b.severity; bn.dataset.code = b.code;
       if (bn.firstChild.textContent !== b.msg) bn.firstChild.textContent = b.msg;
       bn.lastChild.textContent = b.action.label;
+      bn.lastChild.hidden = REMOTE && !!routeFor(b.action.id);   // opens another screen: not in Live Remote
     } else { delete bn.dataset.code; }
+    if (ps) strip.querySelector("button").hidden = REMOTE && !!routeFor(ps.action.id);
+
+    if (!resumedSeen && (s.warnings || []).some(w => String(w).startsWith(RESUMED))) {
+      resumedSeen = true;                                // the app was restarted mid-service and went live again
+      toast(S.resumed, "info", 10000); say(S.resumed);
+    }
 
     f.update(s);
   }

@@ -105,7 +105,12 @@ class DisplayMixin:
             th.join(5)
 
     def _display_changed(self, changed: dict):
-        if "display.network" in changed or "display.remote" in changed:
+        if "display.port" in changed:                  # a running server moves to the new port
+            with self._net_lock:
+                if self._net_server is not None:
+                    self._net_stop()
+            self.start_display_server()
+        elif "display.network" in changed or "display.remote" in changed:
             self.start_display_server()
         self._broadcast()
 
@@ -134,12 +139,13 @@ def network_app(live):
         await ws.accept()
         last = None
         try:
-            while True:
+            while shown():                             # display.network turned off: the page goes dark
                 cur = json.dumps(live.display_feed(), ensure_ascii=False)
                 if cur != last:
                     await ws.send_text(cur)
                     last = cur
                 await asyncio.sleep(0.25)
+            await ws.close()
         except (WebSocketDisconnect, RuntimeError, OSError):
             return
 

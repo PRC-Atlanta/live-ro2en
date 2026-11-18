@@ -25,6 +25,7 @@ import signal
 import subprocess
 import threading
 import time
+import traceback
 
 import paths
 from translate import WARMUP, assemble, direction_specs, make_translator, members, translator_key
@@ -41,6 +42,11 @@ RESTART_WAIT_S = 180.0                   # a crash while a switch/Start holds _c
 ENGINE_LOG_MAX = 20_000_000              # bytes: engine.log becomes engine.old.log at the next spawn
 LEVEL_STALE_S = 1.5                      # no level event for this long: the meter shows nothing
 LISTEN_ACK_S = 2.0                       # Start waits this long for the engine to go live
+PRELOAD_READY_S = 180.0                  # a warm engine that is not ready this long after its spawn is hung
+START_PRELOAD_WAIT_S = 120.0             # Start waits this long for a preload, then replaces its engine
+EVENT_ERRORS_LOGGED = 20                 # engine events that failed: this many tracebacks in app_errors.log
+EVENT_FAILED_WARNING = "an engine event could not be handled (see logs/app_errors.log); captions carry on"
+RESUMED_WARNING = "restarted after a problem: captions resumed"   # app.py --resumed (the Mac app relaunched it)
 # problem.code -> (severity, action id, action label); the UI has the words (strings.en.js)
 PROBLEMS = {
     "models_missing": ("error", "setup", "Open Setup"),
@@ -57,6 +63,7 @@ PROBLEMS = {
     "english_unavailable": ("info", "lock_ro", "Romanian speaker only"),
     "voice_stopped": ("warn", "settings", "Open Settings"),      # Live Voice: captions are not affected
     "voice_behind": ("info", "help", "What this means"),
+    "voice_failing": ("warn", "help", "What this means"),        # Live Voice runs but keeps failing (voicelink.py)
 }
 
 
@@ -130,6 +137,9 @@ class LifecycleMixin:
         self._ran = False                        # a service ran since launch: idle = stopped
         self._models_cache: tuple[float, list] = (-1e9, [])
         self._engine_warnings: list[str] = []    # from loading: kept across services
+        self._send_lock = threading.Lock()       # one writer at a time on the engine's stdin (_send)
+        self._event_errors = 0                   # engine events that raised (_event_failed)
+        self._preload_t0 = 0.0                   # when the warm engine was spawned (PRELOAD_READY_S)
         self._pid_dir: pathlib.Path | None = None
         self._t_launch = time.time()
         self.exit_process = lambda: os.kill(os.getpid(), signal.SIGTERM)   # /api/shutdown; tests replace it
@@ -165,8 +175,9 @@ class LifecycleMixin:
             if engine_up and not restart:
                 cfg = {k: new[k] for k in ENGINE_CFG_KEYS if k in new and k not in self.RESTART_KEYS}
                 try:
-                    self.engine.stdin.write(json.dumps({"cmd": "cfg", "cfg": cfg}) + "\n")
-                    self.engine.stdin.flush()
+                    with self._send_lock:
+                        self.engine.stdin.write(json.dumps({"cmd": "cfg", "cfg": cfg}) + "\n")
+                        self.engine.stdin.flush()
                     sent = True
                 except Exception as e:                 # noqa: BLE001 - the engine reader reports a death
                     self._warn(f"could not send the new pause settings to the engine: {e}")
@@ -239,15 +250,18 @@ class LifecycleMixin:
                 if self.running or self._shutting_down or self._warm_alive():
                     return
                 self._spawn_engine(device, hold=True, src=getattr(self.args, "file", None))
+                eng, deadline = self.engine, time.monotonic() + PRELOAD_READY_S
             self._broadcast()
             try:
                 self.load_translator()                 # meanwhile the engine loads in its own process
             except Exception as e:                     # noqa: BLE001  Start retries and shows it
                 self._start_error = f"translator failed to load: {type(e).__name__}: {e}"
                 self.status = self._start_error
-            eng = self.engine
             while not self._ready_evt.wait(0.2):       # the engine is loading its models
                 if eng is None or eng.poll() is not None or eng is not self.engine or self._shutting_down:
+                    break
+                if time.monotonic() > deadline:        # hung while loading: never "loading" for ever
+                    self._preload_hung(eng)
                     break
             if self._ready_evt.is_set() and self.tr is not None and hasattr(self, "preload_translators"):
                 self._spares_thread = threading.Thread(target=self._spares, daemon=True, name="spare-translators")
@@ -256,6 +270,17 @@ class LifecycleMixin:
             if self.phase_hint == "loading":
                 self.phase_hint = None
             self._broadcast()
+
+    def _preload_hung(self, eng):
+        """The warm engine did not get ready within PRELOAD_READY_S: end it and say so (phase
+        error, "Start again" spawns a new one)."""
+        with self._control:
+            if eng is not self.engine or self.running or self._ready_evt.is_set():
+                return                                 # a Start replaced it, or it got ready just now
+            self._retire_engine()
+            self._start_error = self.status = (f"speech recognition did not finish loading in "
+                                               f"{PRELOAD_READY_S:.0f} s: press Start to try again")
+        self._broadcast()
 
     def _spares(self):
         """The other profile's translator too (S4, only when RAM allows): the first switch is instant."""
@@ -279,7 +304,8 @@ class LifecycleMixin:
 
     def start(self, device=None):
         paused = self._pause_download()                # the service gets the network and the CPU
-        self._await_preload()                          # Start pressed while still loading: wait
+        self._await_preload(START_PRELOAD_WAIT_S)      # Start pressed while still loading: wait (a hung
+                                                       # engine is then not _warm_usable: it is replaced)
         with self._control:
             if self.running:
                 return
@@ -335,7 +361,10 @@ class LifecycleMixin:
         self._broadcast()
 
     def _new_run(self):
-        """A new service: its own log file, fresh counters and warnings."""
+        """A new service: its own log file, fresh counters and warnings, and nothing left over
+        from the last service or rehearsal: an empty caption box (Remove last / Fix last cannot
+        reach back into it) and screen, no history or delays, translators that remember nothing,
+        and the full engine-restart budget. Stop leaves the last caption up; Start takes it down."""
         logdir = paths.services_dir(self.lc["transcript_log_dir"], self.root)
         logdir.mkdir(parents=True, exist_ok=True)
         stem = f"{dt.datetime.now():%Y-%m-%d_%H%M%S}"
@@ -355,6 +384,12 @@ class LifecycleMixin:
         self.eof.clear()
         self._stopping = False
         self._ran = True
+        self._restarts.clear()                         # crashes before this service do not count against it
+        with self.lock:
+            self.history, self.lat, self.partial = [], [], ""
+        if hasattr(self, "_new_run_screen"):
+            self._new_run_screen()                     # output.py: caption box, its undo, the screen
+        self._reset_translator_context()               # the last service's sentences are no context here
 
     def _engine_cfg(self) -> dict:
         return {**{k: self.lc[k] for k in ENGINE_CFG_KEYS if k in self.lc},
@@ -414,8 +449,9 @@ class LifecycleMixin:
         if eng is None or eng.poll() is not None:
             return False
         try:
-            eng.stdin.write(json.dumps(cmd) + "\n")
-            eng.stdin.flush()
+            with self._send_lock:                      # two threads' lines never interleave on the pipe
+                eng.stdin.write(json.dumps(cmd) + "\n")
+                eng.stdin.flush()
             return True
         except (OSError, ValueError, AttributeError):
             return False
@@ -684,81 +720,84 @@ class LifecycleMixin:
         played_out = False                   # this engine said eof (self.eof outlives it: a warm engine
         for line in engine.stdout:           # started after a rehearsal must still count as crashing)
             try:
-                ev = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            t = ev.get("type")
-            current = engine is self.engine
-            if t == "level":
-                if current:
-                    self._on_level(ev)
-                continue
-            if t == "loading":
-                if current:
-                    self._eng_load = (str(ev.get("label", "")), float(ev.get("pct", 0)))
-            elif t == "input":
-                if current:
-                    self.input_name = ev.get("device")
-            elif t == "listen":
-                if current:
-                    self._listening = bool(ev.get("on"))
-                    if self.phase_hint == "starting" and self._listening:
-                        self.phase_hint = None
-                    self._listen_ack.set()
-            elif t == "ready":
-                if current:
-                    self._engine_ready = True
-                    self._eng_load = None
-                    if ev.get("hold"):
-                        self.status = f"ready ({ev.get('source', 'default')})"
-                    else:
-                        self._listening = True
-                        if self.phase_hint == "starting":
+                try:
+                    ev = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                t = ev.get("type")
+                current = engine is self.engine
+                if t == "level":
+                    if current:
+                        self._on_level(ev)
+                    continue
+                if t == "loading":
+                    if current:
+                        self._eng_load = (str(ev.get("label", "")), float(ev.get("pct", 0)))
+                elif t == "input":
+                    if current:
+                        self.input_name = ev.get("device")
+                elif t == "listen":
+                    if current:
+                        self._listening = bool(ev.get("on"))
+                        if self.phase_hint == "starting" and self._listening:
                             self.phase_hint = None
-                        self.status = f"listening ({ev['source']})"
-                    self._ready_evt.set()
-            elif t == "warn":
-                # e.g. the multilingual model failed to load: auto-detect degrades to RO only
-                if ev["msg"] == "audio input reopened":
-                    self.audio_fault = None              # the device is back
-                    self._audio_kind = None
-                else:
+                        self._listen_ack.set()
+                elif t == "ready":
+                    if current:
+                        self._engine_ready = True
+                        self._eng_load = None
+                        if ev.get("hold"):
+                            self.status = f"ready ({ev.get('source', 'default')})"
+                        else:
+                            self._listening = True
+                            if self.phase_hint == "starting":
+                                self.phase_hint = None
+                            self.status = f"listening ({ev['source']})"
+                        self._ready_evt.set()
+                elif t == "warn":
+                    # e.g. the multilingual model failed to load: auto-detect degrades to RO only
+                    if ev["msg"] == "audio input reopened":
+                        self.audio_fault = None              # the device is back
+                        self._audio_kind = None
+                    else:
+                        self._warn(ev["msg"])
+                        if not self._engine_ready:            # a loading problem: kept for every service
+                            self._engine_warnings = (self._engine_warnings + [ev["msg"]])[-20:]
+                        if ev["msg"].startswith("multilingual model unavailable"):
+                            self._english_unavailable = True
+                    self._elog({"event": "warn", "msg": ev["msg"]})
+                elif t == "error":
+                    self._on_engine_error(ev)
+                elif t == "mode":
+                    # the engine could not run the requested mode (no multilingual model)
+                    self.lang.set_mode(ev["mode"])
                     self._warn(ev["msg"])
-                    if not self._engine_ready:            # a loading problem: kept for every service
-                        self._engine_warnings = (self._engine_warnings + [ev["msg"]])[-20:]
-                    if ev["msg"].startswith("multilingual model unavailable"):
-                        self._english_unavailable = True
-                self._elog({"event": "warn", "msg": ev["msg"]})
-            elif t == "error":
-                self._on_engine_error(ev)
-            elif t == "mode":
-                # the engine could not run the requested mode (no multilingual model)
-                self.lang.set_mode(ev["mode"])
-                self._warn(ev["msg"])
-                self._english_unavailable = True
-                self._elog({"event": "mode", "mode": ev["mode"], "msg": ev["msg"]})
-            elif t == "backlog":
-                self.stt_behind = None if ev["ok"] else ev["msg"]
-                self._elog({"event": "backlog", "ok": ev["ok"], "s": ev["s"]})
-            elif t == "audio":
-                self.audio_fault = None if ev["ok"] else ev["msg"]
-                self._audio_kind = None if ev["ok"] else (ev.get("fault") or "no_frames")
-                self._elog({"event": "audio", "ok": ev["ok"], "msg": ev["msg"]})
-            elif t == "partial":
-                self.partial = ev["text"]
-            elif t == "clause":
-                self._on_clause(ev)
-            elif t == "quiet":                   # silence after the last piece (the sentence buffer)
-                if current:
-                    self._on_quiet(ev)
-                continue
-            elif t == "eof":
-                self._flush()
-                self._drain()                # the last clause is shown and logged before eof
-                self.status = "input ended"
-                played_out = True
-                self.eof.set()
-            self._broadcast()
+                    self._english_unavailable = True
+                    self._elog({"event": "mode", "mode": ev["mode"], "msg": ev["msg"]})
+                elif t == "backlog":
+                    self.stt_behind = None if ev["ok"] else ev["msg"]
+                    self._elog({"event": "backlog", "ok": ev["ok"], "s": ev["s"]})
+                elif t == "audio":
+                    self.audio_fault = None if ev["ok"] else ev["msg"]
+                    self._audio_kind = None if ev["ok"] else (ev.get("fault") or "no_frames")
+                    self._elog({"event": "audio", "ok": ev["ok"], "msg": ev["msg"]})
+                elif t == "partial":
+                    self.partial = ev["text"]
+                elif t == "clause":
+                    self._on_clause(ev)
+                elif t == "quiet":                   # silence after the last piece (the sentence buffer)
+                    if current:
+                        self._on_quiet(ev)
+                    continue
+                elif t == "eof":
+                    played_out = True            # first: a failure below is not a crash of the engine
+                    self._flush()
+                    self._drain()                # the last clause is shown and logged before eof
+                    self.status = "input ended"
+                    self.eof.set()
+                self._broadcast()
+            except Exception:                    # noqa: BLE001  one bad event must not end the reader:
+                self._event_failed(line)         # the engine would run on with nobody reading it
         rc = engine.wait()
         self._drop_engine_pid(engine)
         if engine is not self.engine:        # an older engine; a newer run owns the state
@@ -785,6 +824,24 @@ class LifecycleMixin:
         if ended and self._keep_warm and not getattr(self.args, "file", None):
             # a rehearsal file played out: warm the sound input again for the next Start
             threading.Thread(target=self.preload, daemon=True, name="re-preload").start()
+
+    def _event_failed(self, line: str):
+        """An engine event could not be handled: count it, log it to app_errors.log (the first
+        EVENT_ERRORS_LOGGED, so a recurring fault cannot fill the disk), warn once per service."""
+        self._event_errors += 1
+        if self._event_errors <= EVENT_ERRORS_LOGGED:
+            try:
+                logs = paths.log_dir(self.root)
+                logs.mkdir(parents=True, exist_ok=True)
+                with open(logs / "app_errors.log", "a") as f:
+                    f.write(f"{dt.datetime.now().isoformat()} engine event failed: {str(line)[:300]!r}\n"
+                            f"{traceback.format_exc()}\n")
+            except Exception:                              # noqa: BLE001  the log must not end the reader either
+                pass
+        try:
+            self._warn(EVENT_FAILED_WARNING)               # listed once (_warn), until the next Start
+        except Exception:                                  # noqa: BLE001
+            pass
 
     def _restart_after_crash(self, rc, dead=None) -> bool:
         """The engine died on its own: start it again with the same input, file and mode (the
@@ -986,7 +1043,21 @@ class LifecycleMixin:
         return val
 
     def _problem_code(self, phase: str) -> str | None:
-        """The one problem the banner shows, most urgent first (docs/app_contract.md)."""
+        """The one problem the banner shows, most urgent first (docs/app_contract.md).
+        ProPresenter's own problems come last: the Live screen shows them in the strip under the
+        meter, not in the banner, so they must not hide a problem ranked below them."""
+        code = self._problem_code_but_pp(phase)
+        if code is not None:
+            return code
+        pp = getattr(self, "pp", None)
+        code = pp.status().get("error_code") if hasattr(pp, "status") else None
+        if code in ("unreachable", "auth"):
+            return "pp_unreachable"
+        if code == "message_missing":
+            return "pp_message_missing"
+        return None
+
+    def _problem_code_but_pp(self, phase: str) -> str | None:
         if phase == "needs_setup":
             return "models_missing"
         if phase == "error":
@@ -1001,12 +1072,6 @@ class LifecycleMixin:
                 return "device_lost"
             if kind == "digital_silence":
                 return "no_sound"
-        pp = getattr(self, "pp", None)
-        code = pp.status().get("error_code") if hasattr(pp, "status") else None
-        if code in ("unreachable", "auth"):
-            return "pp_unreachable"
-        if code == "message_missing":
-            return "pp_message_missing"
         pre = getattr(self, "_preflight", None) or {}
         if any(c.get("code") == "disk_full" and not c.get("ok") for c in pre.get("checks") or []):
             return "disk_full"

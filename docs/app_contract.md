@@ -94,6 +94,21 @@ The full list, with request fields, is in `contract.json` → `endpoints`. Reque
 anything must come from the page's own origin, and the Host header must be one of ours
 (`security.py`). Anything else gets a 403.
 
+The screen controls, side by side: `POST /api/pause {on}` (Hide, H) toggles; `POST /api/blank` (the
+Live screen's **Clear** button and Esc; also in Live Remote's `APP_CALLS`) is a one-shot wipe of the
+caption box, its Remove-last/Fix-last history and every screen (ProPresenter, the stage display, the
+captions display and its network page), logged as `blank`, and captions carry on with the next
+phrase; `POST /api/clear` is the same wipe without the log record (older callers). `POST /api/correct
+{text, based_on?}`: with `based_on` (the translation the operator started from) it answers **409
+`{"error": "stale"}`** and changes nothing when a newer caption came in meanwhile. `POST /api/mode`
+answers 400 unless `mode` is `auto`, `ro-en` or `en-ro`.
+
+Start (a service or a rehearsal) begins clean: the caption box and the screen are cleared, the
+history and delays reset, the translators forget their context and the engine-restart budget is
+full again. Stop leaves the last caption up. `app.py --autostart` starts captions once the web
+server answers; `--resumed` (the Mac app relaunched the app mid-service) adds the warning
+"restarted after a problem: captions resumed", which the Live screen shows once.
+
 ## `problem.code`
 
 The UI shows one message and one action for each code. S5a's strings file must have every code
@@ -110,9 +125,10 @@ listed here.
 | `engine_stopped` | the engine exited without `eof` |
 | `english_unavailable` | engine `mode` event / multilingual `warn` |
 | `voice_stopped` | Live Voice is on and its process is not running: it died 3 times in 2 minutes, could not start, or its model is not downloaded (`voicelink.py`) |
+| `voice_failing` | Live Voice runs but keeps failing (its play clock, dropped messages; `voicelink.py`): restarted if it does not recover |
 | `voice_behind` | the voice is more than 10 s behind the speaker during a service (`voice.state: behind`) |
-| `pp_unreachable` | ProPresenter connection failed (S2 health ping) |
-| `pp_message_missing` | the configured ProPresenter message does not exist (S2) |
+| `pp_unreachable` | ProPresenter connection failed (S2 health ping); ranked below every other code (the strip shows it) |
+| `pp_message_missing` | the configured ProPresenter message does not exist (S2); ranked like `pp_unreachable` |
 | `disk_full` | preflight (S9) |
 | `models_missing` | setup (S6) |
 
@@ -173,8 +189,10 @@ paths resolve to exactly where they were before.
 ## Orchestrator flags
 
 `--config --file --autostart --exit-on-eof --headless --pp-port --mode --profile --port
---settings --hold`, all built. `--port` overrides `live.web_port`; the shell passes a free port.
-`--hold` preloads and waits for Start. `tests/test_contract.py` checks the flags both ways.
+--settings --hold --resumed`, all built. `--port` overrides `live.web_port`; the shell passes a free port.
+`--hold` preloads and waits for Start. `--autostart` starts once the web server answers (also with
+`live.autostart` off); `--resumed` (the Mac app's relaunch after a mid-service crash or hang passes
+`--autostart --resumed`) only adds the "restarted after a problem" warning. `tests/test_contract.py` checks the flags both ways.
 
 ## Bundle layout (S7/S8/S10)
 

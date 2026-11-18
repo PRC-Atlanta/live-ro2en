@@ -17,6 +17,10 @@ LAYOUT_LIMITS = {"lines": (1, 6), "chars": (10, 120)}
 SONG_SNOOZE_S = 180.0                  # the operator ended a detected song: no new one this long
 
 
+class StaleCorrection(Exception):
+    """Fix last caption: the last caption is no longer the one the operator was fixing."""
+
+
 class OutputMixin:
     def _mixin_init(self):
         self.paused = False                    # Hide: nothing reaches ProPresenter
@@ -108,6 +112,17 @@ class OutputMixin:
             self.caps.clear()
             self.pp.clear()
         self._broadcast()
+
+    def _new_run_screen(self):
+        """A new service starts with an empty caption box (no undo into the last service) and a
+        blank screen: ProPresenter, the stage display, the captions display and its network page
+        (they show the caption box). During a song the symbol stays. Sent with show(""), which
+        waits out ProPresenter's backoff (the health check sends it later) instead of a timeout."""
+        self._last_out = None                   # a late verse must not redo across this
+        with self._out_lock:
+            self.caps.clear()
+            if not self.song_on:
+                self.pp.show("")
 
     def blank(self):
         self.clear()
@@ -223,13 +238,20 @@ class OutputMixin:
         self._note_correction({"event": "correction", "kind": "retract", "removed": before, "screen": text})
         return True
 
-    def correct(self, text: str) -> bool:
-        """Fix last caption: the operator's text replaces the last caption on screen."""
-        self._last_out = None                   # a late verse must not redo across this
+    def correct(self, text: str, based_on: str | None = None) -> bool:
+        """Fix last caption: the operator's text replaces the last caption on screen.
+        `based_on`: the translation the operator was fixing (the Fix dialog's starting text).
+        When a newer caption came in while they typed, nothing is changed: StaleCorrection."""
         text = " ".join(str(text).split())
         if not text:
             return False
         with self._out_lock:
+            if based_on is not None:
+                with self.lock:
+                    last = next((h.get("translation") for h in reversed(self.history) if h.get("translation")), None)
+                if last is not None and " ".join(str(last).split()) != " ".join(str(based_on).split()):
+                    raise StaleCorrection("a newer caption came in, so nothing was changed")
+            self._last_out = None               # a late verse must not redo across this
             before = self.caps.text
             shown = self.caps.replace_last(text)
             if shown is None:
@@ -347,6 +369,10 @@ class OutputMixin:
             if getattr(self.pp, "_want", None) != TEST_CAPTION:
                 self._before_test = getattr(self.pp, "_want", None)   # Hold puts this back
             ok = self.pp.show(TEST_CAPTION)
+            if not ok and hasattr(self.pp, "unwant"):
+                # not sent (unreachable, backing off): the health check must not put the test
+                # caption up minutes later, over the service; it wants what it wanted before
+                self.pp.unwant(TEST_CAPTION, self._before_test)
         if self._test_timer:
             self._test_timer.cancel()
         if ok:

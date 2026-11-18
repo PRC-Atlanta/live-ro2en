@@ -62,8 +62,8 @@ class AIMixin:
         if not self.ai_selected() or self.tr is None:
             return self.tr
         eng = self.ai()
-        if not eng.key_present():
-            return self.tr
+        if not eng.key_present(wait=False):             # never wait for the Keychain on the caption path:
+            return self.tr                              # local until the lookup (on its own thread) is in
         if self._ai_tr is None or self._ai_tr.engine is not eng:
             self._ai_tr = translate.HybridTranslator(eng, lambda: self.tr,
                                                      context_clauses=int(self.lc.get("context_clauses", 2)))
@@ -150,6 +150,9 @@ class AIMixin:
     def _engine_new_run(self):
         self._ai_used = {k: {"phrases": 0, "s": 0.0} for k in self._ai_used}
         self._ai_used_prev = None
+        # a new service: the AI translator is made again at its first phrase, so nothing of the last
+        # service (its context, the Bible reading and verse it was following) carries over
+        self._ai_tr = None
 
     # --- the voice's summaries follow the same rule (voicelink.py) ---------------------------------------
     def _voice_summary(self, texts: list[str], lang: str, deadline: float) -> dict:

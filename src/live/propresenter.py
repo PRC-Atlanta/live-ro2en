@@ -115,6 +115,13 @@ class ProPresenter:
             self._want = ""
             return self._send("")
 
+    def unwant(self, text: str, before: str | None):
+        """`text` was not sent and must not be re-sent later (a test caption): want `before`
+        again, unless something newer is wanted already."""
+        with self._lock:
+            if self._want == text:
+                self._want = before
+
     def _send(self, text: str) -> bool:
         """Put `text` on screen now ("" = hide), whatever was sent before. Under _lock."""
         if text:

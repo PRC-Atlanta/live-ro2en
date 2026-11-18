@@ -545,10 +545,7 @@ class VoiceMixin:
         if light == "stopped":
             return "voice_stopped"
         if light == "behind" and self._voice_failing:
-            # its own banner once lifecycle.PROBLEMS knows the code; until then the amber light and its
-            # error text say it (voice_behind's words, "10 s behind", would be wrong)
-            lc = sys.modules.get("lifecycle")
-            return "voice_failing" if "voice_failing" in (getattr(lc, "PROBLEMS", None) or {}) else None
+            return "voice_failing"                      # not voice_behind: "10 s behind" would be wrong
         if light == "behind" and getattr(self, "running", False):
             return "voice_behind"
         return None

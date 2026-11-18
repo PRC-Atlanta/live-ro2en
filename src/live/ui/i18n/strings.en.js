@@ -171,6 +171,8 @@ export const S = {
                      action: { id: "settings", label: "Open Settings" } },
     voice_behind: { msg: "Live Voice is more than 10 seconds behind the speaker. It speaks faster and shortens what it says until it has caught up.",
                     action: { id: "help", label: "What this means" } },
+    voice_failing: { msg: "Live Voice keeps failing: phones may hear nothing or miss sentences. Captions are not affected. It is restarted if it does not recover.",
+                     action: { id: "help", label: "What this means" } },
     models_missing: { msg: "Some translation files are missing. Open Setup to download them.",
                       action: { id: "setup", label: "Open Setup" } },
   },
@@ -278,6 +280,13 @@ export const S = {
     shortcutsTitle: "Keyboard shortcuts",
     back: "Back to Live",
   },
+
+  // review 2026-11-18: the Clear button (the same action as Esc), Fix last refused, restart, closed feed
+  clearBtn: "Clear", clearKey: "Esc",
+  clearTitle: "Wipe the captions now: the big screen, the stage display and the captions display. Remove last can't bring them back. New captions start with the next phrase.",
+  fixStale: "A newer caption came in, so nothing was changed.",
+  resumed: "Restarted after a problem — captions resumed",
+  connClosed: "This window lost its connection for good (the PIN changed, or Live Remote was turned off). Close it and open it again.",
 };
 
 export function fmtS(s) { return s == null ? "–" : `${Number(s).toFixed(1)} s`; }

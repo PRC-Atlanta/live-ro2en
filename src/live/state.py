@@ -76,8 +76,13 @@ class StateMixin:
         return out
 
     def _broadcast(self):
-        for q in list(self.listeners):
+        """The state, built once, to every /ws listener (the same object: listeners only read it)."""
+        listeners = list(self.listeners)
+        if not listeners:
+            return
+        st = self.state()
+        for q in listeners:
             try:
-                q.put_nowait(self.state())
+                q.put_nowait(st)
             except Exception:
                 pass

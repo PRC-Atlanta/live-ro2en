@@ -19,7 +19,7 @@
     "line": {"object": {"src": "str", "dst": "str", "lat": "num", "lang": {"enum": ["ro", "en"]}}},
     "problem_code": {"enum": ["no_sound", "device_lost", "mic_denied", "mic_ask", "recognition_behind", "captions_behind",
                               "engine_stopped", "english_unavailable", "pp_unreachable", "pp_message_missing",
-                              "voice_stopped", "voice_behind",
+                              "voice_stopped", "voice_behind", "voice_failing",
                               "disk_full", "models_missing"]},
     "not_built": {"object": {"error": {"enum": ["not_implemented"]}, "endpoint": "str", "owner": "str"}},
     "pp_status": {"object": {"connected": "bool", "since": "num|null", "last_ms": "num|null",
@@ -278,6 +278,7 @@
     "--config": {"built": true}, "--file": {"built": true}, "--autostart": {"built": true},
     "--exit-on-eof": {"built": true}, "--headless": {"built": true}, "--pp-port": {"built": true},
     "--mode": {"built": true}, "--profile": {"built": true}, "--port": {"built": true},
-    "--settings": {"built": true, "owner": "S3"}, "--hold": {"built": true, "owner": "S1"}
+    "--settings": {"built": true, "owner": "S3"}, "--hold": {"built": true, "owner": "S1"},
+    "--resumed": {"built": true, "owner": "S1"}
   }
 }

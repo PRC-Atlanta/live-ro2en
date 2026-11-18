@@ -13,7 +13,7 @@ const PROBLEMS = {
   no_sound: "warn", device_lost: "error", mic_denied: "error", mic_ask: "error", recognition_behind: "warn",
   captions_behind: "warn", engine_stopped: "error", english_unavailable: "info",
   pp_unreachable: "error", pp_message_missing: "error", disk_full: "error", models_missing: "error",
-  voice_stopped: "warn", voice_behind: "info",
+  voice_stopped: "warn", voice_behind: "info", voice_failing: "warn",
 };
 
 export function baseState() {
@@ -619,6 +619,8 @@ Object.assign(SCENARIOS, {
   voice_ready: t => ({ ...SCENARIOS.live(t), voice: voiceOf("ready", { ro: 2, en: 0 }) }),
   voice_behind: t => ({ ...SCENARIOS.live(t), voice: voiceOf("behind", { ro: 14, en: 3 }, 13.4),
                         problem: { code: "voice_behind", severity: "info", action: { id: "help", label: "What this means" } } }),
+  voice_failing: t => ({ ...SCENARIOS.live(t), voice: { ...voiceOf("behind", { ro: 5, en: 2 }), error: "sentences keep failing to generate: synth error" },
+                         problem: { code: "voice_failing", severity: "warn", action: { id: "help", label: "What this means" } } }),
   voice_stopped: t => ({ ...SCENARIOS.live(t), voice: { ...voiceOf("stopped", { ro: 0, en: 0 }), error: "the voice stopped (exit 9) and was not restarted again" },
                          problem: { code: "voice_stopped", severity: "warn", action: { id: "settings", label: "Open Settings" } } }),
   ai_on: t => ({ ...SCENARIOS.live(t), ai: aiOf("ai", "ai"), voice: voiceOf("speaking", { ro: 14, en: 3 }) }),
