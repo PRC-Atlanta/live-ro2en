@@ -36,16 +36,16 @@ test("a fresh install reaches Live, and Next waits for sound", async () => {
   assert.equal(stateOf("fresh_install").phase, "needs_setup");
   const ctx = { profile: null, modelsReady: false, mic: null, heard: false, ppOk: false, mode: null };
 
-  // 1. this Mac
+  // 1. download: this Mac recommends what to fetch
   let info = (await api("GET", "setup")).data;
   assert.equal(info.needs_setup, true);
   ctx.profile = flow.defaultProfile(info);
   assert.equal(ctx.profile, "quality");
   assert.equal(flow.sizeGb(info, "quality"), 17);
-  assert.ok(flow.canNext("check", ctx));
+  assert.ok(!flow.canNext("download", ctx), "a choice alone does not unlock Next");
   assert.ok((await put({ "live.profile": ctx.profile })).ok);
 
-  // 2. download, pause (a real cancel: the partial files stay), resume, done
+  // ... download, pause (a real cancel: the partial files stay), resume, done
   await api("POST", "setup/download", { profile: ctx.profile });
   clock += 2000;
   info = (await api("POST", "setup/cancel")).data;
@@ -63,14 +63,16 @@ test("a fresh install reaches Live, and Next waits for sound", async () => {
   assert.ok(ctx.modelsReady && info.profiles.fast.ready && !info.needs_setup);
   assert.ok(flow.canNext("download", ctx));
 
-  // 3. microphone: GET /api/permissions (S1) says the microphone is allowed
+  // 2. sound: GET /api/permissions (S1) says the microphone is allowed
+  assert.ok(!flow.canNext("sound", { ...ctx, mic: "undetermined", noMeter: true }), "not before the microphone is allowed");
+  assert.ok(!flow.canNext("sound", { ...ctx, mic: "denied", heard: true }));
   const perm = await api("GET", "permissions");
   assert.ok(perm.ok && !perm.notBuilt);
   ctx.mic = perm.ok ? perm.data.microphone : "unknown";
   assert.equal(ctx.mic, "granted");
-  assert.ok(flow.canNext("mic", ctx));
+  assert.ok(flow.micOk(ctx.mic) && flow.micOk("unknown"));
 
-  // 4. sound input: the mixer comes first and is silent for 3 s
+  // ... sound input: the mixer comes first and is silent for 3 s
   const devs = flow.sortDevices((await api("GET", "devices")).data);
   assert.equal(devs[0].name, "Behringer UMC204HD");
   assert.ok((await put({ "live.input_device": devs[0].name })).ok);
@@ -83,13 +85,13 @@ test("a fresh install reaches Live, and Next waits for sound", async () => {
   assert.ok(ctx.heard);
   assert.ok(flow.canNext("sound", ctx));
 
-  // 5. ProPresenter on this Mac
+  // 3. big screen: ProPresenter on this Mac
   assert.ok((await put({ "propresenter.host": "127.0.0.1", "propresenter.port": 50001 })).ok);
   ctx.ppOk = flow.ppResult(await api("POST", "pp/test", {})).ok;
   assert.ok(flow.canNext("pp", ctx));
   assert.ok(flow.ppResult(await api("POST", "pp/test_caption", {})).ok);
 
-  // 6. language, finish -> preload (S1) -> Live is ready to start
+  // 4. speaker, finish -> preload (S1) -> Live is ready to start
   ctx.mode = "ro-en";
   assert.ok(flow.canNext("lang", ctx));
   assert.ok((await put({ "live.language_mode": ctx.mode })).ok);
