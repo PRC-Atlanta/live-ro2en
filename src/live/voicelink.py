@@ -29,6 +29,11 @@ HANG_S = 5.0                                           # no status for this long
 START_GRACE_S = 60.0                                   # the model loads and warms up before `ready`
 STATE_EVERY_S = 1.0
 BEHIND_S = 10.0                                        # the light turns amber past this
+GEN_STUCK_S = 30.0                                     # one job generating this long: the voice is restarted
+GEN_FAIL_N = 3                                         # this many failed generations in a minute, more than
+                                                       # worked: the light turns amber (the voice says nothing)
+CLOCK_FAIL_N = 20                                      # play clock frames failed in the last 10 s: amber...
+CLOCK_FAIL_TICKS = 5                                   # ...and restarted when that lasts this many seconds
 LOG_MAX = 20_000_000
 SENT_KEYS = ("enabled", "en", "mix", "voices", "steps", "threads", "port", "bitrate_kbps", "preroll_s", "gap_s", "speed", "per_addr",
              "speed_max", "speed_lag_lo_s", "speed_lag_hi_s", "speed_step", "speed_round", "limit_s", "skip_s",
@@ -70,6 +75,9 @@ class VoiceMixin:
         self._voice_restarts: collections.deque = collections.deque()
         self._voice_dead: str | None = None            # stopped for good: voice_stopped
         self._voice_error: str | None = None           # the last error it reported
+        self._voice_failing: str | None = None         # it runs, but keeps failing: why (amber light)
+        self._voice_clock_bad = 0                      # status reports in a row with the play clock failing
+        self._voice_dropped_seen = 0
         self._voice_stopping = False
         self._voice_thread: threading.Thread | None = None
         self._voice_tick: threading.Thread | None = None
@@ -124,20 +132,25 @@ class VoiceMixin:
                 pass
             cmd = [str(py), str(VOICE_SCRIPT), "--cfg", json.dumps(self._voice_cfg_msg()), "--log", str(vlog)]
             with open(err_path, "a") as err:
-                self.voice = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err,
-                                              text=True, bufsize=1, env=paths.voice_env())
+                proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err,
+                                        text=True, bufsize=1, env=paths.voice_env())
         except Exception as e:                          # noqa: BLE001  no interpreter, no log folder…
             self.voice = None
             self._voice_dead = self._voice_error = f"the voice could not start: {type(e).__name__}: {e}"
             return False
+        # Everything about the new process is reset before it becomes self.voice: a message sent from now
+        # on goes into its own queue, and the hang check never sees the old process's `ready` and status
+        # time on the new one (which would restart it at once)
         self._voice_ready, self._voice_stopping = False, False
         self._voice_out = queue.Queue(maxsize=2000)    # nothing meant for the last process reaches this one
-        self._voice_writer = threading.Thread(target=self._voice_write_loop, args=(self.voice, self._voice_out),
-                                              daemon=True, name="voice-writer")
-        self._voice_writer.start()
         self._voice_started = time.time()
         self._voice_status, self._voice_status_t = {}, 0.0
+        self._voice_failing, self._voice_clock_bad = None, 0
         self._voice_dead = None
+        self.voice = proc
+        self._voice_writer = threading.Thread(target=self._voice_write_loop, args=(proc, self._voice_out),
+                                              daemon=True, name="voice-writer")
+        self._voice_writer.start()
         self._voice_log = vlog
         self._voice_write_pid(self.voice)
         self._voice_thread = threading.Thread(target=self._voice_reader, args=(self.voice,), daemon=True,
@@ -226,7 +239,10 @@ class VoiceMixin:
                 self._voice_restarts.popleft()
             if len(self._voice_restarts) >= RESTARTS:
                 self.voice, self._voice_ready = None, False
-                self._voice_dead = f"the voice stopped ({why}) and was not restarted again"
+                # with the last error it reported (a bare "exit 3" says nothing): a port that is taken, a
+                # model that does not load…
+                err = self._voice_error
+                self._voice_dead = f"the voice stopped ({why}) and was not restarted again" + (f": {err}" if err else "")
                 self._voice_event({"event": "voice_stopped", "why": why})
                 self._broadcast()
                 return False
@@ -444,15 +460,46 @@ class VoiceMixin:
                 self._voice_state_now()
                 now = time.time()
                 if v.poll() is None:
-                    age = self._voice_status.get("clock_age_s")
+                    st = self._voice_status
+                    age, gen_age = st.get("clock_age_s"), st.get("gen_age_s")
+                    self._voice_check_failing(st)
                     if self._voice_ready and now - self._voice_status_t > HANG_S:
                         self._voice_restart("no status", v)
                     elif self._voice_ready and isinstance(age, (int, float)) and age > HANG_S:
                         self._voice_restart("the play clock stopped", v)   # it reports, but plays nothing
+                    elif self._voice_ready and isinstance(gen_age, (int, float)) and gen_age > GEN_STUCK_S:
+                        self._voice_restart("a sentence was generating for too long", v)   # a stuck synth
+                    elif self._voice_ready and self._voice_clock_bad >= CLOCK_FAIL_TICKS:
+                        self._voice_restart("the play clock keeps failing", v)
                     elif not self._voice_ready and now - self._voice_started > START_GRACE_S:
                         self._voice_restart("did not become ready", v)
             except Exception:                           # noqa: BLE001
                 self._state_failed(self._voice_loop)
+
+    def _voice_check_failing(self, st: dict):
+        """It runs and reports, but does not work: generations keep failing while sentences arrive, or
+        the play clock keeps failing (phones hear nothing). Turns the light amber with the reason; a play
+        clock that keeps failing is also restarted (_voice_loop). Messages it was sent but never read
+        (_voice_dropped) go into the service log."""
+        why = None
+        clock_n = st.get("clock_errors_recent")
+        if isinstance(clock_n, int) and clock_n >= CLOCK_FAIL_N:
+            self._voice_clock_bad += 1
+            why = f"the play clock keeps failing: {st.get('clock_error') or 'error'}"
+        else:
+            self._voice_clock_bad = 0
+        bad, ok = st.get("gen_errors_recent"), st.get("gen_ok_recent")
+        if why is None and isinstance(bad, int) and bad >= GEN_FAIL_N and bad > (ok if isinstance(ok, int) else 0):
+            why = f"sentences keep failing to generate: {self._voice_error or 'error'}"
+        if why != self._voice_failing:
+            self._voice_failing = why
+            if why:
+                self._voice_event({"event": "voice_failing", "why": why})
+            self._broadcast()
+        if self._voice_dropped > self._voice_dropped_seen:
+            self._voice_event({"event": "voice_dropped", "n": self._voice_dropped - self._voice_dropped_seen,
+                               "total": self._voice_dropped})
+            self._voice_dropped_seen = self._voice_dropped
 
     # --- what the operator sees ---------------------------------------------------------------------
     def voice_url(self) -> str | None:
@@ -485,6 +532,8 @@ class VoiceMixin:
             return "starting", None
         st = self._voice_status
         behind = st.get("behind_s")
+        if self._voice_failing:                         # it runs but keeps failing: amber, with the reason
+            return "behind", (round(float(behind), 1) if isinstance(behind, (int, float)) else None)
         if isinstance(behind, (int, float)) and behind > BEHIND_S:
             return "behind", round(float(behind), 1)
         return ("speaking" if st.get("playing_sid") is not None or st.get("queue_n") else "ready"), \
@@ -495,6 +544,11 @@ class VoiceMixin:
         light, _ = self._voice_light()
         if light == "stopped":
             return "voice_stopped"
+        if light == "behind" and self._voice_failing:
+            # its own banner once lifecycle.PROBLEMS knows the code; until then the amber light and its
+            # error text say it (voice_behind's words, "10 s behind", would be wrong)
+            lc = sys.modules.get("lifecycle")
+            return "voice_failing" if "voice_failing" in (getattr(lc, "PROBLEMS", None) or {}) else None
         if light == "behind" and getattr(self, "running", False):
             return "voice_behind"
         return None
@@ -514,7 +568,8 @@ class VoiceMixin:
             "port": self._voice_port or int(self.voice_cfg().get("port", 8767)),
             "model": self.voice_model_ready() if self.voice_enabled() else None,
             "summarizer": self._voice_can_summarize() if self.voice_enabled() else False,
-            "error": (self._voice_dead or self._voice_error) if light == "stopped" else None,
+            "error": ((self._voice_dead or self._voice_error) if light == "stopped"
+                      else self._voice_failing if light == "behind" else None),
             "session": self.voice_summary()}}
 
     def voice_summary(self, items: list[dict] | None = None) -> dict:

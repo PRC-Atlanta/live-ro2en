@@ -110,12 +110,15 @@ class Player:
                 return now + (len(self.cur.pcm) - self.pos) / stream.SR
             return self.last_end
 
-    def frame(self, now: float, n: int = stream.FRAME):
+    def frame(self, now: float, n: int = stream.FRAME, last_end: float | None = None):
+        """`last_end`: when the stream's last item ended, whichever language spoke it (the mixed stream:
+        the pause before an item counts from the other language's item too)."""
         import numpy as np
         out = np.zeros(n, dtype=np.float32)
         done = None
         with self.lock:
-            if self.cur is None and self.queue and now >= self.last_end + self.queue[0].pause_before:
+            after = self.last_end if last_end is None else max(self.last_end, last_end)
+            if self.cur is None and self.queue and now >= after + self.queue[0].pause_before:
                 self.cur, self.pos, self.fade_from = self.queue.pop(0), 0, None
                 self.cur.play_start = now
             it = self.cur
@@ -177,6 +180,13 @@ class Voice:
         self.summaries: dict[int, dict] = {}
         self.req = 0
         self.errors = 0
+        # When things went wrong or right lately (status: the orchestrator turns the light amber, or
+        # restarts the voice, when they keep failing)
+        self.gen_err_t: collections.deque = collections.deque(maxlen=200)    # generations that failed
+        self.gen_ok_t: collections.deque = collections.deque(maxlen=200)     # generations that worked
+        self.clock_err_t: collections.deque = collections.deque(maxlen=2000) # play clock frames that failed
+        self.gen_t0: float | None = None           # when the job being generated now was taken up
+        self.status_errors = 0
         self.rtf: collections.deque = collections.deque(maxlen=20)   # (gen_s, audio_s)
         self.stop = threading.Event()
         self.log_path = pathlib.Path(log_path) if log_path else None
@@ -312,6 +322,11 @@ class Voice:
         self.log({"event": "hush", "why": why, "dropped_sids": sids})
 
     # --- generation -------------------------------------------------------------------------------
+    @staticmethod
+    def mute(text: str, lang: str) -> bool:
+        """Nothing would be said: a masked word (***) or blanks only. The synth is not asked for it."""
+        return not speakable.speakable(str(text or ""), lang).strip()
+
     def say(self, text: str, lang: str, speed: float):
         t0 = time.perf_counter()
         pcm = self.synth.say(speakable.speakable(text, lang), lang, speed)
@@ -327,6 +342,7 @@ class Voice:
                 job = self.inbox.popleft()
                 self.current = job[1] if job[0] == "sentence" else None
                 self.current_stale = None
+                self.gen_t0 = time.time()
             try:
                 if job[0] == "sentence":
                     self.take_up(job[1])
@@ -336,13 +352,16 @@ class Voice:
                     pcm, gen_s = self.say(job[2], job[1], self.pace[job[1]].c["speed"])
                     self.enqueue(Item(job[1], "test", job[2], [], pcm, gen_s, self.pace[job[1]].c["speed"],
                                       self.pace[job[1]].c["gap_s"]))
+                self.gen_ok_t.append(time.time())
             except Exception as e:                          # noqa: BLE001  one sentence never stops the voice
                 self.errors += 1
+                self.gen_err_t.append(time.time())
                 emit({"type": "error", "where": "generate", "msg": f"{type(e).__name__}: {e}"[:300]})
                 self.log({"event": "error", "where": "generate", "msg": f"{type(e).__name__}: {e}"})
             finally:
                 with self.wake:
                     self.current = None
+                    self.gen_t0 = None
 
     def enqueue(self, it: Item):
         if it.kind != "test" and self.silenced():
@@ -361,6 +380,13 @@ class Voice:
                 text = it.stale
                 if text is None or it not in p.queue:
                     return
+                mute = self.mute(text, it.lang)
+                if mute:                                    # corrected to nothing speakable: not spoken at all
+                    p.queue.remove(it)
+            if mute:
+                self.counts["sentences_mute"] += 1
+                self.log({"event": "skipped", "lang": it.lang, "sids": it.sids, "why": "nothing to say"})
+                return
             pcm, gen_s = self.say(text, it.lang, it.speed)
             with p.lock:
                 if it not in p.queue:                       # it started playing, or was dropped, meanwhile
@@ -413,6 +439,9 @@ class Voice:
             return
         with player.lock:
             queued = list(player.queue)
+        # What a summary may replace: sentences and earlier summaries. A test line (Settings -> Test voice)
+        # still counts for the timing, but is never thrown away with them.
+        spoken = [q for q in queued if q.kind in ("sentence", "summary")]
         d = pace.plan(s, now, self._play_free(lang, now), [q.view() for q in queued],
                       summarizer=bool(self.state.get("summarizer")))
         pause, item, summarize_s = pace.c["gap_s"], None, 0.0
@@ -424,7 +453,14 @@ class Voice:
                 summarize_s = r["took_s"]
                 rec.update(accepted=r["ok"], reason=r.get("reason"), out=r.get("text"), gemma_s=r.get("gemma_s"),
                            took_s=round(summarize_s, 3))
-                if r["ok"] and not self._stale_now() and hush_n == self.hush_n:
+                if r["ok"] and self.mute(r["text"], lang):
+                    rec.update(accepted=False, reason="nothing to say")
+                    self.counts["summaries_refused"] += 1
+                elif r["ok"] and (self._stale_now() or hush_n != self.hush_n):
+                    # a correction or Hide / Song / Blank came while the summary was written: thrown away
+                    rec.update(accepted=False, reason="changed_meanwhile")
+                    self.counts["summaries_late"] += 1
+                elif r["ok"]:
                     pcm, gen_s = self.say(r["text"], lang, d["speed"])
                     pace.generated(gen_s, len(r["text"].split()))
                     self.rtf.append((gen_s, len(pcm) / stream.SR))
@@ -435,8 +471,8 @@ class Voice:
                     with self.wake:
                         with player.lock:
                             if (hush_n == self.hush_n and self.current_stale is None
-                                    and all(q in player.queue and q.stale is None for q in queued)):
-                                player.queue = [q for q in player.queue if q not in queued]
+                                    and all(q in player.queue and q.stale is None for q in spoken)):
+                                player.queue = [q for q in player.queue if q not in spoken]
                                 item = Item(lang, "summary", r["text"], d["ask"], pcm, gen_s, d["speed"], pause,
                                             summarize_s)
                                 item.lag_est, item.target = d["lag"], d["target"]
@@ -458,7 +494,8 @@ class Voice:
             with player.lock:
                 drop = pace.skip(d["lag"], [q.view() for q in player.queue])
                 if drop:
-                    gone = [q for q in player.queue if not any(c.get("scripture") for c in q.covers)]
+                    gone = [q for q in player.queue if q.kind != "test"
+                            and not any(c.get("scripture") for c in q.covers)]
                     player.queue = [q for q in player.queue if q not in gone]
                 else:
                     gone = []
@@ -477,6 +514,10 @@ class Voice:
                 if pcm is not None and want == text:
                     break
                 text = want
+                if self.mute(text, lang):                   # a masked word only: nothing to say
+                    self.counts["sentences_mute"] += 1
+                    self.log({"event": "skipped", "lang": lang, "sids": [s.get("sid")], "why": "nothing to say"})
+                    return
                 pcm, gen_s = self.say(text, lang, d["speed"])
             pace.generated(gen_s, len(text.split()))
             self.rtf.append((gen_s, len(pcm) / stream.SR))
@@ -573,14 +614,18 @@ class Voice:
             wall = time.time() - (now - due)
             for out in self.channels:
                 try:
-                    player = self._floor() if self.mix else self.players[out]
-                    pcm = player.frame(wall)
+                    if self.mix:                            # one stream: the pause counts from either language
+                        player = self._floor()
+                        pcm = player.frame(wall, last_end=max(p.last_end for p in self.players.values()))
+                    else:
+                        pcm = self.players[out].frame(wall)
                     data = self.encoders[out].encode(pcm)
                     self.channels[out].put(data, stream.FRAME)
                     if data and self.server is not None and n % NOTIFY_EVERY == 0:
                         self.server.notify(out)
                 except Exception as e:                      # noqa: BLE001
                     self.errors += 1
+                    self.clock_err_t.append(time.time())
                     self.clock_error = f"{type(e).__name__}: {e}"[:200]
             self.clock_t = time.time()
             n += 1
@@ -616,7 +661,10 @@ class Voice:
                            "behind_s": round(behind, 1) if behind is not None else None,
                            "playing_sid": (cur.sids[0] if cur is not None and cur.sids else None),
                            "speed": self.pace[lang].speed}
-        gen, aud = sum(g for g, _ in self.rtf), sum(a for _, a in self.rtf)
+        rtf = list(self.rtf)                            # a copy: the generation thread appends meanwhile
+        gen, aud = sum(g for g, _ in rtf), sum(a for _, a in rtf)
+        gen_t0 = self.gen_t0
+        recent = lambda ts, s: sum(1 for t in list(ts) if now - t <= s)     # noqa: E731
         behind = [v["behind_s"] for v in langs.values() if v["behind_s"] is not None]
         return {"type": "status", "listeners": sum(v["listeners"] for v in langs.values()),
                 "queue_n": sum(v["queue_n"] for v in langs.values()),
@@ -626,25 +674,37 @@ class Voice:
                 "rtf_recent": round(gen / aud, 3) if aud else None, "errors": self.errors, "langs": langs,
                 "mix": self.mix,
                 "clock_age_s": round(now - self.clock_t, 2),
+                # what went wrong lately, for the orchestrator's light (voicelink): the play clock's last
+                # error and its failed frames in the last 10 s; generations that failed and that worked in
+                # the last 60 s; how long the job in hand has been generating (None: nothing in hand)
+                "clock_error": self.clock_error,
+                "clock_errors_recent": recent(self.clock_err_t, 10.0),
+                "gen_errors_recent": recent(self.gen_err_t, 60.0),
+                "gen_ok_recent": recent(self.gen_ok_t, 60.0),
+                "gen_age_s": round(now - gen_t0, 1) if gen_t0 is not None else None,
+                "status_errors": self.status_errors,
                 "counts": dict(self.counts)}
 
     def status_loop(self):
+        """Never dies: a status that fails is counted and the next one tried (with no status the
+        orchestrator restarts the voice after a few seconds)."""
         while not self.stop.wait(STATUS_EVERY_S):
-            st = self.status()
-            emit(st)
-            if time.time() - self._last_status_log >= 10.0:
-                self._last_status_log = time.time()
-                self.log({"event": "status", **{k: v for k, v in st.items() if k != "type"}})
+            try:
+                st = self.status()
+                emit(st)
+                if time.time() - self._last_status_log >= 10.0:
+                    self._last_status_log = time.time()
+                    self.log({"event": "status", **{k: v for k, v in st.items() if k != "type"}})
+            except Exception as e:                      # noqa: BLE001
+                self.status_errors += 1
+                self.errors += 1
+                self.log({"event": "error", "where": "status", "msg": f"{type(e).__name__}: {e}"})
 
     # --- start ---------------------------------------------------------------------------------------
     def start(self) -> bool:
         cfg = self.cfg
-        if self.synth is None:
-            from voice import synth
-            self.synth = synth.Synth(threads=int(cfg.get("threads", 4)),
-                                     voices={l: (cfg.get("voices") or {}).get(l, "M2") for l in self.langs},
-                                     steps=int(cfg.get("steps", 8)))
-            self.synth.warm_up(self.langs)
+        # The port first: a port that is taken fails in a second with its own error, not after the
+        # model has loaded and warmed up (until `ready` a phone that connects hears nothing yet)
         self.encoders = {o: stream.Encoder(int(cfg.get("bitrate_kbps", 64))) for o in self.channels}
         self.server = stream.Server(self.channels, host=str(cfg.get("host", "0.0.0.0")), port=int(cfg.get("port", 8767)),
                                     preroll_s=float(cfg.get("preroll_s", 1.0)),
@@ -654,6 +714,12 @@ class Voice:
         if not self.server.start():
             emit({"type": "error", "where": "listen", "msg": f"port {cfg.get('port', 8767)}: {self.server.error}"})
             return False
+        if self.synth is None:
+            from voice import synth
+            self.synth = synth.Synth(threads=int(cfg.get("threads", 4)),
+                                     voices={l: (cfg.get("voices") or {}).get(l, "M2") for l in self.langs},
+                                     steps=int(cfg.get("steps", 8)))
+            self.synth.warm_up(self.langs)
         for fn, name in ((self.clock_loop, "voice-clock"), (self.gen_loop, "voice-gen"),
                          (self.status_loop, "voice-status"), (self.report_loop, "voice-report")):
             threading.Thread(target=fn, daemon=True, name=name).start()
