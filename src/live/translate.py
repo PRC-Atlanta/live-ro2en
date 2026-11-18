@@ -11,6 +11,7 @@ import csv
 import pathlib
 import re
 import sys
+import threading
 import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
@@ -41,12 +42,20 @@ _MODERN_RE = re.compile(r"\b(" + "|".join(sorted(map(re.escape, MODERN_EN), key=
                         re.IGNORECASE)
 
 
+# a quoted title keeps its words: "How Great Thou Art" is the hymn's name, not archaic English
+_QUOTED_RE = re.compile(r'"[^"\n]*"|“[^”\n]*”|„[^”“\n]*[”“]|«[^»\n]*»')
+
+
 def modernize(text: str) -> str:
     def sub(m):
         w = m.group(0)
         new = MODERN_EN[w.lower()]
         return new[0].upper() + new[1:] if w[0].isupper() else new
-    return _MODERN_RE.sub(sub, text)
+    out, i = [], 0
+    for q in _QUOTED_RE.finditer(text):
+        out += [_MODERN_RE.sub(sub, text[i:q.start()]), q.group(0)]
+        i = q.end()
+    return "".join(out) + _MODERN_RE.sub(sub, text[i:])
 
 
 def postedit(text: str, tgt: str) -> str:
@@ -446,6 +455,10 @@ def ct2_dir(name: str) -> pathlib.Path:
 
 
 class NLLBTranslator:
+    # src_lang is state on the shared tokenizer: two threads translating at once (the live phrase and
+    # the AI engine's local fallback on the spare) could encode one with the other's language tag
+    _tok_lock = threading.Lock()                  # (class default for instances made without __init__)
+
     def __init__(self, name: str = "nllb-200-distilled-1.3B", device: str = "cpu",
                  compute_type: str = "int8", beam: int = 2, threads: int = 8):
         import ctranslate2
@@ -456,12 +469,12 @@ class NLLBTranslator:
         self.tok = transformers.AutoTokenizer.from_pretrained(f"facebook/{name}")
         self.beam = beam
         self.last_truncated = False               # the last output hit the decoding limit
+        self._tok_lock = threading.Lock()
 
     def reset_context(self):
         """NLLB translates each clause on its own: there is no context to forget."""
 
     def translate(self, text: str, src: str = "ro", tgt: str = "en", glossary=None) -> str:
-        self.tok.src_lang = NLLB_CODES[src]
         if src == "en":
             text = prep_en(text)
             if not text:
@@ -470,7 +483,9 @@ class NLLBTranslator:
         # piece ("I'm not talking about continuous abuse. You need to seek help" lost the caveat,
         # 2026-11-08; idea 32)
         sents = split_sentences(text) if src == "en" else [text]
-        batch = [self.tok.convert_ids_to_tokens(self.tok.encode(t)) for t in sents]
+        with self._tok_lock:                      # the language tag and the encoding that uses it, together
+            self.tok.src_lang = NLLB_CODES[src]
+            batch = [self.tok.convert_ids_to_tokens(self.tok.encode(t)) for t in sents]
         res = self.tr.translate_batch(batch, target_prefix=[[NLLB_CODES[tgt]]] * len(batch),
                                       beam_size=self.beam, max_decoding_length=256)
         self.last_truncated = any(len(r.hypotheses[0]) >= 256 for r in res)
@@ -485,7 +500,9 @@ class NLLBTranslator:
 
 
 _FILLERS_EN = re.compile(r"(?:^|(?<=[\s,.;:!?]))(?:um+|uh+|uhm+|erm+|hmm+)\b[,.]?\s*", re.I)
-_STUTTER = re.compile(r"\b(\w+(?:'\w+)?)(?:[\s,]+\1\b)+", re.I)
+# a repeat with only a space between is a stutter ("I I", "the the"); one with a comma is said on
+# purpose ("Holy, holy, holy", "Truly, truly", "Amen, amen", "No, no, no") and is kept
+_STUTTER = re.compile(r"\b(\w+(?:'\w+)?)(?:\s+\1\b)+", re.I)
 _PREFIX_STUTTER = re.compile(r"\b(the|a|an|my|our|your|his|her|their)\s+(\w{3,})\s+\1\s+(\2\w+)", re.I)
 
 
@@ -497,7 +514,7 @@ def prep_en(text: str) -> str:
     t = _PREFIX_STUTTER.sub(lambda m: f"{m.group(1)} {m.group(3)}", t)
     for _ in range(2):
         t = _STUTTER.sub(lambda m: m.group(0) if m.group(1).lower() in ("that", "had", "is") else m.group(1), t)
-        t = re.sub(r"\b(\w+ \w+)(?:[\s,]+\1\b)+", r"\1", t, flags=re.I)   # "and I and I"
+        t = re.sub(r"\b(\w+ \w+)(?:\s+\1\b)+", r"\1", t, flags=re.I)   # "and I and I" (not "my God, my God")
     t = re.sub(r"\s{2,}", " ", t).strip()
     return t[:1].upper() + t[1:] if t and text[:1].isupper() else t
 
@@ -611,12 +628,17 @@ class MLXLLMTranslator:
         self._kv_ids: list[int] = []
 
     def reset_context(self):
-        """Forget the previous sentences (after Show, a profile switch or a new service)."""
+        """Forget the previous sentences (after Show, a profile switch or a new service), and with them
+        everything else this service taught the translator: the reference being read, the verse
+        lock and recent verses, and whether Iacov was Jacob. One call clears it all, so the next
+        service starts clean."""
         self.context = []
         if getattr(self, "reading", None) is not None:
             self.reading.reset()
         if getattr(self, "verses", None) is not None:
             self.verses.reset()
+        self._iacov_ot = None                     # last service's Genesis must not make today's Iacov Jacob
+        self.last_verse = None
 
     def _prompt(self, text, src, tgt, glossary, hint: str = "", note: str = ""):
         msgs = self._messages(text, src, tgt, glossary, hint, note)
@@ -758,40 +780,44 @@ class MLXLLMTranslator:
             out = self._generate(self._prompt(text, src, tgt, glossary, hint, note))
         finally:
             self.context = ctx
-        self.last_truncated = self._truncated(out)
-        out = clean_output(out)
+        out, cut = self._finish(out, text, src, tgt, glossary, reading)
+        self.last_truncated = cut
         if small and len(out.split()) > 3:
             out = ""                              # "T." -> two sentences: not a translation of it
-        out = postedit(out, tgt)
-        if src == "ro" and tgt == "en":
-            out = keep_persons(text, out, glossary)
-            ref = getattr(reading, "ref", None) if reading is not None else None
-            out = cu_reference(text, out, getattr(ref, "chapter", None), getattr(ref, "verse", None))
         if not small and ctx and echoes_previous(text, out, ctx[-1]):
             # its own previous caption again, the new words dropped: «poporului tău, poate chiar în
             # biserica noastră» → "a living sign before You and before" (2026-11-08 evening, idea 4)
             self.context = []
             try:
-                again = postedit(clean_output(self._generate(self._prompt(text, src, tgt, glossary, hint, note))), tgt)
+                again, cut = self._finish(self._generate(self._prompt(text, src, tgt, glossary, hint, note)),
+                                          text, src, tgt, glossary, reading)
             finally:
                 self.context = ctx
             if again.strip():
-                out = again
+                out, self.last_truncated = again, cut
         if use_context and not small:
             self.context = (self.context + [(text, out, src)])[-max(self.context_clauses, 1):]
         return out
+
+    def _finish(self, raw: str, text: str, src: str, tgt: str, glossary, reading) -> tuple[str, bool]:
+        """(caption, cut off) from one raw answer: the clean-up and post-edits every answer gets, the
+        echo retry's too (it once skipped the names kept as written and «X cu Y» references)."""
+        cut = self._truncated(raw)
+        out = postedit(clean_output(raw), tgt)
+        if src == "ro" and tgt == "en":
+            out = keep_persons(text, out, glossary)
+            ref = getattr(reading, "ref", None) if reading is not None else None
+            out = cu_reference(text, out, getattr(ref, "chapter", None), getattr(ref, "verse", None))
+        return out, cut
 
     def _truncated(self, out: str) -> bool:
         return len(self.tok.encode(out)) >= self.max_tokens - 1
 
     def _verse(self, verse, text: str, src: str, tgt: str, glossary) -> str:
-        """A piece that is part of a verse: the published text, the words around it translated alone."""
-        import guards
+        """A piece that is all verse: the published text. (verses.Matcher.match returns only a match
+        verses.shown() accepts, which has no words before or after the verse to translate.)"""
         ctx = self.context
-        around = [guards.check(self, t, self.translate(t, src, tgt, glossary), src, tgt, glossary)[0] if t else ""
-                  for t in (verse.before, verse.after)]   # the words around a verse are checked too
-        around = [around_verse(a, verse.caption) for a in around]
-        out = " ".join(x for x in (around[0], verse.caption, around[1]) if x)
+        out = verse.caption
         self.context = (ctx + [(text, out, src)])[-max(self.context_clauses, 1):]
         self.last_truncated, self.last_verse = False, verse.log()
         if src == "ro" and re.search(r"\bIacov", text):
@@ -1246,10 +1272,8 @@ class ByDirection:
         if verse is None:
             self.last_verse = None
             return tr.translate(text, src, tgt, glossary)
-        around = [tr.translate(t, src, tgt, glossary) if t else "" for t in (verse.before, verse.after)]
         self.last_verse = verse.log()
-        around = [around_verse(a, verse.caption) for a in around]
-        return " ".join(x for x in (around[0], verse.caption, around[1]) if x)
+        return verse.caption                            # all verse: match() returns only what shown() accepts
 
     def reset_context(self):
         self.reading.reset()
