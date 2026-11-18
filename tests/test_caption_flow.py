@@ -300,3 +300,101 @@ def test_reveal_off_or_without_speaking_time_shows_the_phrase_at_once():
     assert on.add(TEN) == TEN and not on.pending                # operator text, tests: no speaking time
     c, _ = _reveal_caps()
     assert c.add("one two three four", audio_s=2.0) == "one two three four"   # never a lone last word
+
+
+def test_pages_hold_the_box_until_both_lines_are_read_then_replace_both():
+    """Two-line pages (live.caption_pages): no line ever moves up; a full box stays until its
+    lines have been read, then the next lines replace it whole."""
+    now = [0.0]
+    c = RollingCaptions(max_chars=20, max_lines=2, clock=lambda: now[0], read_wps=2.0,
+                        min_read_s=1.0, max_lag_s=0, pages=True)
+    c.add("one two three four", fresh=True)
+    assert c.lines == ["one two three four"]
+    now[0] = 0.5
+    c.add("five six seven eight", fresh=True)               # a box not yet full fills in below
+    assert c.lines == ["one two three four", "five six seven eight"]
+    c.add("nine ten eleven", fresh=True)
+    assert c.queue == ["nine ten eleven"]
+    # read in order at 2 words/s: line 1 by 2.0, line 2 by 4.0; the top line alone is not enough
+    now[0] = 2.5
+    assert not c.advance()
+    assert c.lines == ["one two three four", "five six seven eight"]
+    assert abs(c.next_due() - 4.0) < 1e-6
+    now[0] = 4.0
+    assert c.advance()
+    assert c.lines == ["nine ten eleven"]                    # replaced whole, never scrolled
+    c.add("twelve thirteen", fresh=True)
+    assert c.lines == ["nine ten eleven", "twelve thirteen"]
+
+
+def test_rolling_lines_scroll_as_soon_as_the_top_line_is_read():
+    """The rolling box (pages off) moves the bottom line up once the top one is read."""
+    now = [0.0]
+    c = RollingCaptions(max_chars=20, max_lines=2, clock=lambda: now[0], read_wps=2.0,
+                        min_read_s=1.0, max_lag_s=0)
+    for t, s in ((0.0, "one two three four"), (0.5, "five six seven eight"), (0.5, "nine ten eleven")):
+        now[0] = t
+        c.add(s, fresh=True)
+    now[0] = 2.0
+    assert c.advance()
+    assert c.lines == ["five six seven eight", "nine ten eleven"]
+
+
+def _flow_box(now):
+    return RollingCaptions(max_chars=42, max_lines=2, clock=lambda: now[0], read_wps=2.7, min_read_s=1.2,
+                           max_lag_s=0, pages=True, flow=True, flow_max_chars=50)
+
+
+def test_flowing_pages_are_full_and_break_where_a_reader_pauses():
+    """Flow (live.caption_flow): the text runs on from page to page; each page is two full lines,
+    broken after punctuation or before "and/but/that...", never after "the", "of", "a"."""
+    now = [0.0]
+    c = _flow_box(now)
+    c.add("He is the head of the Church, the head of the cornerstone, He is the Lion of Judah, "
+          "the Morning Star, He is the Messiah, blessed be His name.", fresh=True)
+    assert len(c.lines) == 2 and all(len(ln) <= 50 for ln in c.lines)
+    assert c.lines[1].endswith(",")                                    # the page ends at a comma
+    for ln in c.lines + c.queue:
+        assert ln.split()[-1].lower() not in ("the", "of", "a", "an", "to")
+    words = " ".join(c.lines + c.queue + c._flow).split()
+    assert len(words) == 29                                            # nothing lost or repeated
+
+
+def test_flowing_words_that_do_not_fill_a_page_wait_for_the_next_caption():
+    now = [0.0]
+    c = _flow_box(now)
+    c.add("And yet, even though He is God's answer for all our problems,", fresh=True)
+    assert c.lines == [] and c.queue == []                   # not a full page: it waits
+    now[0] = 0.8
+    c.add("the world hates Christ.", fresh=True)               # joins it, on the same page
+    assert c.lines == []
+    now[0] = 0.8 + 1.5                                         # the speaker paused: up as it is
+    assert abs(c.next_due() - 2.3) < 1e-6 and c.advance()
+    assert " ".join(c.lines) == "And yet, even though He is God's answer for all our problems, the world hates Christ."
+    assert len(c.lines) == 2
+
+
+def test_a_flowing_page_stays_until_it_is_read_and_the_next_one_replaces_it():
+    now = [0.0]
+    c = _flow_box(now)
+    text = ("Without Christ, you have nothing, but with Christ you have everything, said another man "
+            "of God, who departed to the Lord Jesus last year, I believe. What do you do when the end comes?")
+    c.add(text, fresh=True)
+    first = list(c.lines)
+    assert len(first) == 2 and (c.queue or c._flow)          # one page up, the rest waits
+    now[0] = 2.0
+    assert not c.advance() and c.lines == first              # not read yet
+    now[0] = 30.0
+    assert c.advance()
+    assert c.lines != first and first[1] not in c.lines      # replaced whole, nothing moved up
+    words = " ".join(first + c.lines).split()
+    assert words == text.split()[:len(words)]                 # nothing lost or repeated
+
+
+def test_retract_takes_back_flowing_words_too():
+    now = [0.0]
+    c = _flow_box(now)
+    c.add("We see the children very far from God,", fresh=True)
+    c.add("and we see ourselves very close to God.", fresh=True)
+    assert c.retract() is not None                          # the second sentence is gone; the first goes up
+    assert " ".join(c.lines) == "We see the children very far from God," and not c._flow

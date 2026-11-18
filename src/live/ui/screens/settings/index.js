@@ -280,6 +280,8 @@ export function render(el, store) {
       pane.append(
         h("div.fx-sec", h("span.fx-label", "Translator"),
           h("p.fx-text", "Local: this Mac's own models translate, and nothing leaves the building. " +
+                         "AI Catchup: this Mac's models translate the captions; only Live Voice's short catch-up summaries are written by Claude Haiku, " +
+                         "so a summary never holds up the next caption. " +
                          "AI: Claude Haiku translates over the internet and also writes Live Voice's short summaries. " +
                          "The local models stay loaded and take over, phrase by phrase, whenever the AI does not answer in time. " +
                          "It is the same switch as the Translator knob on the Live screen (key A)."),
@@ -291,8 +293,10 @@ export function render(el, store) {
         h("div.fx-sec", h("span.fx-label", "This service"), used));
       const SRC = { keychain: "A key is saved in this Mac's Keychain.", env: "Using the key from this Mac's environment (ANTHROPIC_API_KEY).",
                     dotenv: "Using the key from the developer's .env file.", test: "Using a test key." };
-      const STATE = { local: "Local models are translating.", ai: "AI is translating.", no_key: "AI is chosen but there is no key: Local is translating.",
-                      fallback: "AI is not answering: the local models are translating until it does." };
+      const STATE = { local: "Local models are translating.", ai: "AI is translating.",
+                      catchup: "Local models are translating; AI writes Live Voice's catch-up summaries.",
+                      no_key: "AI is chosen but there is no key: Local is translating.",
+                      fallback: "AI is not answering: the local models are doing its work until it does." };
       let lastSel = null;
       onState = s => {
         const a = s.ai || {};
@@ -301,12 +305,15 @@ export function render(el, store) {
         remove.hidden = a.key_source !== "keychain";
         if (a.selected !== lastSel || engBox.dataset.av !== String(!!a.available)) {
           lastSel = a.selected; engBox.dataset.av = String(!!a.available);
-          engBox.replaceChildren(choice("Translator", [["local", "Local", "Nothing leaves this Mac"], ["ai", "AI", "Claude Haiku, online"]],
-                                        a.selected || "local", pick, { disabled: a.available ? {} : { ai: "Add a key first" } }));
+          engBox.replaceChildren(choice("Translator", [["local", "Local", "Nothing leaves this Mac"],
+                                                       ["catchup", "AI Catchup", "Local captions, AI summaries for Live Voice"],
+                                                       ["ai", "AI", "Claude Haiku, online"]],
+                                        a.selected || "local", pick,
+                                        { disabled: a.available ? {} : { ai: "Add a key first", catchup: "Add a key first" } }));
         }
         now.textContent = [STATE[a.state] || "", a.state === "fallback" && a.down_s != null ? `(${Math.round(a.down_s)} s so far)` : "",
                            a.state === "ai" && a.latency_median_s != null ? `Typical answer: ${a.latency_median_s.toFixed(1)} s.` : ""].filter(Boolean).join(" ");
-        now.dataset.tone = a.state === "fallback" || a.state === "no_key" ? "warn" : a.state === "ai" ? "good" : "";
+        now.dataset.tone = a.state === "fallback" || a.state === "no_key" ? "warn" : a.state === "ai" || a.state === "catchup" ? "good" : "";
         const u = a.used || {};
         const mins = v => (v ? `${v.phrases} captions · ${Math.round((v.s || 0) / 60)} min` : "–");
         used.replaceChildren(

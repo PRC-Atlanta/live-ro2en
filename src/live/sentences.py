@@ -11,6 +11,9 @@ cuts them at the speaker's sentence ends, as scripts/sentence_cut.py measured of
     piece end (a pause), else a comma; never before `min_words` words;
   - the recogniser's fake full stops inside a sentence are taken out of the text the translator sees.
 
+An English speaker's pieces are cut the same way by their English transcript (`multi`, Parakeet's
+text, punctuated and capitalised like the Romanian one): `SentenceCutter(key="multi")`.
+
 Knowing that a sentence ended needs the next word, which comes with the next piece. The pipeline
 also closes a sentence that ends in . ! ? when the engine reports `quiet_s` of silence after it
 (`quiet` events), and anything after `gap_s` of silence, so a sentence before a pause does not wait.
@@ -26,8 +29,8 @@ HARD = re.compile(r"[.!?…]+[\"»”]?$")
 ENDS = ("end", "quiet", "gap", "flush")      # why a unit was closed at a real end (not cut by the cap)
 
 
-def piece_words(ev: dict) -> list[str]:
-    return (ev.get("ro") or "").split()
+def piece_words(ev: dict, key: str = "ro") -> list[str]:
+    return (ev.get(key) or "").split()
 
 
 def sentence_text(text: str) -> str:
@@ -43,10 +46,10 @@ def _starts_sentence(word: str) -> bool:
     return w[:1].isupper() or w[:1].isdigit()
 
 
-def split_piece(ev: dict, i: int, tail_id) -> tuple[dict, dict]:
-    """Piece `ev` cut after its Romanian word `i`: (head, tail). Times are spread evenly over the
-    piece's speech; the other recogniser's texts are cut at the same share of their words."""
-    ws = piece_words(ev)
+def split_piece(ev: dict, i: int, tail_id, key: str = "ro") -> tuple[dict, dict]:
+    """Piece `ev` cut after word `i` of its `key` transcript: (head, tail). Times are spread evenly
+    over the piece's speech; the other transcripts are cut at the same share of their words."""
+    ws = piece_words(ev, key)
     n = len(ws)
     frac = (i + 1) / n
     a = ev.get("t_speech", ev["t_start"])
@@ -58,13 +61,14 @@ def split_piece(ev: dict, i: int, tail_id) -> tuple[dict, dict]:
         k = round(len(w) * frac)
         return " ".join(w[:k]), " ".join(w[k:])
 
-    mh, mt = cut(ev.get("multi"))
-    eh, et = cut(ev.get("en"))
+    heads, tails = {key: " ".join(ws[:i + 1])}, {key: " ".join(ws[i + 1:])}
+    for k in ("ro", "multi", "en"):
+        if k != key:
+            heads[k], tails[k] = cut(ev.get(k))
     audio = float(ev.get("audio_s") or 0)
-    head = {**ev, "ro": " ".join(ws[:i + 1]), "multi": mh, "en": eh, "t_end": t_cut,
-            "audio_s": audio * frac}
+    head = {**ev, **heads, "t_end": t_cut, "audio_s": audio * frac}
     tail = {k: v for k, v in ev.items() if k not in ("seam", "reheard", "joints")}
-    tail.update({"id": tail_id, "ro": " ".join(ws[i + 1:]), "multi": mt, "en": et, "t_start": t_cut,
+    tail.update({"id": tail_id, **tails, "t_start": t_cut,
                  "t_speech": t_cut, "audio_s": audio * (1 - frac), "split_of": ev.get("id")})
     return head, tail
 
@@ -74,8 +78,9 @@ class SentenceCutter:
     piece) and why it closed: "end" (the next word starts a sentence), "cap", "gap", or whatever the
     caller passes to `flush` ("quiet", "wait", "flush")."""
 
-    def __init__(self, cap_s: float = 12.0, gap_s: float = 2.5, min_words: int = 3):
+    def __init__(self, cap_s: float = 12.0, gap_s: float = 2.5, min_words: int = 3, key: str = "ro"):
         self.cap_s, self.gap_s, self.min_words = cap_s, gap_s, min_words
+        self.key = key                      # the transcript cut by: "ro", or "multi" for an English speaker
         self.evs: list[dict] = []
         self._splits = 0
 
@@ -84,7 +89,7 @@ class SentenceCutter:
         """(piece index, word index in the piece, word, time) of every buffered word."""
         out = []
         for k, e in enumerate(self.evs):
-            ws = piece_words(e)
+            ws = piece_words(e, self.key)
             a, b = e.get("t_speech", e["t_start"]), e["t_end"]
             for i, w in enumerate(ws):
                 out.append((k, i, w, a + (b - a) * (i + 1) / len(ws)))
@@ -145,9 +150,9 @@ class SentenceCutter:
 
     def _cut_after(self, ws, j: int, why: str) -> tuple[list[dict], str]:
         k, i = ws[j][0], ws[j][1]
-        if i < len(piece_words(self.evs[k])) - 1:          # the cut falls inside piece k
+        if i < len(piece_words(self.evs[k], self.key)) - 1:          # the cut falls inside piece k
             self._splits += 1
-            head, tail = split_piece(self.evs[k], i, f"{self.evs[k].get('id')}.{self._splits}")
+            head, tail = split_piece(self.evs[k], i, f"{self.evs[k].get('id')}.{self._splits}", self.key)
             self.evs[k:k + 1] = [head, tail]
         return self._take(k + 1, why)
 

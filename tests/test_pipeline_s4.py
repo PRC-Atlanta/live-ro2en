@@ -23,6 +23,7 @@ CFG = ROOT / "config.yaml"
 
 def _live(tmp_path, translate=lambda t, *a, **k: f"EN: {t}"):
     cfg = yaml.safe_load(open(CFG))
+    cfg["live"].update(caption_pages=False, caption_flow=False)  # rolling lines: these tests are about other controls, not the page layout
     for prof in cfg["profiles"].values():          # these tests switch one translator per profile;
         prof.pop("translator_en_ro", None)         # per-direction loading: test_translator_directions
     live = Live(cfg, types.SimpleNamespace(file=None))

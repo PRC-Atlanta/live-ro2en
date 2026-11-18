@@ -27,7 +27,7 @@ live:
   song_detect: false          # hold captions by themselves while a song is sung (loud, steady, slow, repeated lines)
   song_symbol: "♪"            # what the big screen shows during a song ("" = nothing)
   sentence_pause_s: 1.0       # a chunk's final period is shown only if the next one starts after this long a pause
-  translate_sentences: false  # translate whole sentences, not the pieces between pauses (sentences.py; Romanian only)
+  translate_sentences: false  # translate whole sentences, not the pieces between pauses (sentences.py; Romanian and English speakers)
   sentence_cap_s: 12.0        # ...a longer sentence is cut at a comma + conjunction, a pause or a comma
   sentence_gap_s: 2.5         # ...a pause this long ends the sentence whatever its last word
   sentence_quiet_s: 1.0       # ...a sentence ending in . ! ? goes after this much silence (else at the next piece)
@@ -37,6 +37,9 @@ live:
   caption_min_read_s: 1.2     # ...each line at least this long
   caption_max_lag_s: 20       # ...if waiting lines fall this far behind the speech (seconds)...
   caption_catchup_wps: 3.3    # ...they are read this fast until caught up
+  caption_pages: true         # two-line pages: the box stays until both lines are read, then both are replaced (no scrolling)
+  caption_flow: true          # ...pages flow: every page full, lines broken where a reader pauses (. , and/but/that...), never after "the"/"of"
+  caption_flow_max_chars: 50  # ...a flowing line aims at propresenter.max_chars_per_line and may run to this
   caption_reveal: true        # a long phrase's words go up a few at a time over its speaking time, not in one jump
   caption_reveal_wps: 1.5     # ...never slower than this many words a second (paced to the speaking time)
   partial_every_s: 0           # >0 shows interim text on the control page (adds load)
@@ -111,6 +114,7 @@ profiles:
 # take over, phrase by phrase, when the API does not answer within timeout_s.
 ai:
   enabled: false
+  catchup: false          # AI Catchup: the local models translate; only Live Voice's catch-up summaries go to the AI
   model: claude-haiku-5-5
   timeout_s: 2.5          # per call, wall clock (measured 2026-11-10: median 0.9 s, p95 1.3 s, p99 2.2 s)
   phrase_s: 4.0           # per phrase, across the guards' retries; past it the local model answers

@@ -49,6 +49,19 @@ line, as an operator types them in Names & words: `logs/bench/terms_2026-10-24.t
   differed by one error (42 vs 41 of 52); look at differences of more than one or two errors.
 - Pass `--terms` for anything that touches names (the name list, the decoder boost and the
   spelling repair all use today's names; an empty list understates them).
+- **A replay must keep idle models warm, as a service does.** Lesson learned twice (the second time
+  on 2026-11-17): the bench used to switch off the keep-warm ping (`live.translator_keepalive_s`).
+  With an English speaker NLLB translates and Gemma only writes Live Voice summaries, so between
+  summaries it sat idle, macOS paged it out, and each summary spent ~35 s reloading it while holding
+  the translator, so captions came out 30-40 s late. The replay blamed the code for a stall a service
+  does not have. At `--speed 1` the bench now keeps the ping as configured; when a replay shows a
+  sudden long stall, check first whether a model went idle (a slow first step, `prompt_tps` of a few
+  tokens a second in a `voice_summary` record).
+- **Only one copy of the app may hold the models during a replay.** On 2026-11-17, with the keep-warm
+  ping back on, summaries still stalled for 10-35 s: the installed app was open (idle, not in a
+  service) with its own Gemma loaded and its own keep-warm ping, two copies of Gemma on a 36 GB Mac,
+  and swap was 14.6 of 15 GB full. Quit the installed app (or check `sysctl vm.swapusage`) before a
+  replay whose timing matters.
 - Each phrase's `level` (speech dB) is recorded in replays too: level readings carry their
   capture time on the recording's clock.
 

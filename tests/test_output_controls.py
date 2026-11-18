@@ -55,6 +55,7 @@ def _api_calls(st, since=0):
 
 def _live(tmp_path, port, **pp_kw):
     cfg = yaml.safe_load(open(ROOT / "config.yaml"))
+    cfg["live"].update(caption_pages=False, caption_flow=False)  # rolling lines: these tests are about other controls, not the page layout
     cfg["propresenter"].update(port=port, health_every_s=0, **pp_kw)
     live = Live(cfg, types.SimpleNamespace(file=None))
     live.pp = ProPresenter(**{**cfg["propresenter"], "backoff_s": (0,)})

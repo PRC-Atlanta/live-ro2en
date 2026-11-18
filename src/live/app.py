@@ -83,7 +83,10 @@ class Live(AIMixin, LifecycleMixin, PipelineMixin, OutputMixin, DisplayMixin, Re
                                     read_wps=float(cfg["live"].get("caption_read_wps", 0) or 0),
                                     min_read_s=float(cfg["live"].get("caption_min_read_s", 1.2) or 0),
                                     max_lag_s=float(cfg["live"].get("caption_max_lag_s", 20) or 0),
-                                    catchup_wps=float(cfg["live"].get("caption_catchup_wps", 3.3) or 0))
+                                    catchup_wps=float(cfg["live"].get("caption_catchup_wps", 3.3) or 0),
+                                    pages=bool(cfg["live"].get("caption_pages", True)),
+                                    flow=bool(cfg["live"].get("caption_flow", True)),
+                                    flow_max_chars=int(cfg["live"].get("caption_flow_max_chars", 50) or 50))
         self.lang = LangTracker(self.lc.get("language_mode", "auto"))
         self.gloss = Glossary(paths.resource(cfg["paths"]["glossary"], ROOT))
         self.tr = None

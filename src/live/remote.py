@@ -283,7 +283,7 @@ def add_routes(app, live):
 
     @app.post("/remote/engine")
     async def engine(request: Request):
-        """The AI / Local knob (docs/live_voice_plan.md §15). Only the two names; never a key."""
+        """The AI / Local knob (docs/live_voice_plan.md §15). Only the names (ai, catchup, local); never a key."""
         guard(request)
         code, payload = await run(live.set_engine, (await body(request)).get("engine"))
         if code != 200:

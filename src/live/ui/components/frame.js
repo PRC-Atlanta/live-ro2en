@@ -83,7 +83,7 @@ export function frame(el, opts = {}) {
       tb("after").hidden = !(here === "after" || (ran && !isLive(s)));
       // the footer says "offline" only while it is true: with AI chosen, speech goes to the API as text
       const where = el.querySelector("[data-where]");
-      const text = s.ai?.selected === "ai" ? S.app.online : S.app.offline;
+      const text = s.ai?.selected === "ai" ? S.app.online : s.ai?.selected === "catchup" ? S.app.onlineCatchup : S.app.offline;
       if (where && where.textContent !== text) where.textContent = text;
     },
   };

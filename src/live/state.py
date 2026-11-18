@@ -27,6 +27,7 @@ class StateMixin:
                   "latency_last": round(lat[-1], 2) if lat else None,
                   "latency_median": round(statistics.median(lat), 2) if lat else None,
                   "lag_s": self._lag_s(),
+                  "heard": list(getattr(self, "heard", None) or []),
                   "lines": [{"src": h["source"], "dst": h["translation"], "lat": h["latency_s"],
                              "lang": h["lang"]} for h in self.history],
                   "screen": self.caps.text, "pp_error": self.pp.last_error,

@@ -8,6 +8,7 @@ action never interleaves with a caption being sent."""
 from __future__ import annotations
 
 import collections
+import json
 import threading
 import time
 
@@ -43,7 +44,8 @@ class OutputMixin:
 
     # --- the pipeline's way onto the screen ------------------------------------------------
     def _show(self, translation: str, close: str = "", audio_s: float | None = None,
-              spoken_ago: float | None = None) -> tuple[str, bool | None, str]:
+              spoken_ago: float | None = None, parts: list[str] | None = None,
+              fresh: bool = False) -> tuple[str, bool | None, str]:
         """Add a translation to the captions and send them, unless hidden or held.
         Returns (screen text, sent ok or None when nothing was sent, outcome) where outcome
         is "ok", "paused" (Hide is on: not sent; not added either, so Show starts clean, unless
@@ -51,21 +53,52 @@ class OutputMixin:
         while it was translated: not added) or "held".
         `close` ends the previous caption first; with its speaking time `audio_s` the rest
         of a long translation is revealed by the pace timer (RollingCaptions.add); `spoken_ago`
-        (seconds since its speech ended) lets the caption box's lag guard see how far behind it is."""
+        (seconds since its speech ended) lets the caption box's lag guard see how far behind it is;
+        `parts`: a long sentence cut at its commas, each part from a new line; `fresh`: a new whole
+        sentence, on a line of its own (RollingCaptions.add)."""
         with self._out_lock:
             if self.paused:
                 if not self._show_hidden():
                     return "", None, "paused"
-                shown = self.caps.add(translation, close, audio_s=audio_s, spoken_ago=spoken_ago)   # the display only
+                shown = self.caps.add(translation, close, audio_s=audio_s, spoken_ago=spoken_ago,
+                                      parts=parts, fresh=fresh)   # the display only
                 self._pace()
                 return shown, None, "paused"
             if self.song_on:
                 return "", None, "song"
-            shown = self.caps.add(translation, close, audio_s=audio_s, spoken_ago=spoken_ago)
+            screen = self.caps.add(translation, close, audio_s=audio_s, spoken_ago=spoken_ago, parts=parts,
+                                   fresh=fresh)
+            # in the caption box, if not on screen yet: flowing pages hold words that do not fill a page
+            # (captions.flow) — it is shown all the same (a late verse or a redo may replace it)
+            shown = screen or getattr(self.caps, "waiting_text", lambda: "")()
             self._pace()
+            self._log_screen()
             if self.held:
                 return shown, None, "held"
-            return shown, self.pp.show(shown), "ok"
+            return shown, self.pp.show(screen), "ok"
+
+    def _log_screen(self):
+        """A `screen` event each time the caption box changes: the lines on it and which are new,
+        in <log>.screen.ndjson beside the service log, so it shows when each sentence or clause
+        went up (scripts/screen_timeline.py)."""
+        lines = list(getattr(self.caps, "lines", []) or [])
+        prev = getattr(self, "_screen_logged", None)
+        if lines == prev:
+            return
+        self._screen_logged = lines
+        old = prev or []
+        new = [ln for ln in lines if ln not in old]
+        log = getattr(self, "log_path", None)
+        if not log:
+            return
+        rec = {"event": "screen", "lines": lines, "new": new, "t": round(time.time(), 3),
+               "waiting": len(getattr(self.caps, "queue", []) or [])}
+        try:                                  # beside the service log, not in it: <log>.screen.ndjson
+            with open(str(log)[:-len(".jsonl")] + ".screen.ndjson" if str(log).endswith(".jsonl")
+                      else str(log) + ".screen.ndjson", "a") as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
 
     def _pace(self):
         """One timer for everything the captions bring up later: pending words of the last
@@ -91,6 +124,7 @@ class OutputMixin:
                 self._pace_timer = None
             if self.caps.advance() and not (self.paused or self.held or self.song_on):
                 self.pp.show(self.caps.text)
+                self._log_screen()
         self._broadcast()
         self._pace()
 

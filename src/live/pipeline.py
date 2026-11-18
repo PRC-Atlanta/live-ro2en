@@ -22,7 +22,7 @@ import paths
 import sentences
 import song
 import translate
-from captions import tidy_clause
+from captions import comma_parts, tidy_clause
 from langid import score as lang_score
 from segmenter import DANGLING, NEGATION_END, split_clauses
 from textnorm import apply_spellings, fold_diacritics, tokens
@@ -200,21 +200,30 @@ def scrap(text: str) -> bool:
 
 
 EN_FOREIGN_MAX = 2             # idea 12: an English piece with this many non-English words is not captioned EN→RO
+EN_FOREIGN_SHARE = 0.12        # ... or, in a longer one (a whole sentence), this share of its words
+
+
+def en_foreign_max(text: str) -> int:
+    """How many different non-English words make an English phrase "not English": 2, more in a long
+    one, so a whole sentence is not dropped for a word missing from the lexicon («dangers» said twice
+    in 31 words, bench 2026-11-17)."""
+    return max(EN_FOREIGN_MAX, round(EN_FOREIGN_SHARE * len(text.split())))
 
 
 def non_english(text: str, names=frozenset()) -> int:
-    """Lower-case words of an English transcript that are not English («kut», «coborila», «cu»,
-    «tre»): the English recogniser writing Romanian speech. Capitalised words (names) don't count."""
+    """Different lower-case words of an English transcript that are not English («kut», «coborila»,
+    «cu», «tre»): the English recogniser writing Romanian speech. Capitalised words (names) don't
+    count, nor does a word said again."""
     lex = gate.lexicon()
     en, known = lex["en"], lex["names"] | set(names)
-    n = 0
+    bad = set()
     for w in re.findall(r"[^\W\d_]+(?:'[^\W\d_]+)?", text):
         if w[:1].isupper() or "'" in w:
             continue
         f = fold_diacritics(w.lower())
         if f not in en and f not in known:
-            n += 1
-    return n
+            bad.add(f)
+    return len(bad)
 
 
 RO_IN_EN_MARGIN = 0.2          # idea 12: the Romanian transcript's real-word share must beat the English one's by this
@@ -628,12 +637,15 @@ class PipelineMixin:
         Slow speakers (idea 20): a phrase under phrase_min_words, or one that stops on "din",
         "și", "of"..., waits longer (hold_slow_s) and may grow to hold_max_s, because most of
         a slow speaker's seconds are pauses.
-        With `live.translate_sentences` a Romanian piece goes to the sentence buffer instead
+        With `live.translate_sentences` a piece goes to the sentence buffer instead
         (_on_piece): the translator gets whole sentences, and these holds are not needed."""
         if self._sentences_on():
+            self._heard_piece(ev)
             if self._on_piece(ev):
                 return
-        elif self._sent_evs():                         # the setting was just switched off
+        elif getattr(self, "heard", None):              # the setting was switched off: Heard from the lines again
+            self.heard = None
+        if not self._sentences_on() and self._sent_evs():   # the setting was just switched off
             with self.lock:
                 self._sent_flush("flush")
         with self.lock:
@@ -701,35 +713,54 @@ class PipelineMixin:
         c.gap_s = float(self.lc.get("sentence_gap_s", 2.5) or 2.5)
         return c
 
+    def _heard_piece(self, ev: dict):
+        """The Heard panel with the sentence buffer: each piece's words as soon as it is heard (as
+        before, every few seconds), not only once its whole sentence has been translated."""
+        ro, multi = (ev.get("ro") or "").strip(), (ev.get("multi") or "").strip()
+        text = multi if (self.lang.current == "en" or not ro) else ro
+        if text:
+            with self.lock:
+                h = getattr(self, "heard", None)
+                if h is None:
+                    h = self.heard = collections.deque(maxlen=8)
+                h.append({"src": text, "lang": self.lang.current})
+
     def _sent_evs(self) -> list[dict]:
         """The pieces waiting in the sentence buffer (Live Voice asks when the speaker spoke next)."""
         c = getattr(self, "_sent_cut", None)
         return list(c.evs) if c is not None else []
 
     def _on_piece(self, ev: dict) -> bool:
-        """A piece into the sentence buffer; the sentences it closes go to the translator. False when
-        the piece is not for the buffer (English captions, or no Romanian transcript to cut by): the
-        buffer is sent first and the piece takes the usual way."""
+        """A piece into the sentence buffer; the sentences it closes go to the translator. A Romanian
+        speaker's pieces are cut by the Romanian transcript, an English speaker's by the English one
+        (`multi`); when the language changes the open sentence is sent first. False when the piece
+        has no transcript to cut by: the buffer is sent first and the piece takes the usual way."""
         with self.lock:
             ro, multi = (ev.get("ro") or "").strip(), (ev.get("multi") or "").strip()
-            if self.lang.current == "en" or (not ro and multi and not ev.get("ro_wait")):
+            key = "multi" if self.lang.current == "en" else "ro"
+            if (key == "ro" and not ro and multi and not ev.get("ro_wait")) or (key == "multi" and not multi):
                 self._sent_flush("lang")
                 return False
+            c = self._sent_cutter()
+            if c.key != key:                           # the speaker's language changed
+                self._sent_flush("lang")
+                c.key = key
             if self._pending:                          # held before the setting was switched on
                 if self._timer:
                     self._timer.cancel()
                 self._hold_gen += 1
                 p, self._pending = self._pending, None
                 self._submit(p)
-            for unit, why in self._sent_cutter().add({**ev, "_arrived": time.time()}):
+            for unit, why in c.add({**ev, "_arrived": time.time()}):
                 self._sent_submit(unit, why)
             self._sent_arm()
             return True
 
     def _sent_submit(self, unit: list[dict], why: str):
         """One sentence (its pieces) to the translator as one clause. Inside it the recogniser's fake
-        full stops go, and a word cut in two at a piece joint is one word again (idea 25)."""
-        lex = gate.lexicon()["ro"] if self.lc.get("cut_word_redo", True) else None
+        full stops go, and (Romanian) a word cut in two at a piece joint is one word again (idea 25)."""
+        key = self._sent_cut.key
+        lex = gate.lexicon()["ro"] if key == "ro" and self.lc.get("cut_word_redo", True) else None
         ev, fixed = unit[0], []
         for b in unit[1:]:
             a_ro, b_ro = ev.get("ro") or "", b.get("ro") or ""
@@ -742,8 +773,8 @@ class PipelineMixin:
                     ev = {**ev, "ro": joined[:len(joined) - len(b_ro.lstrip())].rstrip()}
             ev = merge_clauses(ev, b)
         arrived = ev.pop("_arrived", None)
-        ev = {**ev, "ro": sentences.sentence_text(ev.get("ro") or ""), "sentence": why,
-              "sent_pieces": [e.get("ro") or "" for e in unit],
+        ev = {**ev, key: sentences.sentence_text(ev.get(key) or ""), "sentence": why, "sent_key": key,
+              "sent_pieces": [e.get(key) or "" for e in unit],
               "sent_wait_s": round(time.time() - arrived, 3) if arrived else None,
               **({"sent_cut_words": fixed} if fixed else {})}
         self._submit(ev)
@@ -1028,7 +1059,7 @@ class PipelineMixin:
                     self._ro_in_en = 0
                 return ro_text, "ro", info
             self._ro_in_en = 0
-            if non_english(src, names) >= EN_FOREIGN_MAX:   # "Get one coborila up cu tre de woman."
+            if non_english(src, names) >= en_foreign_max(src):   # "Get one coborila up cu tre de woman."
                 self._log_failure(ev, "low_confidence", lang=lang, source=src, reason="not_english",
                                   features=gate.features(src, lang, gate.lexicon(), names))
                 return None, lang, {}
@@ -1143,7 +1174,7 @@ class PipelineMixin:
         parts = clauses + ([tail] if tail else [])        # at a pause everything is committed
         if _whole_phrase(tr, lang, tgt):             # an online translator: one round trip per phrase
             parts = [src_text]
-        elif ev.get("sentence") and lang == "ro":
+        elif ev.get("sentence") and lang == ("en" if ev.get("sent_key") == "multi" else "ro"):
             # a whole sentence in one call, unless one of its pieces is part of a Bible verse: then
             # piece by piece as before, so the verse keeps its published text (verses.shown)
             pieces = [apply_spellings(p, self.cfg.get("spellings") or {}) for p in ev.get("sent_pieces") or []]
@@ -1250,8 +1281,16 @@ class PipelineMixin:
         with self._out_lock:                            # one step: no tick shows the box in between
             if redo:
                 self.caps.retract()                     # the previous caption goes; this replaces it
+            # a whole sentence lands at once (its lines then paced by reading time): revealing it word by
+            # word over its speaking time, after it was spoken, made the screen trickle seconds behind
+            # ...and a long one moves on at its commas, a clause at a time (captions.comma_parts); each
+            # sentence starts a line of its own, never the end of the last one's line
+            parts = comma_parts(screen_text, self.caps.max_chars * self.caps.max_lines) \
+                if ev.get("sentence") and hasattr(self.caps, "max_chars") else None
             shown, ok, outcome = self._show(screen_text, close="." if prev_open and not continues and not redo else "",
-                                            audio_s=ev.get("audio_s"), spoken_ago=_spoken_ago(ev))
+                                            audio_s=None if ev.get("sentence") else ev.get("audio_s"),
+                                            spoken_ago=_spoken_ago(ev), parts=parts,
+                                            fresh=bool(ev.get("sentence")) and not continues and not redo)
             voice_mark = None
             if hasattr(self, "_speech_mark"):           # Live Voice: this chunk's place among the shown ones
                 try:

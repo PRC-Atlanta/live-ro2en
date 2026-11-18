@@ -393,15 +393,55 @@ class Engine:
 
 
 class ClaudeSummarizer:
-    """summarize.py's `gen` for the AI engine: the same prompt and guards as Gemma's."""
+    """summarize.py's `gen` for the AI engine: the same prompt and guards as Gemma's. A summary that
+    comes back too long is asked for once more (`retry`) while `deadline` leaves time for it: Haiku
+    writes about two thirds of the input where the check takes 60% (2026-11-18: 14 of 17 refused)."""
     name = "ai"
 
-    def __init__(self, engine: Engine, timeout: float | None = None):
+    def __init__(self, engine: Engine, timeout: float | None = None, deadline: float | None = None):
         self.engine, self.timeout = engine, timeout
+        self.deadline = deadline          # time.time() by which the answer must be in (the voice's wait)
+
+    def _call(self, msgs: list[dict], timeout: float | None) -> str:
+        import summarize
+        text, _ = self.engine.call(msgs[0]["content"], msgs[1:], max_tokens=summarize.MAX_TOKENS,
+                                   timeout=timeout, kind="summary", soft=True)
+        return text
 
     def generate(self, texts: list[str], lang: str) -> str:
         import summarize
-        msgs = summarize.messages(texts, lang)
-        text, _ = self.engine.call(msgs[0]["content"], msgs[1:], max_tokens=summarize.MAX_TOKENS,
-                                   timeout=self.timeout, kind="summary", soft=True)
-        return text
+        return self._call(summarize.messages(texts, lang), self.timeout)
+
+    def candidates(self, texts: list[str], lang: str) -> list[str]:
+        """Two answers at once: one asked for the usual length (about 40%), one for a little under what
+        the check lets through (55%); summarize() keeps the longest that passes, so less meaning is cut.
+        One call when the two lengths are the same. Raises the first failure only when no call answered."""
+        import summarize
+        n = sum(len(t.split()) for t in texts)
+        targets = sorted({summarize.target_words(n), summarize.long_words(n)})
+        if len(targets) == 1:
+            return [self.generate(texts, lang)]
+        box: dict[int, object] = {}
+
+        def one(i: int, target: int):
+            try:
+                box[i] = self._call(summarize.messages(texts, lang, target=target), self.timeout)
+            except BaseException as e:                       # noqa: BLE001  handed to the caller below
+                box[i] = e
+        ths = [threading.Thread(target=one, args=(i, t), daemon=True, name="ai-summary") for i, t in enumerate(targets)]
+        for th in ths:
+            th.start()
+        for th in ths:
+            th.join()
+        outs = [box[i] for i in range(len(targets)) if isinstance(box.get(i), str)]
+        if not outs:
+            raise next(e for e in box.values() if isinstance(e, BaseException))
+        return outs
+
+    def retry(self, texts: list[str], lang: str, first: str) -> str | None:
+        """The too-long answer `first` again, shorter; None when too little time is left."""
+        import summarize
+        left = (self.deadline - time.time()) if self.deadline is not None else self.timeout
+        if left is None or left < summarize.RETRY_MIN_S:
+            return None
+        return self._call(summarize.messages(texts, lang, retry=first), min(left, self.timeout or left))
