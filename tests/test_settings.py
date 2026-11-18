@@ -3,8 +3,6 @@ API, and today's names applied live. Every test runs with LIVE_HOME in a temp fo
 import io
 import json
 import pathlib
-import shutil
-import subprocess
 import sys
 import time
 import types
@@ -324,12 +322,24 @@ def test_import_config(home, tmp_path):
     assert c.post("/api/import_config", json={}, headers=ME).status_code == 400
 
 
+def _repo_writable_state() -> dict:
+    """What the app could write into the checkout: the names at its top level, every file under
+    user/ and the root data files, each with its size and modification time. (Not `git status` of
+    the whole checkout: logs, builds and other work change it while the tests run; and not whether
+    user/ exists: on the church's Mac it does, from the app's own use.)"""
+    out = {"top": sorted(p.name for p in ROOT.iterdir())}
+    files = [p for p in (ROOT / "user").rglob("*") if p.is_file()] if (ROOT / "user").is_dir() else []
+    files += [ROOT / n for n in ("glossary.csv", "keywords_en.txt", "terms.txt", "blocklist.txt",
+                                 "settings.yaml", "config.yaml", "defaults.yaml")]
+    for p in files:
+        if p.exists():
+            st = p.stat()
+            out[str(p.relative_to(ROOT))] = (st.st_size, st.st_mtime_ns)
+    return out
+
+
 def test_nothing_is_written_into_the_repo_when_live_home_is_set(home, tmp_path):
-    if not shutil.which("git") or not (ROOT / ".git").exists():
-        pytest.skip("needs the git checkout")
-    status = lambda: subprocess.run(["git", "status", "--porcelain", "--untracked-files=all", "--ignored"],
-                                    cwd=ROOT, capture_output=True, text=True).stdout
-    before = status()
+    before = _repo_writable_state()
     live = make_live(home, running=True)
     live.engine = FakeEngine()
     c = client(live)
@@ -339,8 +349,7 @@ def test_nothing_is_written_into_the_repo_when_live_home_is_set(home, tmp_path):
     assert c.post("/api/terms", json={"lines": ["Ionuț Pop"], "save": True}, headers=ME).status_code == 200
     assert c.post("/api/import_config", json={"text": "propresenter: {port: 50009}\n"}, headers=ME).status_code == 200
     assert sorted(p.name for p in home.iterdir()) == ["glossary.csv", "keywords_en.txt", "settings.yaml"]
-    assert status() == before
-    assert not (ROOT / "user").exists()
+    assert _repo_writable_state() == before
 
 
 # --- review regressions -------------------------------------------------------------------
