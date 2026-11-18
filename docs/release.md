@@ -38,6 +38,8 @@ The bundled model sits under `app/models/` (not `Resources/models/`) because tha
 `vad.py` looks (`paths.resource`). `packaging/app_files.py` follows the
 imports of `src/live`, so a new `src/*.py` dependency is bundled without editing anything.
 Tests, logs, `work/`, `results/`, `config.yaml`, `.env` and the venvs are never bundled.
+The code is copied from the working tree, so `app_files.py` stops the build when a bundled file
+has uncommitted changes (`ALLOW_DIRTY=1 make dist` for a local test build only).
 
 The bundled model file and the rehearsal WAV are git-ignored. `assemble_app.sh` takes them from
 `MODELS_DIR` / `SAMPLES_DIR`, else from this checkout or (in a git worktree) the main
@@ -106,7 +108,8 @@ Both apps update themselves with **Sparkle 2.10.1** (pinned in `macos/Package.sw
   pre-release, so publishing a release is what ships an update.
 - **Behaviour.** Sparkle checks about once a day, downloads a new version quietly and
   installs it when the app quits (`SUAutomaticallyUpdate`). No prompt. Live RO2EN never checks
-  or downloads while live (`updaterMayCheck` in `Updater.swift`); **Check for Updates…** in the
+  or downloads while live (`updaterMayCheck` in `Updater.swift`, and `shouldProceedWithUpdate`
+  stops a check that began just before the captions went live); **Check for Updates…** in the
   app menu (Live RO2EN) or the toolbar menu (Live Remote) checks at once. A dev build of Live
   RO2EN (no bundled runtime) never updates itself; `defaults write <bundle id> LiveNoUpdates
   -bool YES` turns updates off in either app.
@@ -127,6 +130,31 @@ notarized and named `build/dist/LiveRemote-<version>.dmg`:
 make appcast       # build/dist/appcast.xml and appcast-remote.xml (packaging/make_appcast.sh)
 ```
 
+**Both DMGs must be notarized and stapled.** `make_appcast.sh` refuses to sign an appcast entry
+unless `xcrun stapler validate` passes on the DMG, Gatekeeper accepts it
+(`spctl -a -t open --context context:primary-signature`) and the app inside is signed with a
+Developer ID Application certificate. `make notarize` does this for Live RO2EN; Live Remote
+has no make target, so do it by hand with the same notary profile:
+
+```
+SIGN_IDENTITY="Developer ID Application: …" remote/build.sh
+ditto -c -k --keepParent "remote/build/Live Remote.app" /tmp/LiveRemote.zip
+xcrun notarytool submit /tmp/LiveRemote.zip --keychain-profile live-ro2en --wait
+xcrun stapler staple "remote/build/Live Remote.app"
+# rebuild the DMG around the stapled app (as the end of remote/build.sh does), sign it:
+S=$(mktemp -d); cp -R "remote/build/Live Remote.app" "$S/"; ln -s /Applications "$S/Applications"
+hdiutil create -quiet -volname "Live Remote" -srcfolder "$S" -ov -format UDZO "remote/build/Live Remote.dmg"
+codesign --force --sign "Developer ID Application: …" --timestamp "remote/build/Live Remote.dmg"
+xcrun notarytool submit "remote/build/Live Remote.dmg" --keychain-profile live-ro2en --wait
+xcrun stapler staple "remote/build/Live Remote.dmg"
+cp "remote/build/Live Remote.dmg" build/dist/LiveRemote-<version>.dmg
+```
+
+`make_appcast.sh` also checks the Sparkle tools it uses (`sign_update` reads the private key):
+the `Sparkle-2.10.1.tar.xz` it downloads into `build/cache` must match `SPARKLE_SHA256_PIN` in
+the script, every run, cached or not. Set that pin (from the Sparkle release, or a download you
+verified) when you change `SPARKLE_VER`; with no pin the script stops.
+
 Attach **both DMGs and both appcasts** to the GitHub release `v<version>` and publish it (not
 as a pre-release). The appcast's download URL is
 `https://github.com/PRC-Atlanta/live-ro2en/releases/download/v<version>/<dmg>`, so the tag and
@@ -136,7 +164,8 @@ the DMG names must match.
 
 Serve a folder with the DMG and an appcast made with
 `APPCAST_URL_PREFIX=http://127.0.0.1:8799/ packaging/make_appcast.sh <folder>` on
-`python3 -m http.server 8799 --bind 127.0.0.1`, then start an older copy with
+`python3 -m http.server 8799 --bind 127.0.0.1` (with a `http://127.0.0.1:` or
+`http://localhost:` prefix the notarization checks are skipped, so a test DMG may be ad hoc), then start an older copy with
 `open -n "<old copy>.app" --args -LiveUpdateFeed http://127.0.0.1:8799/appcast.xml`: it checks at
 once, downloads, and replaces itself when it quits. (For Live Remote, `APPCAST_ONLY=remote` and
 `appcast-remote.xml`.) Give the old copy its own bundle identifier so it does not share

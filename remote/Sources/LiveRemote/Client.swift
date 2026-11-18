@@ -151,7 +151,13 @@ final class RemoteClient: NSObject, URLSessionWebSocketDelegate {
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             switch code {
             case 200:
-                if let data, let f = try? JSONDecoder().decode(Feed.self, from: data) { self.link = .connected(f) }
+                guard let data, let f = try? JSONDecoder().decode(Feed.self, from: data) else {
+                    // it answers, but not in a shape this remote reads: say so instead of "connecting"
+                    self.link = .unreachable("The captions Mac runs an incompatible version")
+                    self.later(10, g)                             // it may be updated meanwhile
+                    return
+                }
+                self.link = .connected(f)
                 self.openSocket(g)
             case 401: self.link = .wrongPin                       // waits for a new PIN
             case 403: self.link = .unreachable("The captions Mac refused this address")
@@ -211,6 +217,7 @@ final class RemoteClient: NSObject, URLSessionWebSocketDelegate {
                 guard self.ws === t else { return }
                 self.heartbeat?.invalidate(); self.heartbeat = nil
                 self.ws = nil
+                self.link = .connecting                            // not "connected" to a dead feed
                 self.later(1, g)                                   // the probe says why
             }
         }

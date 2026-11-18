@@ -24,8 +24,11 @@ struct LaunchConfig {
     /// The marker every orchestrator command line contains; stale-process cleanup checks it.
     static let scriptMarker = "src/live/app.py"
 
-    func arguments(port: Int) -> [String] {
+    /// `resume`: restarted after a crash or hang while the captions were live: start them at
+    /// once (--autostart) and show the operator that it happened (--resumed).
+    func arguments(port: Int, resume: Bool = false) -> [String] {
         [python.path] + preArgs + [script.path, "--port", String(port)]
+            + (resume ? ["--autostart", "--resumed"] : [])
     }
 
     static func setting(_ env: String, _ key: String) -> String? {
