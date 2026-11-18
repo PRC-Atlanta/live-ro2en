@@ -152,8 +152,6 @@ const MOCK_FIELDS = {
   "display.network": { group: "propresenter", type: "bool", apply: "now" },
   "display.show_hidden": { group: "propresenter", type: "bool", apply: "now" },
   "display.remote": { group: "propresenter", type: "bool", apply: "now" },
-  "ui.show_latency": { group: "advanced", type: "bool", apply: "now", default: false },
-  "ui.show_counts": { group: "advanced", type: "bool", apply: "now", default: false },
 };
 const MOCK_DEFAULTS = {
   "live.input_device": null, "live.input_gain_db": 0, "live.input_gain_auto": true, "live.input_gain_target_db": -20, "live.language_mode": "auto", "live.profile": "quality", "live.autostart": false, "safety.filter_words": true,
@@ -164,7 +162,6 @@ const MOCK_DEFAULTS = {
   "propresenter.health_every_s": 5, "live.keep_both_translators": "auto", "live.engine_restarts": 2,
   "propresenter.enabled": true, "display.size": "large", "display.lines": 2, "display.colors": "white_on_black",
   "display.network": false, "display.show_hidden": false, "display.remote": false,
-  "ui.show_latency": false, "ui.show_counts": false,
   "ai.enabled": false, "ai.timeout_s": 2.5,
   "voice.enabled": false, "voice.en.enabled": true, "voice.speed": 1.25, "voice.speed_max": 1.5, "voice.port": 8767,
 };

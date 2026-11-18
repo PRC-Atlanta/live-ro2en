@@ -95,8 +95,6 @@ FIELDS: dict[str, dict] = {
     "live.gate_min_real":      {"group": "advanced", "type": "num", "min": 0, "max": 0.9, "apply": "now"},
     "live.keep_both_translators": {"group": "advanced", "type": "enum", "choices": ["auto", True, False], "apply": "now"},
     "live.engine_restarts":    {"group": "advanced", "type": "int", "min": 0, "max": 5, "apply": "now"},
-    "ui.show_latency":         {"group": "advanced", "type": "bool", "apply": "now", "default": False},
-    "ui.show_counts":          {"group": "advanced", "type": "bool", "apply": "now", "default": False},
 }
 MAX_ITEMS, MAX_LEN = 500, 120              # per list, per word / term
 MAX_GLOSSARY = 2000                         # the user's saved glossary rows

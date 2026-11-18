@@ -174,8 +174,3 @@ display:
 safety:
   filter_words: true          # the bundled blocklist.txt; the user's own words always apply
   blocklist: []
-
-# What the operator page shows (Settings → Advanced); no effect on captions
-ui:
-  show_latency: false         # raw latency numbers
-  show_counts: false          # skipped / failed phrase counts
