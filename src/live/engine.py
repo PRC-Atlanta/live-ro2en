@@ -785,7 +785,14 @@ class Engine:
             # Auto mode: Jackrabbit (torch, helper thread) and Parakeet (MLX, must stay on this
             # thread) run at the same time instead of one after the other
             fut = self._pool.submit(self.stt_ctx, audio, final, ahead, quiet_s)
-            multi = self.multi_ctx(audio, final, ahead, quiet_s)
+            try:
+                multi = self.multi_ctx(audio, final, ahead, quiet_s)
+            except Exception as e:               # noqa: BLE001
+                # the Romanian transcript is still taken (and the helper thread not left running
+                # on): only the multilingual one is lost for this chunk (review 2026-11-18)
+                multi = ""
+                emit({"type": "warn", "msg": f"multilingual recognition failed on one chunk: "
+                                             f"{type(e).__name__}: {e}"})
             ro = fut.result()
         else:
             ro = self.stt_ctx(audio, final, ahead, quiet_s) if need_ro else ""
@@ -1050,29 +1057,39 @@ def stdin_loop(stdin, q: queue.Queue, stop: threading.Event, ctl: SourceCtl, gra
             continue
         if not isinstance(c, dict):
             continue
-        if c.get("cmd") == "mode":
-            q.put({"mode": c["mode"]})           # applied in order with the audio
-        elif c.get("cmd") == "listen":
-            on = bool(c.get("on", True))
-            if on:
-                ctl.go.set()                     # a file waiting in hold starts playing
-            q.put({"listen": on})
-        elif c.get("cmd") == "cfg":
-            q.put({"cfg": c.get("cfg") if isinstance(c.get("cfg"), dict) else {}})
-        elif c.get("cmd") == "keywords":
-            item = {"keywords": [w for w in c.get("words") or [] if isinstance(w, str)]}
-            if isinstance(c.get("ro"), list):            # the names as Romanian speech has them
-                item["ro"] = [w for w in c["ro"] if isinstance(w, str)]
-            q.put(item)
-        elif c.get("cmd") == "device":
-            ctl.switch(c.get("device"))          # the mic thread reopens on the new input
-        elif c.get("cmd") == "gain":
-            ctl.set_gain(c.get("db", 0.0))       # from the next frame: no reopen, no restart
-        elif c.get("cmd") == "agc":
-            ctl.set_auto(c.get("on", False), c.get("target_db"))
-        elif c.get("cmd") == "stop":
-            q.put(None); stop.set(); return      # sentinel first: buffered speech is still committed
+        try:                                     # one bad command must not end the command thread
+            _command(c, q, stop, ctl)
+        except Exception as e:                   # noqa: BLE001
+            print(f"engine: bad command {line.strip()[:200]!r}: {type(e).__name__}: {e}", file=sys.stderr)
+        if c.get("cmd") == "stop":
+            return
     _exit_soon(q, stop, grace_s)
+
+
+def _command(c: dict, q: queue.Queue, stop: threading.Event, ctl: SourceCtl) -> None:
+    """One stdin command (stdin_loop)."""
+    if c.get("cmd") == "mode":
+        q.put({"mode": c.get("mode")})       # applied in order with the audio
+    elif c.get("cmd") == "listen":
+        on = bool(c.get("on", True))
+        if on:
+            ctl.go.set()                     # a file waiting in hold starts playing
+        q.put({"listen": on})
+    elif c.get("cmd") == "cfg":
+        q.put({"cfg": c.get("cfg") if isinstance(c.get("cfg"), dict) else {}})
+    elif c.get("cmd") == "keywords":
+        item = {"keywords": [w for w in c.get("words") or [] if isinstance(w, str)]}
+        if isinstance(c.get("ro"), list):            # the names as Romanian speech has them
+            item["ro"] = [w for w in c["ro"] if isinstance(w, str)]
+        q.put(item)
+    elif c.get("cmd") == "device":
+        ctl.switch(c.get("device"))          # the mic thread reopens on the new input
+    elif c.get("cmd") == "gain":
+        ctl.set_gain(c.get("db", 0.0))       # from the next frame: no reopen, no restart
+    elif c.get("cmd") == "agc":
+        ctl.set_auto(c.get("on", False), c.get("target_db"))
+    elif c.get("cmd") == "stop":
+        q.put(None); stop.set()              # sentinel first: buffered speech is still committed
 
 
 def parent_watch(ppid: int, q: queue.Queue, stop: threading.Event, every_s: float = 0.5) -> None:

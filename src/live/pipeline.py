@@ -106,6 +106,10 @@ _ALONE_RO = frozenset("da nu bun bine așa ok hai aha mda păi eu tu el ea noi v
 _ALONE_FOLDED = frozenset(fold_diacritics(w) for w in _ALONE_RO) | {"doamne", "aleluia", "osana", "isus", "hristos"}
 
 
+# engine.QUIET_MAX_S (not imported: engine.py loads numpy and the VAD): the engine sends `quiet`
+# events up to 3 s into a silence, so a sentence_gap_s or sentence_quiet_s above it would never be
+# reached by one (only by sentence_wait_s); they are clamped to it where used
+QUIET_MAX_S = 3.0
 CUT_GAP_S = 0.7                # idea 25: the next piece follows at once (the word went on across the cut)
 _LAST_WORD = re.compile(r"([^\W\d_]+)[^\w]*$")
 _FIRST_WORD = re.compile(r"^[^\w]*([^\W\d_]+)")
@@ -120,6 +124,8 @@ def cut_word(prev_src: str, src: str, lex: set) -> str | None:
     m1, m2 = _LAST_WORD.search(prev_src or ""), _FIRST_WORD.search(src or "")
     if not m1 or not m2 or len(tokens(prev_src)) < 2:
         return None
+    if not m2.group(1)[:1].islower():
+        return None             # a word that goes on across a cut goes on in lower case (review 2026-11-18)
     w, v = fold_diacritics(m1.group(1).lower()), fold_diacritics(m2.group(1).lower())
     if len(w) < 4 or v == w:
         return None
@@ -272,8 +278,14 @@ def merge_clauses(a: dict, b: dict) -> dict:
               {"at": at, "gap": round(b.get("t_speech", b["t_start"]) - a["t_end"], 3),
                **({"reheard": b["reheard"]} if b.get("reheard") else {})},
               *({**j, "at": j["at"] + at} for j in b.get("joints") or [])]
-    b = {k: v for k, v in b.items() if k != "reheard"}
-    return {**b, **({"reheard": a["reheard"]} if a.get("reheard") else {}), "joints": joints,
+    # what belongs to the merged clause's start is a's: the re-heard tail, the recogniser's seam
+    # (the joint before a's first word, for seam_word) and whether it starts with a split piece
+    start = ("reheard", "seam", "sent_split")
+    b = {k: v for k, v in b.items() if k not in start}
+    # caught up (_catch_up): the sentences' pieces and cut words, all of them, in order
+    sent = {k: [*(a.get(k) or []), *(b.get(k) or [])] for k in ("sent_pieces", "sent_cut_words")
+            if a.get(k) or b.get(k)}
+    return {**b, **{k: a[k] for k in start if a.get(k)}, **sent, "joints": joints,
             **{k: f"{a.get(k) or ''} {b.get(k) or ''}".strip() for k in ("ro", "multi", "en")},
             "t_start": a["t_start"], "t_speech": a.get("t_speech", a["t_start"]),
             # stt_s stays b's (what delayed b's t_emit, so vad_wait_s stays right); total kept apart
@@ -382,6 +394,7 @@ def mask(text: str, pat: re.Pattern | None, sub: str = "***") -> tuple[str, int]
     return text, len(spans)
 
 
+DRAIN_TIMEOUT_S = 30.0                   # Start/Stop wait at most this for the clauses still in hand
 KEEPALIVE_TICK_S = 15.0                  # how often idle translators are checked
 OVERLAP_GAP_S = 2.0
 ECHO_TAIL_WORDS = 5                      # idea 20: a 2-3 word echo is all in the previous piece's last 5 words
@@ -698,8 +711,11 @@ class PipelineMixin:
         if c is None:
             c = self._sent_cut = sentences.SentenceCutter()
         c.cap_s = float(self.lc.get("sentence_cap_s", 12.0) or 12.0)
-        c.gap_s = float(self.lc.get("sentence_gap_s", 2.5) or 2.5)
+        c.gap_s = self._sent_gap_s()
         return c
+
+    def _sent_gap_s(self) -> float:
+        return min(float(self.lc.get("sentence_gap_s", 2.5) or 2.5), QUIET_MAX_S)   # see QUIET_MAX_S
 
     def _sent_evs(self) -> list[dict]:
         """The pieces waiting in the sentence buffer (Live Voice asks when the speaker spoke next)."""
@@ -722,7 +738,7 @@ class PipelineMixin:
                 p, self._pending = self._pending, None
                 self._submit(p)
             for unit, why in self._sent_cutter().add({**ev, "_arrived": time.time()}):
-                self._sent_submit(unit, why)
+                self._sent_submit_safe(unit, why)
             self._sent_arm()
             return True
 
@@ -742,11 +758,36 @@ class PipelineMixin:
                     ev = {**ev, "ro": joined[:len(joined) - len(b_ro.lstrip())].rstrip()}
             ev = merge_clauses(ev, b)
         arrived = ev.pop("_arrived", None)
-        ev = {**ev, "ro": sentences.sentence_text(ev.get("ro") or ""), "sentence": why,
+        # starts with the tail of a piece the cutter split: its start time is the cut, not a pause
+        # (_handle_locked does no cut-word or echo check across it)
+        split = {"sent_split": True} if unit[0].get("split_of") is not None else {}
+        ev = {**ev, **split, "ro": sentences.sentence_text(ev.get("ro") or ""), "sentence": why,
               "sent_pieces": [e.get("ro") or "" for e in unit],
               "sent_wait_s": round(time.time() - arrived, 3) if arrived else None,
               **({"sent_cut_words": fixed} if fixed else {})}
         self._submit(ev)
+
+    def _sent_submit_safe(self, unit: list[dict], why: str):
+        """_sent_submit, but the pieces already taken from the buffer are never lost: if joining
+        them fails, each goes to the translator as it came (logged to app_errors.log)."""
+        try:
+            self._sent_submit(unit, why)
+        except Exception:                               # noqa: BLE001
+            import traceback
+            self._app_error(f"sentence buffer ({why}): {len(unit)} pieces sent as they came\n"
+                            f"{traceback.format_exc()}")
+            for e in unit:
+                self._submit({k: v for k, v in e.items() if k != "_arrived"})
+
+    def _app_error(self, text: str):
+        """A line in app_errors.log; never raises (it is called where an error is already being handled)."""
+        try:
+            logs = paths.log_dir(self.root)
+            logs.mkdir(parents=True, exist_ok=True)
+            with open(logs / "app_errors.log", "a") as f:
+                f.write(f"{dt.datetime.now().isoformat()} {text}\n")
+        except Exception:                               # noqa: BLE001
+            pass
 
     def _sent_arm(self):
         """A safety net when no `quiet` event comes (an engine without them): the open sentence goes
@@ -772,7 +813,7 @@ class PipelineMixin:
         c = getattr(self, "_sent_cut", None)
         u = c.flush(why) if c is not None else None
         if u is not None:
-            self._sent_submit(*u)
+            self._sent_submit_safe(*u)
         t = getattr(self, "_sent_timer", None)
         if t is not None:
             t.cancel()
@@ -789,10 +830,11 @@ class PipelineMixin:
             if isinstance(ev.get("since"), (int, float)) and ev["since"] > c.last_end + 0.3:
                 return                                 # speech after the buffer, not here yet
             silence = ev["t"] - c.last_end
-            gap = float(self.lc.get("sentence_gap_s", 2.5) or 2.5)
+            gap = self._sent_gap_s()
+            quiet = min(float(self.lc.get("sentence_quiet_s", 1.0) or 1.0), QUIET_MAX_S)   # see QUIET_MAX_S
             if silence >= gap:
                 self._sent_flush("gap")
-            elif c.waiting_end and silence >= float(self.lc.get("sentence_quiet_s", 1.0) or 1.0):
+            elif c.waiting_end and silence >= quiet:
                 self._sent_flush("quiet")
 
     def _submit(self, ev: dict):
@@ -840,9 +882,33 @@ class PipelineMixin:
             self._auto(f"Caught up: {n} phrases shown together")
         return ev, n
 
-    def _drain(self):
-        """Wait until every submitted clause has been translated, shown and logged."""
-        self._work.join()
+    def _drain(self, timeout_s: float = DRAIN_TIMEOUT_S):
+        """Wait until every submitted clause has been translated, shown and logged, but not for
+        ever (Start and Stop wait here under _control): a worker that died is started again, and
+        what is still waiting after timeout_s is dropped and logged (`drain_timeout`)."""
+        deadline = time.time() + timeout_s
+        while self._work.unfinished_tasks:
+            if time.time() >= deadline:
+                dropped = []
+                while True:
+                    try:
+                        ev = self._work.get_nowait()
+                    except queue.Empty:
+                        break
+                    self._work.task_done()
+                    dropped.append(ev)
+                    try:
+                        self._log_failure(ev, "drain_timeout")
+                    except Exception:                   # noqa: BLE001
+                        pass
+                self._app_error(f"drain: still busy after {timeout_s:.0f} s; {len(dropped)} waiting "
+                                f"clauses dropped: {[str(e.get('ro', ''))[:60] for e in dropped]!r}")
+                return
+            with self._worker_lock:
+                if not self._work.empty() and not (self._worker and self._worker.is_alive()):
+                    self._worker = threading.Thread(target=self._work_loop, daemon=True)
+                    self._worker.start()
+            time.sleep(0.05)
 
     def _handle(self, ev: dict):
         """Never let one bad chunk stop the service: log it and carry on."""
@@ -852,11 +918,12 @@ class PipelineMixin:
             except Exception as e:                       # noqa: BLE001
                 import traceback
                 self.status = f"error on one chunk ({type(e).__name__}); still listening"
-                logs = paths.log_dir(self.root)
-                logs.mkdir(parents=True, exist_ok=True)
-                with open(logs / "app_errors.log", "a") as f:
-                    f.write(f"{dt.datetime.now().isoformat()} {ev.get('ro', '')[:200]!r}\n{traceback.format_exc()}\n")
-                self._log_failure(ev, "error", error=f"{type(e).__name__}: {e}")
+                # a second error here (disk full, a bad log path) must not end the worker thread
+                self._app_error(f"{str(ev.get('ro', ''))[:200]!r}\n{traceback.format_exc()}")
+                try:
+                    self._log_failure(ev, "error", error=f"{type(e).__name__}: {e}")
+                except Exception:                       # noqa: BLE001
+                    self._app_error(f"logging the error failed\n{traceback.format_exc()}")
 
     def _log_failure(self, ev: dict, outcome: str, **extra):
         """A clause that produced no caption still gets a log record and a count, so empty
@@ -947,7 +1014,7 @@ class PipelineMixin:
             info["names_fixed"] = [list(f) for f in fixed]
         return text
 
-    def _echo_word(self, ev: dict, text: str) -> bool:
+    def _echo_word(self, ev: dict, text: str, check: bool = True) -> bool:
         """A one-word phrase that repeats the previous phrase's last word, right after it: the
         recogniser re-hearing the tail ("…pentru cele trei familii." then "famili." → its own
         caption "families."; "trecut.", "dominicală.", 2026-10-25). Logged as `echo_word`."""
@@ -957,7 +1024,7 @@ class PipelineMixin:
         tail = getattr(self, "_last_tail", ())
         self._last_word = (fold_diacritics(words[-1].lower()) if words else "", ev["t_end"])
         self._last_tail = tuple(_echo_key(w) for w in words[-ECHO_TAIL_WORDS:])
-        if not words or not prev or prev_end is None or ev["t_start"] - prev_end > ECHO_GAP_S:
+        if not check or not words or not prev or prev_end is None or ev["t_start"] - prev_end > ECHO_GAP_S:
             return False
         if len(words) == 1:
             w = fold_diacritics(words[0].lower())
@@ -1092,6 +1159,18 @@ class PipelineMixin:
         # the parts of the previous phrase's caption, only while it is the last one in the box
         last_out, self._last_out = getattr(self, "_last_out", None), None
         last_src = getattr(self, "_last_src", "")
+        # live.translate_sentences: this phrase starts where the sentence buffer cut a piece (its start
+        # time is the cut, so the 0 s "gap" is not a pause), or the previous phrase ended a sentence
+        # there («…noi. | Este»): no word goes on across it (cut_word, seam_word), and after a cut
+        # no echo check either (review 2026-11-18)
+        prev_sentence, self._prev_sentence = getattr(self, "_prev_sentence", None), ev.get("sentence")
+        at_split = bool(ev.get("sentence") and ev.get("sent_split"))
+        at_sentence_end = at_split or bool(ev.get("sentence") and prev_sentence == "end")
+        # a sentence that ended in a phrase that is then dropped (scrap, echo, gate...) still ended:
+        # the next caption starts a new sentence; set here, before the early returns (a shown
+        # phrase sets it again below)
+        cap_ended = getattr(self, "_cap_ended", False)
+        self._cap_ended = cap_ended or ev.get("sentence") in sentences.ENDS
         lang, src_text, src_info = self._source(ev)
         src_text = apply_spellings(src_text, self.cfg.get("spellings") or {})
         if self._song_hold(ev, lang, src_text):          # a song: not captioned (logged)
@@ -1104,7 +1183,7 @@ class PipelineMixin:
         src_text = self._repair_numbers(ev, src_text, lang, src_info)
         if lang == "ro":
             src_text = christmas_to_hristos(src_text, getattr(self, "_prev_piece_src", ""), src_info)
-        if self._echo_word(ev, src_text):               # "trecute." then "trecut." alone (logged)
+        if self._echo_word(ev, src_text, check=not at_split):   # "trecute." then "trecut." alone (logged)
             return
         if lang == "ro" and scrap(src_text):            # «să-l.» → "call out.", «rom.» (logged)
             self._log_failure(ev, "scrap", source=src_text)
@@ -1127,7 +1206,7 @@ class PipelineMixin:
         cut_redo = False
         last_end = getattr(self, "_last_end", None)
         if lang == "ro" and last_out and last_src and last_end is not None and self.lc.get("cut_word_redo", True) \
-                and ev.get("t_speech", ev["t_start"]) - last_end <= CUT_GAP_S:
+                and not at_sentence_end and ev.get("t_speech", ev["t_start"]) - last_end <= CUT_GAP_S:
             joined = cut_word(last_src, src_text, gate.lexicon()["ro"])
             by_seam = joined is None and self.lc.get("cut_word_seam", True)
             if by_seam:
@@ -1150,6 +1229,8 @@ class PipelineMixin:
             if len(pieces) > 1 and translate.verse_ahead(tr, pieces, lang, tgt):
                 parts = piece_parts(src_text, pieces)
                 src_info["sentence_verse"] = True
+            elif ev.get("caught_up"):
+                parts = piece_parts(src_text, pieces)   # several sentences: packed into bounded calls below
             else:
                 parts = [src_text]
         if ev.get("caught_up"):                           # catching up: few calls, each bounded
@@ -1242,7 +1323,7 @@ class PipelineMixin:
         prev_end, prev_open = getattr(self, "_cap_end", None), getattr(self, "_cap_open", False)
         continues = prev_open and prev_end is not None and \
             start - prev_end < float(self.lc.get("sentence_pause_s", 1.0)) and \
-            not getattr(self, "_cap_ended", False)      # the sentence buffer saw the sentence end there
+            not cap_ended                               # the sentence buffer saw the sentence end there
         self._cap_ended = ev.get("sentence") in sentences.ENDS
         screen_text, self._cap_open = tidy_clause(translation, continues, tgt, src_text)
         self._cap_end = ev["t_end"]

@@ -18,6 +18,7 @@ import threading
 import time
 
 import scripture
+import sentences
 from captions import _KEEP_CAP, _LOWER
 
 DEFAULTS = {"pause_s": 0.6, "max_words": 30, "cap_words": 45, "comma_lo_s": 0.3, "flush_s": 4.0}
@@ -478,7 +479,7 @@ class SpeechMixin:
                 "ref": (v or {}).get("ref") if isinstance(v, dict) else (ref.name(tgt) if ref is not None else None),
                 "caught_up": ev.get("caught_up", 1),
                 # live.translate_sentences: the speaker's sentence ended here (not cut by its length)
-                "sentence_end": ev.get("sentence") in ("end", "quiet", "gap", "flush")})
+                "sentence_end": ev.get("sentence") in sentences.ENDS})
             self._speech_pump()
 
     def _speech_gap(self, c: dict, nxt: dict | None) -> float | None:
