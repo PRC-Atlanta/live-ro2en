@@ -34,6 +34,7 @@ GEN_FAIL_N = 3                                         # this many failed genera
                                                        # worked: the light turns amber (the voice says nothing)
 CLOCK_FAIL_N = 20                                      # play clock frames failed in the last 10 s: amber...
 CLOCK_FAIL_TICKS = 5                                   # ...and restarted when that lasts this many seconds
+CLOCK_FAIL_NOW_S = 1.0                                 # with a frame failing in the last second each time
 LOG_MAX = 20_000_000
 SENT_KEYS = ("enabled", "en", "mix", "voices", "steps", "threads", "port", "bitrate_kbps", "preroll_s", "gap_s", "speed", "per_addr",
              "speed_max", "speed_lag_lo_s", "speed_lag_hi_s", "speed_step", "speed_round", "limit_s", "skip_s",
@@ -432,7 +433,8 @@ class VoiceMixin:
             while time.time() < deadline - summarize.MIN_TIME_LEFT_S:
                 idle = (getattr(self, "_current", None) is None and getattr(self, "_pending", None) is None
                         and self._work.empty())
-                if idle and self._proc_lock.acquire(timeout=0.05):
+                lock = self._proc_lock              # _drain may swap it (a stuck worker): release this one
+                if idle and lock.acquire(timeout=0.05):
                     try:
                         gen = self._voice_summarizer()
                         if gen is None:
@@ -443,7 +445,7 @@ class VoiceMixin:
                             self._tr_used[id(gen.tr)] = time.time()
                         return res
                     finally:
-                        self._proc_lock.release()
+                        lock.release()
                 time.sleep(0.05)
         return {"ok": False, "reason": "busy", "text": "", "gemma_s": 0.0, "engine": None}
 
@@ -484,8 +486,14 @@ class VoiceMixin:
         why = None
         clock_n = st.get("clock_errors_recent")
         if isinstance(clock_n, int) and clock_n >= CLOCK_FAIL_N:
-            self._voice_clock_bad += 1
             why = f"the play clock keeps failing: {st.get('clock_error') or 'error'}"
+            # the 10 s count stays high for 10 s after a short burst: only a clock still failing now
+            # counts towards the restart (a voice without clock_error_age_s: as before)
+            err_age = st.get("clock_error_age_s", 0.0)
+            if isinstance(err_age, (int, float)) and err_age < CLOCK_FAIL_NOW_S:
+                self._voice_clock_bad += 1
+            else:
+                self._voice_clock_bad = 0
         else:
             self._voice_clock_bad = 0
         bad, ok = st.get("gen_errors_recent"), st.get("gen_ok_recent")

@@ -328,6 +328,9 @@ class Voice:
         return not speakable.speakable(str(text or ""), lang).strip()
 
     def say(self, text: str, lang: str, speed: float):
+        # the stuck limit (voicelink GEN_STUCK_S) is per synth call: a job that waited for a summary,
+        # or speaks a sentence again, is not "stuck" for the time it spent before this call
+        self.gen_t0 = time.time()
         t0 = time.perf_counter()
         pcm = self.synth.say(speakable.speakable(text, lang), lang, speed)
         return pcm, time.perf_counter() - t0
@@ -664,6 +667,8 @@ class Voice:
         rtf = list(self.rtf)                            # a copy: the generation thread appends meanwhile
         gen, aud = sum(g for g, _ in rtf), sum(a for _, a in rtf)
         gen_t0 = self.gen_t0
+        errs = self.clock_err_t
+        last_err = errs[-1] if errs else None
         recent = lambda ts, s: sum(1 for t in list(ts) if now - t <= s)     # noqa: E731
         behind = [v["behind_s"] for v in langs.values() if v["behind_s"] is not None]
         return {"type": "status", "listeners": sum(v["listeners"] for v in langs.values()),
@@ -679,6 +684,8 @@ class Voice:
                 # the last 60 s; how long the job in hand has been generating (None: nothing in hand)
                 "clock_error": self.clock_error,
                 "clock_errors_recent": recent(self.clock_err_t, 10.0),
+                # how long ago the last frame failed: a burst that is over does not restart the voice
+                "clock_error_age_s": round(now - last_err, 2) if last_err is not None else None,
                 "gen_errors_recent": recent(self.gen_err_t, 60.0),
                 "gen_ok_recent": recent(self.gen_ok_t, 60.0),
                 "gen_age_s": round(now - gen_t0, 1) if gen_t0 is not None else None,

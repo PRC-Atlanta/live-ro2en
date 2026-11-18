@@ -25,6 +25,7 @@ import translate
 from captions import tidy_clause
 from langid import score as lang_score
 from segmenter import DANGLING, NEGATION_END, split_clauses
+from speech import GOD_CAP_RO
 from textnorm import apply_spellings, fold_diacritics, tokens
 
 # A change of these needs a new engine process; every other profile setting is applied live.
@@ -124,8 +125,10 @@ def cut_word(prev_src: str, src: str, lex: set) -> str | None:
     m1, m2 = _LAST_WORD.search(prev_src or ""), _FIRST_WORD.search(src or "")
     if not m1 or not m2 or len(tokens(prev_src)) < 2:
         return None
-    if not m2.group(1)[:1].islower():
-        return None             # a word that goes on across a cut goes on in lower case (review 2026-11-18)
+    if not m2.group(1)[:1].islower() and m2.group(1) not in GOD_CAP_RO:
+        # a word that goes on across a cut goes on in lower case (review 2026-11-18), or is a word for
+        # God or Christ, capitalised wherever it stands («uităm că mântuim.» | «Mântuitorul», BR007)
+        return None
     w, v = fold_diacritics(m1.group(1).lower()), fold_diacritics(m2.group(1).lower())
     if len(w) < 4 or v == w:
         return None
@@ -394,7 +397,8 @@ def mask(text: str, pat: re.Pattern | None, sub: str = "***") -> tuple[str, int]
     return text, len(spans)
 
 
-DRAIN_TIMEOUT_S = 30.0                   # Start/Stop wait at most this for the clauses still in hand
+DRAIN_TIMEOUT_S = 30.0                   # Start/Stop/eof give up after this long with no clause finished
+_WORKER = threading.local()              # .gen: the queue generation the worker thread on it serves
 KEEPALIVE_TICK_S = 15.0                  # how often idle translators are checked
 OVERLAP_GAP_S = 2.0
 ECHO_TAIL_WORDS = 5                      # idea 20: a 2-3 word echo is all in the previous piece's last 5 words
@@ -412,6 +416,7 @@ class PipelineMixin:
         self._keepalive: threading.Thread | None = None
         self._recent_out: collections.deque = collections.deque(maxlen=2)   # (source key, output key)
         self._current: dict | None = None      # the clause the worker is on (backlog)
+        self._work_gen = 0                     # bumped when _drain retires a stuck worker and its queue
         self._block: tuple = (None, None)      # (words, compiled pattern)
         self._pending_cap = 0.0                # the span a held phrase may grow to (_on_clause)
         self._prev_src: tuple = ("", "", None) # (language, text, t_end) of the last phrase (overlap)
@@ -530,14 +535,15 @@ class PipelineMixin:
                     n += 1
         tr = self.tr                                  # one, or one per direction: each on its own
         idle = [m for m in self._live_members().values() if now - self._last_used(m) >= every]
-        if idle and self._proc_lock.acquire(blocking=False):
+        lock = self._proc_lock                        # _drain may swap it (a stuck worker): release this one
+        if idle and lock.acquire(blocking=False):
             try:
                 if tr is self.tr:
                     for m in idle:
                         self._ping(m)
                         n += 1
             finally:
-                self._proc_lock.release()
+                lock.release()
         return n
 
     def _ping(self, tr):
@@ -838,29 +844,48 @@ class PipelineMixin:
                 self._sent_flush("quiet")
 
     def _submit(self, ev: dict):
-        self._work.put(ev)
         with self._worker_lock:
-            if not (self._worker and self._worker.is_alive()):
-                self._worker = threading.Thread(target=self._work_loop, daemon=True)
-                self._worker.start()
+            self._work.put(ev)
+            self._ensure_worker()
 
-    def _work_loop(self):
+    def _ensure_worker(self):
+        """A worker on the current queue (call under _worker_lock)."""
+        if not (self._worker and self._worker.is_alive()):
+            self._worker = threading.Thread(target=self._work_loop, args=(self._work, self._work_gen),
+                                            daemon=True)
+            self._worker.start()
+
+    def _stale(self) -> bool:
+        """On a worker that _drain retired (stuck past its deadline): its late result belongs to a
+        previous run and must not be shown, counted or logged in this one."""
+        g = getattr(_WORKER, "gen", None)
+        return g is not None and g != getattr(self, "_work_gen", 0)
+
+    def _work_loop(self, work: queue.Queue | None = None, gen: int | None = None):
+        work = work if work is not None else self._work
+        _WORKER.gen = gen if gen is not None else getattr(self, "_work_gen", 0)
         while True:
-            ev = self._work.get()
+            ev = work.get()
             n = 1
             try:
+                if self._stale():                        # retired: what is left here was dropped
+                    return
                 self._current = ev
-                ev, n = self._catch_up(ev)
+                ev, n = self._catch_up(ev, work)
                 self._current = ev
                 self._handle(ev)
-                self._current = None
-                self._broadcast()
+                if not self._stale():
+                    self._current = None
+                    self._broadcast()
             finally:
-                self._current = None
+                if not self._stale():
+                    self._current = None
                 for _ in range(n):
-                    self._work.task_done()
+                    work.task_done()
+            if self._stale():
+                return
 
-    def _catch_up(self, ev: dict) -> tuple[dict, int]:
+    def _catch_up(self, ev: dict, work: queue.Queue | None = None) -> tuple[dict, int]:
         """Behind (this clause already late, more waiting): merge the waiting clauses into
         one, translated in a single call, so the captions get back to the speaker instead of
         falling further behind clause by clause. Nothing is dropped."""
@@ -871,7 +896,7 @@ class PipelineMixin:
         n = 1
         while max(len((ev.get(k) or "").split()) for k in ("ro", "multi", "en")) < cap:
             try:
-                nxt = self._work.get_nowait()
+                nxt = (work if work is not None else self._work).get_nowait()
             except queue.Empty:
                 break
             ev, n = merge_clauses(ev, nxt), n + 1
@@ -884,31 +909,54 @@ class PipelineMixin:
 
     def _drain(self, timeout_s: float = DRAIN_TIMEOUT_S):
         """Wait until every submitted clause has been translated, shown and logged, but not for
-        ever (Start and Stop wait here under _control): a worker that died is started again, and
-        what is still waiting after timeout_s is dropped and logged (`drain_timeout`)."""
+        ever (Start, Stop and eof wait here): a worker that died is started again. The deadline
+        counts from the last clause that finished, so a long queue that keeps moving (the end of
+        a bench replay, catch-up off) is translated to the end; only a worker that finishes
+        nothing for timeout_s is given up on. Then what is still waiting is dropped and logged
+        (`drain_timeout`), and the stuck worker is retired with its queue: the next clauses go to
+        a new worker on a new queue, and the old one's late result is never shown or logged."""
+        work = self._work
+        left = work.unfinished_tasks
         deadline = time.time() + timeout_s
-        while self._work.unfinished_tasks:
+        while work.unfinished_tasks:
+            n = work.unfinished_tasks
+            if n < left:                                # progress: a clause finished
+                deadline = time.time() + timeout_s
+            left = n                                    # (a clause submitted meanwhile is not progress)
             if time.time() >= deadline:
-                dropped = []
-                while True:
-                    try:
-                        ev = self._work.get_nowait()
-                    except queue.Empty:
-                        break
-                    self._work.task_done()
-                    dropped.append(ev)
-                    try:
-                        self._log_failure(ev, "drain_timeout")
-                    except Exception:                   # noqa: BLE001
-                        pass
-                self._app_error(f"drain: still busy after {timeout_s:.0f} s; {len(dropped)} waiting "
-                                f"clauses dropped: {[str(e.get('ro', ''))[:60] for e in dropped]!r}")
+                self._give_up(work, timeout_s)
                 return
             with self._worker_lock:
-                if not self._work.empty() and not (self._worker and self._worker.is_alive()):
-                    self._worker = threading.Thread(target=self._work_loop, daemon=True)
-                    self._worker.start()
+                if not work.empty():
+                    self._ensure_worker()
             time.sleep(0.05)
+
+    def _give_up(self, work: queue.Queue, timeout_s: float):
+        """_drain's deadline passed with nothing finishing: drop and log what waits, retire the
+        stuck worker (a new generation, queue and _proc_lock: it keeps the old lock until its call
+        returns, and the next run's clauses do not wait behind it)."""
+        dropped = []
+        with self._worker_lock:
+            while True:
+                try:
+                    ev = work.get_nowait()
+                except queue.Empty:
+                    break
+                work.task_done()
+                dropped.append(ev)
+            if self._worker and self._worker.is_alive():
+                self._work_gen = getattr(self, "_work_gen", 0) + 1
+                self._work = queue.Queue()
+                self._worker = None
+                self._current = None
+                self._proc_lock = threading.Lock()
+        for ev in dropped:
+            try:
+                self._log_failure(ev, "drain_timeout")
+            except Exception:                           # noqa: BLE001
+                pass
+        self._app_error(f"drain: nothing finished for {timeout_s:.0f} s; {len(dropped)} waiting "
+                        f"clauses dropped: {[str(e.get('ro', ''))[:60] for e in dropped]!r}")
 
     def _handle(self, ev: dict):
         """Never let one bad chunk stop the service: log it and carry on."""
@@ -933,6 +981,8 @@ class PipelineMixin:
                "audio_s": ev.get("audio_s"), "stt_s": ev.get("stt_s"), "profile": self.profile,
                **self._input_fields(ev), **joint_fields(ev), **sentence_fields(ev),
                "time": dt.datetime.now().isoformat(timespec="milliseconds"), **extra}
+        if self._stale():                               # a retired worker's clause: a previous run's
+            return
         with self.lock:
             self.counts[outcome] += 1
         self._write_log(rec)
@@ -965,7 +1015,7 @@ class PipelineMixin:
         self._write_log({**rec, "time": dt.datetime.now().isoformat(timespec="milliseconds")})
 
     def _write_log(self, rec: dict):
-        if self.log_path:
+        if self.log_path and not self._stale():
             with open(self.log_path, "a") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
@@ -1284,6 +1334,8 @@ class PipelineMixin:
             translation = guards.hide_odd(src_text, translation)
             src_info["odd_figure"] = True
         t_tr = time.time() - t0
+        if self._stale():                               # _drain gave up on this call: a previous run's
+            return                                      # phrase never shows in this run
         used = set(getattr(tr, "engines_used", None) or ()) if tr is not self.tr else {"local"}
         # AI chosen: "ai" when only the API answered, or when no model was asked at all (a published
         # verse); "local_fallback" when the local model answered any part of it
@@ -1333,6 +1385,9 @@ class PipelineMixin:
                 self.caps.retract()                     # the previous caption goes; this replaces it
             shown, ok, outcome = self._show(screen_text, close="." if prev_open and not continues and not redo else "",
                                             audio_s=ev.get("audio_s"), spoken_ago=_spoken_ago(ev))
+            # the caption's number (on the redo path the new caption's): Fix last checks it still
+            # names the caption the operator saw
+            cap_seq = getattr(self.caps, "last_seq", None) if shown else None
             voice_mark = None
             if hasattr(self, "_speech_mark"):           # Live Voice: this chunk's place among the shown ones
                 try:
@@ -1359,6 +1414,7 @@ class PipelineMixin:
                "pp_error": self.pp.last_error, "audio_s": ev["audio_s"], "glossary": [n_g, ok_g],
                **self._input_fields(ev), **joint_fields(ev), **sentence_fields(ev),
                **safety, **guard, **({"verse": verse[0] if len(verse) == 1 else verse} if verse else {}),
+               **({"caption_seq": cap_seq} if shown else {}),
                "time": dt.datetime.now().isoformat(timespec="milliseconds")}
         warn_s = float(self.lc.get("lag_warn_s", 6.0))
         late = bool(warn_s) and latency > warn_s

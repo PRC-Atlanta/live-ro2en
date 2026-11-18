@@ -251,3 +251,36 @@ def test_the_new_process_is_reset_before_it_is_assigned(make):
         live._shutting_down = True
         live.voice_stop()
         live.__class__ = base
+
+
+# --- round 2: a short play-clock burst does not restart; the stuck limit is per synth call --------
+def test_a_play_clock_burst_that_is_over_does_not_count_towards_a_restart(make):
+    live = make()
+    burst = {"clock_errors_recent": 30, "clock_error": "OSError: lame", "clock_error_age_s": 3.0}
+    for _ in range(voicelink.CLOCK_FAIL_TICKS + 3):     # the 10 s count stays high, but the burst is over
+        live._voice_check_failing(burst)
+    assert live._voice_clock_bad == 0
+    assert "play clock" in live._voice_failing           # still amber while the count is high
+    now = {**burst, "clock_error_age_s": 0.1}           # still failing now: counts
+    for _ in range(voicelink.CLOCK_FAIL_TICKS):
+        live._voice_check_failing(now)
+    assert live._voice_clock_bad == voicelink.CLOCK_FAIL_TICKS
+
+
+def test_status_reports_how_long_ago_the_play_clock_last_failed(tmp_path):
+    v = _voice(tmp_path)
+    assert v.status()["clock_error_age_s"] is None
+    v.clock_err_t.append(time.time() - 2)
+    assert 1.9 <= v.status()["clock_error_age_s"] <= 2.5
+
+
+def test_the_stuck_limit_counts_from_each_synth_call(tmp_path):
+    v = _voice(tmp_path)
+    ages = []
+    v.synth.say = lambda text, lang="ro", speed=1.25: (ages.append(v.status()["gen_age_s"]),
+                                                       np.zeros(100, dtype=np.float32))[1]
+    v.gen_t0 = time.time() - 25                         # the job waited 25 s (a summary) before this call
+    v.say("unu doi trei", "ro", 1.0)
+    v.gen_t0 = time.time() - 25
+    v.say("patru cinci", "ro", 1.0)                     # a second call in the same job
+    assert all(a is not None and a < 1 for a in ages)

@@ -42,9 +42,11 @@ DANGLING = {
               "mai nu va vor poate este sunt era fi am ai au îl îi le se ne vă când dacă unde cum fiindcă "
               "deoarece".split()),
 }
+# words for God and Christ, capitalised wherever they stand (pipeline.cut_word: a cut word may go on in one)
+GOD_CAP_RO = {"Dumnezeu", "Dumnezeul", "Dumnezeului", "Domnul", "Domnului", "Isus", "Hristos", "Cristos", "Duhul",
+              "Duhului", "Mântuitorul", "Mântuitor", "Mântuitorului"}
 # capitalised wherever they stand (clean_sermon.ALWAYS_CAP in the simulation)
-ALWAYS_CAP_RO = {"Dumnezeu", "Dumnezeul", "Dumnezeului", "Domnul", "Domnului", "Isus", "Hristos", "Duhul",
-                 "Duhului", "Biblia", "Bibliei", "Biblie", "Pavel", "Tesaloniceni", "Cristos"}
+ALWAYS_CAP_RO = GOD_CAP_RO | {"Biblia", "Bibliei", "Biblie", "Pavel", "Tesaloniceni"}
 ALWAYS_CAP_EN = {w.capitalize() for w in _KEEP_CAP} | {"I"}
 ORD = {"ro": {"1": "Întâi", "2": "A doua", "3": "A treia"}, "en": {"1": "First", "2": "Second", "3": "Third"}}
 _STRIP = {"ro": ",.;:?!", "en": ",.;:?!\"'"}

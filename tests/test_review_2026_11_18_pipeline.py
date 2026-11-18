@@ -267,3 +267,67 @@ def test_a_bad_command_does_not_end_the_command_thread():
                             '{"cmd":"gain","db":6}\n', '{"cmd":"stop"}\n']), q, stop, ctl)
     assert np.isclose(ctl.gain, 10 ** (6 / 20)) and stop.is_set()
     assert q.get_nowait() == {"mode": None}
+
+
+# --- round 2: drain deadline from the last progress; a stuck worker is retired -------------------
+def test_drain_waits_for_a_slow_queue_that_keeps_moving(tmp_path, monkeypatch):
+    monkeypatch.setenv("LIVE_LOG_DIR", str(tmp_path / "logs"))
+    live = _live(tmp_path, lag_warn_s=0)                   # catch-up off: one clause per call (bench eof)
+    done = []
+    live._handle = lambda ev: (time.sleep(0.1), done.append(ev["id"]))
+    t = time.time() - 20
+    for i in range(12):                                    # ~1.2 s in all, 4 × the deadline
+        live._submit(_p(i, t + i, t + i + 1, f"fraza {i}"))
+    live._drain(timeout_s=0.3)
+    assert done == list(range(12))
+    assert not any(r["outcome"] == "drain_timeout" for r in _log(live))
+
+
+def test_a_stuck_worker_is_retired_and_its_late_result_never_lands(tmp_path, monkeypatch):
+    monkeypatch.setenv("LIVE_LOG_DIR", str(tmp_path / "logs"))
+    live = _live(tmp_path, lag_warn_s=0)
+    release = threading.Event()
+
+    def tr(t, *a, **k):
+        if "unu" in t:
+            release.wait(10)                               # a translator call that hangs
+        return f"EN: {t}"
+    live.tr = types.SimpleNamespace(translate=tr)
+    t = time.time() - 20
+    live._submit(_p(1, t, t + 1, "unu doi trei"))
+    live._submit(_p(2, t + 1, t + 2, "patru cinci șase"))
+    time.sleep(0.2)
+    old = live._worker
+    live._drain(timeout_s=0.3)                             # gives up: 2 dropped, the worker retired
+    assert [r["outcome"] for r in _log(live)] == ["drain_timeout"]
+    t2 = time.time()
+    live._submit(_p(3, t2 - 2, t2 - 1, "șapte opt nouă"))  # the next run
+    live._drain(timeout_s=5)
+    assert time.time() - t2 < 3                            # not behind the hung call's _proc_lock
+    release.set()
+    old.join(5)
+    assert not old.is_alive()
+    recs = _log(live)
+    assert [(r["id"], r["outcome"]) for r in recs] == [(2, "drain_timeout"), (3, "ok")]
+    assert all("unu" not in r.get("translation", "") for r in recs + live.history)
+
+
+# --- round 2: a cut word may go on capitalised when it is a word for God or Christ ----------------
+def test_a_cut_word_may_go_on_in_a_word_for_god():
+    # BR007 (logs/bench/seams.json): «mântuim.» is the cut-off start of «Mântuitorul», joined as before
+    # the lower-case rule
+    assert cut_word("apoi să nu uităm că mântuim.", "Mântuitorul se roagă în Ioan 17", LEX["ro"]) == \
+        "apoi să nu uităm că Mântuitorul se roagă în Ioan 17"
+    assert cut_word("înainte de a parca.", "Parcurge câteva versete", LEX["ro"]) is None   # still the rule
+
+
+# --- round 2: the shown phrase's record names its caption (Fix last's stale check) ---------------
+def test_a_shown_phrase_carries_its_caption_number(tmp_path):
+    live = _live(tmp_path)
+    t = time.time() - 20
+    live._handle(_p(1, t, t + 3, "Dumnezeu este bun cu noi.", sentence="end"))
+    live._handle(_p(2, t + 5, t + 8, "El ne iubește pe toți.", sentence="end"))
+    rec = live.history[-1]
+    assert rec["outcome"] == "ok" and rec["caption_seq"] is not None
+    assert rec["caption_seq"] == live.caps.last_seq != live.history[-2]["caption_seq"]
+    assert _log(live)[-1]["caption_seq"] == rec["caption_seq"]

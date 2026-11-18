@@ -322,7 +322,7 @@ def test_a_different_speech_model_still_restarts_the_engine(tmp_path, monkeypatc
     live.cfg["profiles"]["quality"]["stt_model"] = "another-model"
     calls = []
     live.stop = lambda: (calls.append("stop"), setattr(live, "running", False))
-    live.start = lambda *a: calls.append("start")
+    live.start = lambda *a, **k: calls.append("start")
     live.set_profile("quality")
     assert calls == ["stop", "start"] and live.engine.cmds() == [] and loads == []   # start() loads it
     assert live.tr is None and live._spare_tr["fake:fast"].spec == "fake:fast"

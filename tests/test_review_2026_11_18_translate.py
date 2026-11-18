@@ -92,9 +92,8 @@ def test_nllb_language_tag_and_encode_are_not_interleaved():
         src_lang = None
 
         def encode(self, text):
-            lang = self.src_lang
-            gate.wait(0.2)                       # the other thread tries to change the tag meanwhile
-            seen.append((text, lang))
+            gate.wait(0.5)                       # the other thread tries to change the tag meanwhile...
+            seen.append((text, self.src_lang))   # ...so the tag is read after the wait, as the real encode would
             return []
     tr.tok = Tok()
     tr.tok.convert_ids_to_tokens = lambda ids: []
@@ -108,6 +107,7 @@ def test_nllb_language_tag_and_encode_are_not_interleaved():
     time.sleep(0.05)
     b = threading.Thread(target=tr.translate, args=("Good day", "en", "ro"))
     b.start()
+    time.sleep(0.05)                             # b sets its tag now, unless the lock holds it back
     gate.set()
     a.join(), b.join()
     assert dict(seen) == {"Bună ziua": "ron_Latn", "Good day": "eng_Latn"}
@@ -143,3 +143,26 @@ def test_no_key_is_tried_once_not_every_phrase(monkeypatch, tmp_path):
     assert not e.usable() and e._warm_thread is first      # no new thread per phrase
     e.reload_key()
     assert not e._warm_tried
+
+
+# --- round 2: a client build that raised is tried again after a minute ----------------------------
+def test_a_client_build_that_raised_is_retried_after_a_minute(monkeypatch):
+    e = ai.Engine({})
+    calls = []
+
+    def broken():
+        calls.append(1)
+        raise RuntimeError("constructor failed")
+    monkeypatch.setattr(e, "client", broken)
+    monkeypatch.setattr(e, "_lookup", lambda: None)
+    clock = [1000.0]
+    monkeypatch.setattr(ai.time, "time", lambda: clock[0])
+    assert not e.usable()
+    e._warm_thread.join(1)
+    for _ in range(5):                                   # not every phrase
+        assert not e.usable()
+    assert len(calls) == 1 and not e._warm_tried
+    clock[0] += ai.WARM_RETRY_S + 1                      # not never
+    assert not e.usable()
+    e._warm_thread.join(1)
+    assert len(calls) == 2

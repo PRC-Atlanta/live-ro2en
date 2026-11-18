@@ -409,7 +409,7 @@ def test_double_start_loads_and_spawns_once(tmp_path):
     def slow_load():
         calls["load"] += 1; time.sleep(0.3)
     live.load_translator = slow_load
-    live._start_engine = lambda device=None: calls.__setitem__("engine", calls["engine"] + 1)
+    live._start_engine = lambda device=None, fresh=True: calls.__setitem__("engine", calls["engine"] + 1)
     ts = [threading.Thread(target=live.start) for _ in range(2)]
     [t.start() for t in ts]; [t.join() for t in ts]
     assert calls == {"load": 1, "engine": 1} and live.running
