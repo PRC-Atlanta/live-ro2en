@@ -4,7 +4,7 @@ the network server of the captions display (display.py, `display.port`) also ans
 feed of what the toolbar shows. Its full view (app_view, /remote/app/) is the Live screen
 itself: start and stop, gain, mode and quality too. Setup, Settings and quitting stay on this Mac.
 
-Every /remote request carries the PIN (`X-Live-Pin`), shown in Settings → ProPresenter and
+Every /remote request carries the PIN (`X-Live-Pin`), shown in Settings → Screens and
 kept in <user dir>/remote_pin. A new PIN drops every connected remote. Too many wrong PINs
 from one address lock that address out for a minute, and 50 in an hour from anywhere lock out
 every address but the remote that last knew the PIN (a request with no PIN is refused but not

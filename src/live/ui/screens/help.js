@@ -16,13 +16,19 @@ export function render(el, store) {
         <h2>${H.title}</h2>
         <a class="btn" href="#live">${H.back}</a>
       </div>
-      <p class="intro">${H.intro}</p>
 
       <section class="hcard">
         <h3>${H.symptomsTitle}</h3>
-        ${H.symptoms.map(([title, steps]) => `
-          <details class="symptom"><summary>${esc(title)}</summary>
-            <ol>${steps.map(x => `<li>${esc(x)}</li>`).join("")}</ol></details>`).join("")}
+        ${H.symptoms.map(x => (typeof x === "string" ? `<h4 class="hgroup">${esc(x)}</h4>` : `
+          <details class="symptom"><summary>${esc(x[0])}</summary>
+            <ol>${x[1].map(step => `<li>${esc(step)}</li>`).join("")}</ol></details>`)).join("")}
+      </section>
+
+      <section class="hcard">
+        <h3>${H.shortcutsTitle}</h3>
+        <dl class="hkeys">
+          ${S.shortcuts.map(([k, what]) => `<div><dt><kbd>${esc(k)}</kbd></dt><dd>${esc(what)}</dd></div>`).join("")}
+        </dl>
       </section>
 
       <div class="hgrid">
@@ -37,15 +43,8 @@ export function render(el, store) {
       </div>
 
       <section class="hcard">
-        <h3>${H.ppTitle}</h3>
-        <ol class="steps">${H.ppSteps.map(x => `<li>${esc(x)}</li>`).join("")}</ol>
-      </section>
-
-      <section class="hcard">
-        <h3>${H.shortcutsTitle}</h3>
-        <table class="keys"><tbody>
-          ${S.shortcuts.map(([k, what]) => `<tr><th><kbd>${esc(k)}</kbd></th><td>${esc(what)}</td></tr>`).join("")}
-        </tbody></table>
+        <details class="symptom hpp"><summary>${H.ppTitle}</summary>
+          <ol class="steps">${H.ppSteps.map(x => `<li>${esc(x)}</li>`).join("")}</ol></details>
       </section>
     </div>`;
 

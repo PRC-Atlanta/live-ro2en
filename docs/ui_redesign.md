@@ -1,6 +1,6 @@
 # UI redesign: every screen except Live
 
-Status: **approved 2026-11-18, rebuild in progress.** See "Decisions" at the end.
+Status: **approved and rebuilt, 2026-11-18.** See "Decisions" and "Result" at the end.
 Branch `worktree-ui-redesign`, based on `main` at `df1ca98`.
 Mockups: `docs/ui_mockup/redesign.html`. Before screenshots: `docs/ui_redesign_shots/`.
 
@@ -228,3 +228,49 @@ After each: mock UI at desktop and narrow width, then `tests/test_settings.py`,
    not redesigned, and the AI usage numbers go to Monitor's "Numbers" drawer instead of After.
 4. `live.song_detect`, `live.song_symbol` and `live.lag_warn_s` stay config only.
 5. One dark theme: screens are checked in dark at desktop and narrow width.
+
+## 6. Result
+
+Screenshots after the rebuild: `docs/ui_redesign_shots/after_*.jpg`.
+
+| Screen | Words before | Words after (everything expanded) |
+|---|---|---|
+| Settings → General (was Basic) | 108 | 50 |
+| Settings → Names & words | 114 | 74 |
+| Settings → Screens (was ProPresenter) | 226 | 94 |
+| Settings → Live Voice | 187 | 82 |
+| Settings → AI | 155 | 42 |
+| Settings → Advanced | 321 | 132 |
+
+What was built:
+
+- **Shared pieces** (`screens/setup/kit.js`, `forms.css`): `card`, `row`, `toggle`, `seg`, `more`, `levelBar`.
+- **Settings** (`screens/settings/`): the six tabs above. `#settings/<tab>` opens a tab; a tab
+  remembered under an old name (`basic`, `propresenter`) opens its new one.
+- **Setup** (`screens/setup/`): four steps. The saved wizard position is versioned, so a position
+  from the six-step wizard starts again at step 1.
+- **Monitor**: a delay strip and a "Numbers" drawer (outcomes, who translated, alerts).
+- **Help**: grouped symptoms, two-column shortcuts, ProPresenter steps folded.
+- **After**: untouched.
+- **Backend**: only the two dead keys removed from `settings.py`, `defaults.yaml` and the mock, and
+  the tab name in the header line of the user's word-list files.
+
+Small behaviour changes to know about:
+
+- The toolbar's wide "input → ProPresenter" button opens Settings → General, and "Names & words"
+  (off the Live screen) opens Settings → Names & words. Both used to open the last-used tab.
+- "Reset Advanced to defaults" resets the four Advanced groups. It now includes
+  `propresenter.health_every_s` and no longer includes `ai.timeout_s`,
+  `live.input_gain_target_db` and `live.vad_threshold`, which moved to their own tabs; each of
+  those rows has its own Reset link when it differs from the default.
+- Setup saves `live.profile` when leaving the Download step, as it did when leaving "This Mac".
+
+Checks:
+
+- Live screen: rendered from this branch and from the base commit side by side in 11 mock
+  scenarios (ready, stopped, error, starting, stopping, unloading, loading, paused, pp_off,
+  no_sound, ai_no_key): same elements, same computed styles and sizes, same text.
+- Every rebuilt screen at 1100 px and 390 px wide: no horizontal overflow.
+- Tests: 1150 pass. Four fail (`test_display.py` × 1, `test_voice_link.py` × 3) with
+  `models_missing`; the same four fail on an untouched copy of the base commit outside the main
+  checkout, because a worktree has no model files.

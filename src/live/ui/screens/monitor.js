@@ -31,10 +31,28 @@ export function rowHTML(r) {
     "</tr>";
 }
 
+// The Numbers drawer: phrases by outcome, who translated, and the alerts and warnings.
+export function numbersHTML(s) {
+  const counts = Object.entries(s.counts || {});
+  const used = s.ai?.used;
+  const lines = [...(s.alerts || []), ...(s.warnings || []),
+                 ...(s.pp_error ? [`ProPresenter: ${s.pp_error}`] : []),
+                 ...(s.stt || s.translator ? [M.models(s.stt, s.translator)] : [])];
+  const table = rows => `<table>${rows.map(([k, v, tip]) => `<tr${tip ? ` title="${esc(tip)}"` : ""}><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</table>`;
+  return `<section><h4>${M.outcomesTitle}</h4>${
+      table(counts.length ? counts.map(([k, v]) => [M.outcomes[k] || M.other, v, k]) : [[M.nothingYet, ""]])}</section>` +
+    (used ? `<section><h4>${M.usageTitle}</h4>${table(Object.entries(M.usage).map(([k, label]) => [label, M.usageValue(used[k])]))}</section>` : "") +
+    `<section><h4>${M.alertsTitle}</h4><pre>${esc(lines.length ? lines.join("\n") : M.none)}</pre></section>`;
+}
+
 export function render(el, store) {
   const f = frame(el);
   f.panel.innerHTML = `
     <div class="mon">
+      <div class="mon-stats">
+        <span class="mon-delay" data-delay></span>
+        <details class="mon-nums"><summary>${M.numbers}</summary><div class="mon-nums-body" data-nums></div></details>
+      </div>
       <div class="mon-scroll" data-scroll>
         <table class="mon-table">
           <thead><tr><th>${M.heard}</th><th>${M.translated}</th><th>${M.voiced}</th></tr></thead>
@@ -81,9 +99,18 @@ export function render(el, store) {
     } catch { toast(S.toast.failed, "warn"); }
   };
 
+  // the numbers for whoever tunes the system: delay in the strip, the rest in the Numbers drawer
+  let lastNums = "";
+  function numbers(s) {
+    q("[data-delay]").textContent = M.delay(s.latency_last, s.latency_median, s.first_word_ok_pct);
+    const html = numbersHTML(s);
+    if (html !== lastNums) { lastNums = html; q("[data-nums]").innerHTML = html; }
+  }
+  const onState = s => { s ||= {}; f.update(s); numbers(s); };
+
   show([]);
   poll();
-  const unsub = store.subscribe(s => f.update(s || {}));
-  f.update(store.get() || {});
+  const unsub = store.subscribe(onState);
+  onState(store.get());
   return () => { stopped = true; clearTimeout(timer); unsub(); };
 }
