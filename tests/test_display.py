@@ -41,6 +41,7 @@ def _live(tmp_path, monkeypatch, pp_port=None, **pp):
     monkeypatch.setenv("LIVE_LOG_DIR", str(tmp_path / "logs"))
     cfg = yaml.safe_load(open(ROOT / "config.yaml"))
     cfg["propresenter"].update(port=pp_port or _port(), health_every_s=0, backoff_s=(0,), **pp)
+    cfg["live"].update(caption_pages=False, caption_flow=False)  # rolling lines: these tests are about other controls, not the page layout
     live = Live(cfg, types.SimpleNamespace(file=None, settings=str(tmp_path / "settings.yaml")))
     live.settings_path = tmp_path / "settings.yaml"
     live.log_path = tmp_path / "log.jsonl"
