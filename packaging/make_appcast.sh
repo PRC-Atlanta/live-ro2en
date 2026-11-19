@@ -64,7 +64,8 @@ require_notarized() {
     die "$dmg has no stapled notarization ticket (notarize and staple it first; docs/release.md)"
   spctl -a -t open --context context:primary-signature "$dmg" 2>/dev/null ||
     die "Gatekeeper rejects $dmg (spctl -a -t open --context context:primary-signature -vv \"$dmg\")"
-  codesign -dvv "$app" 2>&1 | grep -q '^Authority=Developer ID Application: ' ||
+  # not grep -q: it exits at the first match and codesign, still writing, fails the pipe (pipefail)
+  codesign -dvv "$app" 2>&1 | grep '^Authority=Developer ID Application: ' >/dev/null ||
     die "$(basename "$app") in $dmg is not signed with a Developer ID Application certificate"
 }
 
