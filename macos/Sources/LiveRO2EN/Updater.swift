@@ -8,11 +8,11 @@ import Sparkle
 /// a new version quietly and installs it when the app quits (SUAutomaticallyUpdate).
 ///
 /// Rules (APP_PLAN §1.1 "Updates"):
-/// - never check for or download an update while live (`updaterMayCheck` is false then);
+/// - never check for or download an update while live (`updaterMayCheck` is false then, and a
+///   check that began just before going live is stopped in `shouldProceedWithUpdate`);
 /// - install on quit, never in the middle of a service;
 /// - model updates are a prompt at launch, never during a service.
 protocol Updater: AnyObject {
-    var isConfigured: Bool { get }
     func checkForUpdates()
     /// Called whenever live changes; scheduled checks wait while live.
     func setLive(_ live: Bool)
@@ -45,8 +45,6 @@ final class SparkleUpdater: NSObject, Updater, SPUUpdaterDelegate {
         if Self.testFeed != nil { controller.updater.checkForUpdatesInBackground() }
     }
 
-    var isConfigured: Bool { true }
-
     func setLive(_ live: Bool) { self.live = live }
 
     func checkForUpdates() {
@@ -69,6 +67,17 @@ final class SparkleUpdater: NSObject, Updater, SPUUpdaterDelegate {
     /// No check, scheduled or not, while the captions are live.
     func updaterMayCheck(forUpdates updater: SPUUpdater) -> Bool { !live }
 
+    /// A check that started before the captions went live finds an update: do not download or
+    /// show it now. Throwing stops this update; the next scheduled check after the service finds
+    /// it again.
+    func updater(_ updater: SPUUpdater, shouldProceedWithUpdate updateItem: SUAppcastItem,
+                 updateCheck: SPUUpdateCheck) throws {
+        guard live else { return }
+        ShellLog.write("updates: \(updateItem.displayVersionString) found while live; waiting until the service is over")
+        throw NSError(domain: "org.livero2en.updates", code: 1,
+                      userInfo: [NSLocalizedDescriptionKey: "Updates wait until the service is over."])
+    }
+
     func updater(_ updater: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem,
                  immediateInstallationBlock: @escaping () -> Void) -> Bool {
         ShellLog.write("updates: \(item.displayVersionString) downloaded; installs when the app quits")
@@ -88,7 +97,6 @@ final class SparkleUpdater: NSObject, Updater, SPUUpdaterDelegate {
 }
 
 final class StubUpdater: Updater {
-    var isConfigured: Bool { false }
     private var live = false
 
     func setLive(_ live: Bool) { self.live = live }

@@ -3,8 +3,6 @@ API, and today's names applied live. Every test runs with LIVE_HOME in a temp fo
 import io
 import json
 import pathlib
-import shutil
-import subprocess
 import sys
 import time
 import types
@@ -82,11 +80,21 @@ def test_base_layer_is_defaults_yaml_when_live_home_is_set(home, monkeypatch):
     assert paths.base_config(ROOT).name == "config.yaml" and paths.user_dir(ROOT) == ROOT / "user"
 
 
+def test_a_saved_key_that_no_longer_exists_is_dropped_on_load(home):
+    """ui.show_latency / ui.show_counts were removed (nothing read them): an old file still loads."""
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "settings.yaml").write_text("schema_version: 1\nui:\n  show_latency: true\nlive:\n  hold_s: 2.0\n")
+    live = make_live(home)
+    v = client(live).get("/api/settings").json()
+    assert v["values"]["live.hold_s"] == 2.0 and "ui.show_latency" not in v["values"]
+    assert not live.settings_notes
+
+
 def test_settings_survive_a_restart(home):
     live = make_live(home)
     c = client(live)
     r = c.put("/api/settings", json={"values": {"live.hold_s": 2.0, "propresenter.port": 50002,
-                                                "live.hold_min_words": 6, "ui.show_latency": True}}, headers=ME)
+                                                "live.hold_min_words": 6, "safety.filter_words": False}}, headers=ME)
     assert r.status_code == 200, r.text
     check(r.json(), shape("/api/settings", "PUT"))
     assert live.lc["hold_s"] == 2.0 and live.lc["hold_min_words"] == 6     # applied now, no restart
@@ -100,8 +108,8 @@ def test_settings_survive_a_restart(home):
     v = client(again).get("/api/settings").json()
     check(v, shape("/api/settings"))
     assert v["values"]["live.hold_s"] == 2.0 and v["values"]["propresenter.port"] == 50002
-    assert v["values"]["ui.show_latency"] is True and v["defaults"]["live.hold_s"] == 1.2
-    assert set(v["overrides"]) == {"live.hold_s", "propresenter.port", "live.hold_min_words", "ui.show_latency"}
+    assert v["values"]["safety.filter_words"] is False and v["defaults"]["live.hold_s"] == 1.2
+    assert set(v["overrides"]) == {"live.hold_s", "propresenter.port", "live.hold_min_words", "safety.filter_words"}
     # the user's value wins over the quality profile's own hold_min_words
     assert again.cfg["profiles"]["quality"]["hold_min_words"] == 6 and again.lc["hold_min_words"] == 6
 
@@ -324,23 +332,74 @@ def test_import_config(home, tmp_path):
     assert c.post("/api/import_config", json={}, headers=ME).status_code == 400
 
 
-def test_nothing_is_written_into_the_repo_when_live_home_is_set(home, tmp_path):
-    if not shutil.which("git") or not (ROOT / ".git").exists():
-        pytest.skip("needs the git checkout")
-    status = lambda: subprocess.run(["git", "status", "--porcelain", "--untracked-files=all", "--ignored"],
-                                    cwd=ROOT, capture_output=True, text=True).stdout
-    before = status()
+def _repo_writable_state() -> dict:
+    """What the app could write into the checkout: the names at its top level, every file under
+    user/ and the root data files, each with its size and modification time. (Not `git status` of
+    the whole checkout: logs, builds and other work change it while the tests run; and not whether
+    user/ exists: on the church's Mac it does, from the app's own use.)"""
+    out = {"top": sorted(p.name for p in ROOT.iterdir())}
+    files = [p for p in (ROOT / "user").rglob("*") if p.is_file()] if (ROOT / "user").is_dir() else []
+    files += [ROOT / n for n in ("glossary.csv", "keywords_en.txt", "terms.txt", "blocklist.txt",
+                                 "settings.yaml", "config.yaml", "defaults.yaml")]
+    for p in files:
+        if p.exists():
+            st = p.stat()
+            out[str(p.relative_to(ROOT))] = (st.st_size, st.st_mtime_ns)
+    return out
+
+
+# Big or busy folders the app never writes to with LIVE_HOME set (and too large to walk fast).
+_SCAN_PRUNE = {".git", "models", "build", "BibleAudio", "work", "node_modules"}
+
+
+def _repo_files_containing(marker: bytes, since: float) -> list[str]:
+    """Files under the checkout modified since `since` whose bytes contain `marker`."""
+    import os
+    hits = []
+    for dp, dns, fns in os.walk(ROOT):
+        here = pathlib.Path(dp)
+        dns[:] = [d for d in dns if d not in _SCAN_PRUNE and not d.startswith((".venv", "Audio"))
+                  and (here / d) != ROOT / "logs" / "bench"]
+        for f in fns:
+            p = here / f
+            try:
+                if p.is_symlink() or p.stat().st_mtime < since:
+                    continue
+                if marker in p.read_bytes():
+                    hits.append(str(p.relative_to(ROOT)))
+            except OSError:
+                continue
+    return hits
+
+
+def test_nothing_is_written_into_the_repo_when_live_home_is_set(home, tmp_path, monkeypatch):
+    import uuid
+    for var in ("LIVE_USER_DIR", "LIVE_LOG_DIR", "LIVE_CACHE_DIR"):
+        monkeypatch.delenv(var, raising=False)
+    # every path the app writes the user's things to resolves under LIVE_HOME
+    for fn in (paths.user_dir, paths.settings_file, paths.user_keywords, paths.user_glossary,
+               paths.log_dir, paths.cache_dir):
+        assert fn().resolve().is_relative_to(home.resolve()), fn.__name__
+    # a word nobody else writes, in letters only so every list accepts it
+    marker = "Zq" + "".join(chr(ord("a") + int(c, 16)) for c in uuid.uuid4().hex)
+    start = time.time() - 1                    # mtime granularity
+    before = _repo_writable_state()
     live = make_live(home, running=True)
     live.engine = FakeEngine()
     c = client(live)
-    assert c.put("/api/settings", json={"values": {"live.hold_s": 2.0}}, headers=ME).status_code == 200
-    assert c.put("/api/keywords", json={"user": ["Corinth"]}, headers=ME).status_code == 200
-    assert c.put("/api/spellings", json={"user": {"Corint": "Corinth"}}, headers=ME).status_code == 200
-    assert c.post("/api/terms", json={"lines": ["Ionuț Pop"], "save": True}, headers=ME).status_code == 200
-    assert c.post("/api/import_config", json={"text": "propresenter: {port: 50009}\n"}, headers=ME).status_code == 200
+    assert c.put("/api/settings", json={"values": {"live.hold_s": 2.0}, "note": marker}, headers=ME).status_code == 200
+    assert c.put("/api/keywords", json={"user": ["Corinth", marker]}, headers=ME).status_code == 200
+    assert c.put("/api/spellings", json={"user": {"Corint": "Corinth", marker + "x": marker}},
+                 headers=ME).status_code == 200
+    assert c.post("/api/terms", json={"lines": ["Ionuț Pop", f"{marker} Pop"], "save": True},
+                  headers=ME).status_code == 200
+    assert c.post("/api/import_config", json={"text": f"# {marker}\npropresenter: {{port: 50009}}\n"},
+                  headers=ME).status_code == 200
     assert sorted(p.name for p in home.iterdir()) == ["glossary.csv", "keywords_en.txt", "settings.yaml"]
-    assert status() == before
-    assert not (ROOT / "user").exists()
+    # the marker did reach the user's files (so the scan below would see a stray copy)
+    assert any(marker in p.read_text(encoding="utf-8") for p in home.iterdir())
+    assert _repo_writable_state() == before
+    assert _repo_files_containing(marker.encode(), start) == []
 
 
 # --- review regressions -------------------------------------------------------------------

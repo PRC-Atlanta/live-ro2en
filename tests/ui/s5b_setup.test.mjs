@@ -1,6 +1,5 @@
 // S5b acceptance tests against the mock backend (run by tests/test_ui_setup.py with `node --test`).
-// The screens keep their decisions in DOM-free modules (setup/flow.js, settings/fields.js,
-// after.js summary), so these drive the same logic the wizard uses, step by step. The mock
+// The screens keep their decisions in DOM-free modules (setup/flow.js, settings/fields.js), so these drive the same logic the wizard uses, step by step. The mock
 // answers with the real backend's shapes (tests/test_ui_mock_contract.py checks that).
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -10,7 +9,6 @@ const mock = await import(new URL("mock_state.js", UI));
 const flow = await import(new URL("screens/setup/flow.js", UI));
 const kit = await import(new URL("screens/setup/kit.js", UI));
 const fields = await import(new URL("screens/settings/fields.js", UI));
-const after = await import(new URL("screens/after.js", UI));
 
 const { mockBackend: B, mockApi, startMock } = mock;
 B.delayMs = 0;
@@ -36,16 +34,16 @@ test("a fresh install reaches Live, and Next waits for sound", async () => {
   assert.equal(stateOf("fresh_install").phase, "needs_setup");
   const ctx = { profile: null, modelsReady: false, mic: null, heard: false, ppOk: false, mode: null };
 
-  // 1. this Mac
+  // 1. download: this Mac recommends what to fetch
   let info = (await api("GET", "setup")).data;
   assert.equal(info.needs_setup, true);
   ctx.profile = flow.defaultProfile(info);
   assert.equal(ctx.profile, "quality");
   assert.equal(flow.sizeGb(info, "quality"), 17);
-  assert.ok(flow.canNext("check", ctx));
+  assert.ok(!flow.canNext("download", ctx), "a choice alone does not unlock Next");
   assert.ok((await put({ "live.profile": ctx.profile })).ok);
 
-  // 2. download, pause (a real cancel: the partial files stay), resume, done
+  // ... download, pause (a real cancel: the partial files stay), resume, done
   await api("POST", "setup/download", { profile: ctx.profile });
   clock += 2000;
   info = (await api("POST", "setup/cancel")).data;
@@ -63,14 +61,16 @@ test("a fresh install reaches Live, and Next waits for sound", async () => {
   assert.ok(ctx.modelsReady && info.profiles.fast.ready && !info.needs_setup);
   assert.ok(flow.canNext("download", ctx));
 
-  // 3. microphone: GET /api/permissions (S1) says the microphone is allowed
+  // 2. sound: GET /api/permissions (S1) says the microphone is allowed
+  assert.ok(!flow.canNext("sound", { ...ctx, mic: "undetermined", noMeter: true }), "not before the microphone is allowed");
+  assert.ok(!flow.canNext("sound", { ...ctx, mic: "denied", heard: true }));
   const perm = await api("GET", "permissions");
   assert.ok(perm.ok && !perm.notBuilt);
   ctx.mic = perm.ok ? perm.data.microphone : "unknown";
   assert.equal(ctx.mic, "granted");
-  assert.ok(flow.canNext("mic", ctx));
+  assert.ok(flow.micOk(ctx.mic) && flow.micOk("unknown"));
 
-  // 4. sound input: the mixer comes first and is silent for 3 s
+  // ... sound input: the mixer comes first and is silent for 3 s
   const devs = flow.sortDevices((await api("GET", "devices")).data);
   assert.equal(devs[0].name, "Behringer UMC204HD");
   assert.ok((await put({ "live.input_device": devs[0].name })).ok);
@@ -83,13 +83,13 @@ test("a fresh install reaches Live, and Next waits for sound", async () => {
   assert.ok(ctx.heard);
   assert.ok(flow.canNext("sound", ctx));
 
-  // 5. ProPresenter on this Mac
+  // 3. big screen: ProPresenter on this Mac
   assert.ok((await put({ "propresenter.host": "127.0.0.1", "propresenter.port": 50001 })).ok);
   ctx.ppOk = flow.ppResult(await api("POST", "pp/test", {})).ok;
   assert.ok(flow.canNext("pp", ctx));
   assert.ok(flow.ppResult(await api("POST", "pp/test_caption", {})).ok);
 
-  // 6. language, finish -> preload (S1) -> Live is ready to start
+  // 4. speaker, finish -> preload (S1) -> Live is ready to start
   ctx.mode = "ro-en";
   assert.ok(flow.canNext("lang", ctx));
   assert.ok((await put({ "live.language_mode": ctx.mode })).ok);
@@ -248,21 +248,14 @@ test("settings answers read as nested objects", () => {
 test("settings never expose internals", () => {
   for (const key of fields.allKeys())
     for (const bad of fields.NEVER_EXPOSED) assert.ok(!key.includes(bad), `${key} exposes ${bad}`);
-  const f = fields.FIELDS.advanced.find(x => x.key === "live.partial_every_s");
+  const f = fields.fieldOf("live.partial_every_s");
   assert.equal(fields.stored(f, true), 0.5);
   assert.equal(fields.shown(f, 0), false);
-  const vad = fields.FIELDS.advanced.find(x => x.key === "live.vad_threshold");
+  const vad = fields.fieldOf("live.vad_threshold");
   assert.equal(fields.shown(vad, 0.6), 0.65);
 });
 
-test("after-sermon summary", () => {
-  const s = after.summary(stateOf("after"));
-  assert.equal(s.duration, "45:12");
-  assert.equal(s.phrases, 416);
-  assert.equal(s.skipped, 5);
-  assert.equal(s.delay, "2.1 s");
-  assert.equal(s.ppErrors, 1);
-  assert.equal(after.summary({}).duration, "–");
+test("clock", () => {
   assert.equal(kit.clock(3725), "1:02:05");
 });
 

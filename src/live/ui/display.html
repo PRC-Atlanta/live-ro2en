@@ -137,7 +137,7 @@
       dot.hidden = false;
       // a stale caption must not stay up for long: 5 s from the first drop, whatever the
       // retries (each failed one closes again; they must not restart the countdown)
-      if (!lostTimer) lostTimer = setTimeout(() => { shown = ""; heldText = null; lines = []; fed = []; settle(""); }, 5000);
+      if (!lostTimer) lostTimer = setTimeout(() => { shown = ""; heldText = null; lines = []; fed = []; lastState = null; settle(""); }, 5000);   // lastState: a resize must not paint the stale caption back
       setTimeout(connect, 1000);
     };
   }

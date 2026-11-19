@@ -412,6 +412,7 @@ def test_the_key_never_appears_in_state_logs_or_the_feed(tmp_path, monkeypatch):
     live.pp = PP()
     live.lang.set_mode("ro-en")
     live.running = True
+    live.ai()._warm_thread.join(2)          # the client is built on a thread, never on the caption path (review 2026-11-18)
     live._handle(clause(1, time.time() - 20, ro="Bună dimineața tuturor fraților și surorilor."))
     st = live.state()
     assert st["ai"]["key_source"] == "env" and st["ai"]["state"] == "ai" and made["c"].calls

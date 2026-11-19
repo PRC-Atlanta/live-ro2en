@@ -10,8 +10,9 @@ import Foundation
 ///   a pipe only the shell can write; on EOF it SIGTERMs, then SIGKILLs, the group.
 /// - Anything still there anyway: the pidfile is read at the next launch, and every process in
 ///   the recorded group whose command line is ours is killed.
-/// - The orchestrator dies on its own: it is restarted (3 times in 2 minutes, then the operator
-///   is asked).
+/// - The orchestrator dies on its own (or hangs and is killed): it is restarted (3 times in 2
+///   minutes, then the operator is asked). If the captions were live, the new one starts them
+///   again at once (--autostart --resumed) and the page says so; a restart while idle stays idle.
 /// All methods run on the main queue.
 final class ProcessSupervisor {
     enum Status: Equatable {
@@ -36,6 +37,13 @@ final class ProcessSupervisor {
     private var startAfterReap = false         // Try again pressed while the old child was still there
     private var generation = 0                 // invalidates timers/polls of an earlier child
     private var restarts: [Date] = []
+    /// The captions were live at the last /api/state answer: a crash or hang restart resumes them.
+    private var wasLive = false
+    /// This child was launched to resume the captions and has not reported live yet. While the
+    /// models load (minutes) its state is not live, but a second crash then must resume again,
+    /// not restart idle: wasLive stays true until a state is live once, or shows that the
+    /// captions will not come back on their own (error, needs setup, the operator's Stop).
+    private var resumePending = false
     private var pollTimer: Timer?
     private var launchStarted = Date()
     private let session: URLSession = {
@@ -59,6 +67,8 @@ final class ProcessSupervisor {
 
     func start() {
         stopping = false
+        wasLive = false                        // a normal launch (or Try again) starts idle
+        resumePending = false
         ShellLog.rotate()
         do {
             config = try LaunchConfig.resolve()
@@ -95,7 +105,9 @@ final class ProcessSupervisor {
         }
     }
 
-    private func launch() {
+    /// `resume`: a restart after a crash or hang in the middle of a service: start the captions
+    /// again without waiting for the operator, and tell them it happened.
+    private func launch(resume: Bool = false) {
         guard let config, !stopping else { return }
         generation += 1
         port = Ports.choose()
@@ -103,7 +115,9 @@ final class ProcessSupervisor {
         launchStarted = Date()
         status = .launching(restarts.isEmpty ? "Starting…" : "Restarting after a problem…")
 
-        let argv = config.arguments(port: port)
+        let argv = config.arguments(port: port, resume: resume)
+        if resume { ShellLog.write("captions were live: the new orchestrator resumes them") }
+        resumePending = resume
         do {
             appendLog("\n=== \(Date()) shell starting: \(argv.joined(separator: " "))\n")
             pid = try Spawn.spawn(argv, env: config.environment, cwd: config.workingDirectory.path,
@@ -199,10 +213,11 @@ final class ProcessSupervisor {
         restarts.append(now)
         status = .launching("Restarting after a problem…")
         let gen = generation
+        let resume = wasLive                   // kept until the new one answers /api/state
         // give the watchdog's SIGTERM a moment so the old engine releases the mic first
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             guard let self, gen == self.generation, self.pid == 0 else { return }
-            self.launch()
+            self.launch(resume: resume)
         }
     }
 
@@ -222,6 +237,7 @@ final class ProcessSupervisor {
                 ShellLog.write("orchestrator ready on port \(self.port) after "
                     + String(format: "%.1f", Date().timeIntervalSince(self.launchStarted)) + " s")
                 self.status = .ready(port: self.port)
+                self.noteState(obj)
                 self.onState?(obj)
                 self.startStatePolling(gen)
             } else {
@@ -243,7 +259,7 @@ final class ProcessSupervisor {
             lastTick = Date()
             self.getJSON("/api/state") { obj, _ in
                 guard gen == self.generation else { return }
-                if let obj { lastGood = Date(); self.onState?(obj); return }
+                if let obj { lastGood = Date(); self.noteState(obj); self.onState?(obj); return }
                 guard !ending, Date().timeIntervalSince(lastGood) > Self.hangTimeout, self.pid != 0 else { return }
                 // alive but not answering (a deadlock, a stuck event loop): restart it like a crash
                 ending = true
@@ -252,6 +268,23 @@ final class ProcessSupervisor {
                 self.terminateGroup(self.pid)
             }
         }
+    }
+
+    /// Remember whether the captions are live, for a crash or hang restart (wasLive).
+    private func noteState(_ obj: [String: Any]) {
+        let live = LiveActivity.isLive(obj)
+        if resumePending {
+            // "loading"/"unloading" (or no phase yet): the resumed Start is still on its way
+            // (the orchestrator reports "starting" while its autostart is pending). Anything
+            // else that is not live (error, needs_setup, stopping, stopped, ready) means it will
+            // not go live by itself: an error or the operator's Stop. Then it is a normal idle.
+            let phase = obj["phase"] as? String
+            let waiting = !live && (phase == nil || phase == "loading" || phase == "unloading")
+            if waiting { wasLive = true; return }
+            resumePending = false
+            if !live { ShellLog.write("resumed captions did not go live (\(phase ?? "?")): a restart now stays idle") }
+        }
+        wasLive = live
     }
 
     private func getJSON(_ path: String, _ done: @escaping ([String: Any]?, Int) -> Void) {
@@ -310,12 +343,16 @@ final class ProcessSupervisor {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("http://127.0.0.1:\(port)", forHTTPHeaderField: "Origin")
         req.httpBody = "{}".data(using: .utf8)
-        req.timeoutInterval = 2
-        session.dataTask(with: req) { _, resp, _ in
+        // longer than the 5 s grace: a slow but working shutdown is not cut short by a timeout;
+        // the tick below sends SIGTERM at 5 s whatever the request is doing
+        req.timeoutInterval = 6
+        session.dataTask(with: req) { _, resp, err in
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            let timedOut = (err as? URLError)?.code == .timedOut
             DispatchQueue.main.async {
-                ShellLog.write("POST /api/shutdown -> \(code)")
-                if !(200..<300).contains(code) { term() }   // not built yet (501) or unreachable
+                ShellLog.write("POST /api/shutdown -> \(timedOut ? "timed out" : String(code))")
+                // not built yet (501) or nobody listening: SIGTERM at once; a timeout is left to the tick
+                if !(200..<300).contains(code) && !timedOut { term() }
             }
         }.resume()
 
@@ -335,14 +372,6 @@ final class ProcessSupervisor {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: tick)
         }
         tick()
-    }
-
-    /// Synchronous last resort (e.g. the app is being killed by the system).
-    func killNow() {
-        guard pid > 0 else { return }
-        killpg(pid, SIGKILL)
-        endWatchdog(killGroup: false)
-        removePidfile()
     }
 
     // MARK: pidfile and stale processes

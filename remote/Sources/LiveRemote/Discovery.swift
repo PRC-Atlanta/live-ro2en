@@ -41,6 +41,14 @@ final class Discovery: NSObject, NetServiceBrowserDelegate, NetServiceDelegate {
         resolving.removeAll { $0 === s }
     }
 
+    /// Browsing could not start (e.g. mDNS not ready yet after wake): try again in 5 s, as when
+    /// it stops.
+    func netServiceBrowser(_ b: NetServiceBrowser, didNotSearch errorDict: [String: NSNumber]) {
+        // already searching (a second start): nothing to retry
+        if errorDict[NetService.errorCode]?.intValue == NetService.ErrorCode.activityInProgress.rawValue { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.start() }
+    }
+
     func netServiceBrowserDidStopSearch(_ b: NetServiceBrowser) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.start() }
     }

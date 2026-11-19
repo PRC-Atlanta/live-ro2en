@@ -32,6 +32,7 @@ class PP:
 
 def _live(tmp_path, translate=lambda t, *a, **k: f"EN: {t}"):
     live = Live(yaml.safe_load(open(CFG)), types.SimpleNamespace(file=None))
+    live.lc["translate_sentences"] = False      # these test the piece-by-piece holds (sentence mode: test_sentences.py)
     live.log_path = tmp_path / "log.jsonl"
     live.tr = types.SimpleNamespace(translate=translate)
     live.pp = PP()
@@ -108,7 +109,7 @@ def test_a_dangling_phrase_with_nothing_after_it_is_sent_after_hold_slow_s(tmp_p
     live.lc.update(phrase_min_words=0, hold_dangling=True, hold_slow_s=0.2, hold_s=5)
     t = time.time() - 3
     live._on_clause(_clause(1, t, t + 2, ro="aduc condoleanțe din partea familiei de."))
-    time.sleep(0.5)
+    live._timer.join(5)                                   # the hold timer has fired and sent it
     live._drain()
     assert [r["source"] for r in _log(live)] == ["aduc condoleanțe din partea familiei de."]
 

@@ -45,7 +45,7 @@ if os.environ.get("LIVE_HOME"):        # loaders and the model downloader share 
 import security                                      # noqa: E402
 from captions import RollingCaptions                 # noqa: E402
 from langid import LangTracker                       # noqa: E402
-from lifecycle import LifecycleMixin                 # noqa: E402
+from lifecycle import RESUMED_FAILED_WARNING, RESUMED_WARNING, LifecycleMixin   # noqa: E402
 from output import OutputMixin                       # noqa: E402
 from display import DisplayMixin                     # noqa: E402
 from remote import RemoteMixin                       # noqa: E402
@@ -148,7 +148,10 @@ def main():
     ap.add_argument("--config", help="base settings (default: config.yaml in dev, defaults.yaml in the app)")
     ap.add_argument("--settings", help="the user's settings.yaml over --config (default: paths.settings_file)")
     ap.add_argument("--file", help="play an audio file as live input (real-time paced)")
-    ap.add_argument("--autostart", action="store_true")
+    ap.add_argument("--autostart", action="store_true",
+                    help="start captions as soon as the control page answers (also with live.autostart off)")
+    ap.add_argument("--resumed", action="store_true",
+                    help="the Mac app relaunched this after a crash or hang mid-service: say so on the Live screen")
     ap.add_argument("--exit-on-eof", action="store_true")
     ap.add_argument("--headless", action="store_true", help="no web server")
     ap.add_argument("--pp-port", type=int)
@@ -186,9 +189,12 @@ def main():
             target=lambda: (live.shutdown(), os._exit(0)), daemon=True).start())
     if a.hold or (not a.headless and not a.file and cfg["live"].get("preload", True)):
         live.preload()         # models load now; Start is then instant
-    if a.autostart or cfg["live"].get("autostart"):
-        live.start()
+    autostart = a.autostart or cfg["live"].get("autostart")
     if a.headless:
+        if autostart:
+            live.start()
+        if a.resumed:
+            live._warn(RESUMED_WARNING if live.running else RESUMED_FAILED_WARNING)
         while not (a.exit_on_eof and live.eof.is_set()):
             time.sleep(0.2)
         time.sleep(3)          # let the last clause finish translating
@@ -200,7 +206,49 @@ def main():
     if a.exit_on_eof:
         threading.Thread(target=lambda: (live.eof.wait(), time.sleep(3), live.shutdown(),
                                          __import__("os")._exit(0)), daemon=True).start()
-    uvicorn.run(build_app(live), host=cfg["live"]["web_host"], port=cfg["live"]["web_port"], log_level="warning")
+    server = uvicorn.Server(uvicorn.Config(build_app(live), host=cfg["live"]["web_host"], port=cfg["live"]["web_port"],
+                                           log_level="warning"))
+    if autostart or a.resumed:
+        live._autostart_waiting = bool(autostart)   # an operator's Stop before it runs cancels it
+        live._autostart_pending = bool(autostart) and a.resumed   # phase "starting" from the first state
+        threading.Thread(target=autostart_when_up, args=(live, server, bool(autostart), a.resumed),
+                         daemon=True, name="autostart").start()
+    server.run()
+
+
+def autostart_when_up(live: Live, server, start: bool, resumed: bool, wait_s: float = 120.0):
+    """--autostart / live.autostart: Start once the control page answers, never before. Start can
+    take long (it waits for the models) or fail; before, it ran ahead of the web server, so the
+    Mac app saw no answer, and a failing Start ended the process before the page could show why
+    (a relaunch loop). A failed Start is in the state (phase error), like a Start from the page.
+    --resumed: the warning that says the app was restarted, after Start (which clears warnings);
+    when captions did not start again, a warning that asks for Start instead.
+    A --resumed relaunch only: until Start has run, the phase is "starting" (not "loading" while the
+    models load): the Mac app counts the service as live, so a second crash in the meantime is
+    resumed again. A plain autostart (config or flag) is not live until it is: a first model load
+    must not keep the Mac awake or ask before quitting.
+    The operator's Stop before Start has run cancels it (lifecycle.stop): the service does not go
+    live after that Stop."""
+    live._autostart_waiting = bool(start)
+    live._autostart_pending = bool(start) and bool(resumed)
+    try:
+        end = time.monotonic() + wait_s
+        while not server.started and not server.should_exit and time.monotonic() < end:
+            time.sleep(0.05)
+        if not server.started:
+            return
+        if start and not live._autostart_cancel:
+            try:
+                live.start(autostart=True)
+            except Exception:              # noqa: BLE001  start() keeps the error for the Live screen
+                pass
+    finally:
+        live._autostart_waiting = live._autostart_pending = False
+    if live._autostart_cancel:             # the operator stopped it: no warning asks for Start
+        return
+    if resumed:
+        live._warn(RESUMED_WARNING if live.running else RESUMED_FAILED_WARNING)
+        live._broadcast()
 
 
 if __name__ == "__main__":

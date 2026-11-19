@@ -27,8 +27,14 @@ if [ "${1:-}" != "live" ]; then
   mk .venv-moondream requirements/moondream.txt  # Parakeet Redux benchmark
 fi
 
-[ -f models/vad/silero_vad.onnx ] || curl -fsSL -o models/vad/silero_vad.onnx "$(lock url models/vad/silero_vad.onnx)"
-check models/vad/silero_vad.onnx
+VAD=models/vad/silero_vad.onnx
+if [ ! -f $VAD ]; then                     # to .partial first: a cut download never looks finished
+  curl -fsSL -o $VAD.partial "$(lock url $VAD)"
+  got=$(shasum -a 256 $VAD.partial | cut -d' ' -f1)
+  [ "$got" = "$(lock sha256 $VAD)" ] || { rm -f $VAD.partial; echo "CHECKSUM MISMATCH: $VAD (got $got; deleted; see $LOCK)"; exit 1; }
+  mv $VAD.partial $VAD
+fi
+check $VAD
 NLLB="nllb-200-distilled-1.3B"; [ "${1:-}" != "live" ] && NLLB="$NLLB nllb-200-3.3B"   # 3.3B: benchmarks only
 for m in $NLLB; do
   [ -f models/ct2/$m/model.bin ] || .venv-mt/bin/ct2-transformers-converter --model facebook/$m \

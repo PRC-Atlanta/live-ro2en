@@ -56,6 +56,7 @@ main:has(> .unit) { padding: 12px 16px; }
 .mirror { margin-top: 10px; padding: 10px 14px 12px; background: #050b0e; border: 1px solid #0f2a33;
           box-shadow: inset 0 0 14px rgba(0,0,0,.9); }
 .mtabs { display: flex; align-items: center; margin: -2px 0 6px; }
+.mtablist { display: flex; align-items: center; }   /* the tabs alone: the hint and Clear sit beside the tablist */
 .mtab { font: 600 11px var(--font); letter-spacing: .12em; text-transform: uppercase; color: var(--mute);
         background: linear-gradient(#1a2024, #101417); border: 1px solid #2c3438; margin-left: -1px;
         padding: 7px 12px; min-height: 32px; cursor: pointer; }
@@ -63,6 +64,13 @@ main:has(> .unit) { padding: 12px 16px; }
 .mtab[aria-selected="true"] { color: var(--cyan-hi); border-color: var(--cyan-dim); position: relative;
         background: linear-gradient(#123742, #0b2028); box-shadow: inset 0 0 8px rgba(70,214,236,.25); }
 .mtabs .tabhint { margin-left: auto; }
+/* Clear (Esc): wipe the caption box and every screen now, at the right end of the tab row */
+.clearbtn { margin-left: 12px; display: inline-flex; align-items: center; gap: 6px; font: 600 11px var(--font);
+            letter-spacing: .12em; text-transform: uppercase; color: var(--cyan-hi); cursor: pointer;
+            background: linear-gradient(#1a2024, #101417); border: 1px solid var(--cyan-dim); border-radius: 3px;
+            padding: 4px 8px 4px 12px; min-height: 32px; }
+.clearbtn kbd { font-size: 10px; padding: 1px 5px; letter-spacing: 0; }
+.clearbtn:focus-visible { outline: 2px solid var(--cyan-hi); outline-offset: 2px; }
 .views { display: grid; gap: 14px; }
 .views[data-view="both"] { grid-template-columns: 1fr 1fr; }
 .view { display: none; min-width: 0; }
@@ -332,11 +340,16 @@ kbd { font: 600 12px var(--num); color: var(--cyan-hi); background: #050b0e; bor
 .remote main:has(> .unit) { padding: 0; max-width: none; margin: 0; }
 .remote .unit { width: 990px; max-width: none; margin: 0; border: 0; box-shadow: none; }
 .remote .tbar { display: none; }
+/* ... without the Live Voice knob (Live Remote may not change that setting; its place stays, so
+   nothing moves) and without banner/strip buttons that open another screen (live.js hides them) */
+.remote [data-k-voice] { visibility: hidden; }
+.bbtn[hidden], .ppstrip button[hidden] { display: none; }
 
 @media (max-width: 560px) { .hgrid { grid-template-columns: 1fr; } }
 @media (max-width: 560px) {
   main:has(> .unit) { padding: 0; }
   .tb.wide, .mtabs .tabhint { display: none; }
+  .clearbtn { margin-left: auto; }
   .tbar { justify-content: flex-end; flex-wrap: wrap; } .tlogo { margin-right: auto; }
   .views[data-view="both"] { grid-template-columns: 1fr; }
   .views[data-view="both"] .v-screen { border-left: 0; padding-left: 0; border-top: 1px solid #0f2a33; padding-top: 8px; }
@@ -434,3 +447,29 @@ kbd { font: 600 12px var(--num); color: var(--cyan-hi); background: #050b0e; bor
 .mon-empty { color: var(--mute); font-style: italic; padding: 16px; margin: 0; }
 .mon-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: 10px; }
 @media (max-height: 600px) { .mon { height: calc(100vh - 60px); } }
+/* Help: symptom groups, shortcuts in two columns, the ProPresenter steps folded away */
+.hgroup { margin: 12px 0 2px; font: 600 11px var(--font); letter-spacing: .14em; text-transform: uppercase; color: var(--cyan); }
+.hcard h3 + .hgroup { margin-top: 4px; }
+.hgroup + .symptom { border-top: 0; }
+.hkeys { margin: 0; columns: 2 300px; column-gap: 28px; font-size: 14px; }
+.hkeys div { display: flex; gap: 12px; align-items: baseline; padding: 5px 0; break-inside: avoid; border-top: 1px solid rgba(15,42,51,.8); }
+.hkeys dt { flex: 0 0 96px; }
+.hkeys dd { margin: 0; color: var(--label); }
+.hpp { border-top: 0; }
+/* Monitor: the delay strip and the Numbers drawer (moved here from Settings → Advanced) */
+.mon-stats { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 4px 16px; padding-bottom: 8px; }
+.mon-delay { flex: 1 1 260px; font: 600 12px var(--num); letter-spacing: .04em; color: var(--label); padding-top: 4px; }
+.mon-nums { font-size: 13px; color: var(--label); }
+.mon-nums[open] { flex-basis: 100%; }
+.mon-nums summary { cursor: pointer; color: var(--cyan); padding: 4px 0; list-style: none; }
+.mon-nums summary::-webkit-details-marker { display: none; }
+.mon-nums summary::before { content: "▸ "; color: var(--cyan-dim); }
+.mon-nums[open] summary::before { content: "▾ "; }
+.mon-nums summary:focus-visible { outline: 2px solid var(--cyan-hi); outline-offset: 2px; }
+.mon-nums-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 18px; max-height: 36vh; overflow: auto;
+  padding: 8px 12px; border: 1px solid #0f2a33; border-radius: 4px; background: linear-gradient(#0c1d25, #0a171e); }
+.mon-nums-body h4 { margin: 0 0 4px; font: 600 11px var(--font); letter-spacing: .12em; text-transform: uppercase; color: var(--mute); }
+.mon-nums-body table { width: 100%; border-collapse: collapse; }
+.mon-nums-body td { padding: 3px 0; border-bottom: 1px solid #0f2a33; }
+.mon-nums-body td:last-child { text-align: right; font-family: var(--num); color: var(--cyan-hi); padding-left: 10px; white-space: nowrap; }
+.mon-nums-body pre { margin: 0; font: 12px ui-monospace, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }

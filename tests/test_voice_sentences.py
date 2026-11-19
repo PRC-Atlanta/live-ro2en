@@ -412,6 +412,7 @@ def test_speech_that_was_not_captioned_counts_as_the_pause(tmp_path):
     """A sentence had ended, the speaker went on at once, but that phrase came out empty: the sentence
     is closed there (the simulation never saw such a phrase, so its next chunk came after a pause)."""
     live = _live(tmp_path)
+    live.lc["translate_sentences"] = False      # piece by piece: the level readings decide where the sentence ends
     t = time.time() - 60
     live._level_hist.extend(_hist(t + 3, [1] * 10))                         # speech goes on: no pause yet
     _say(live, 1, t, t + 3, "Good morning everyone and welcome here.")
@@ -436,6 +437,7 @@ def _wait_for(fn, s=6.0):
 
 def test_level_readings_that_arrive_late_still_decide_the_chunk(tmp_path):
     live = _live(tmp_path)
+    live.lc["translate_sentences"] = False      # piece by piece: the level readings decide where the sentence ends
     t = time.time() - 3.2
     _say(live, 1, t, t + 3, "Good morning everyone and welcome here.")     # no readings yet: it waits
     assert _events(live, "sentence") == []

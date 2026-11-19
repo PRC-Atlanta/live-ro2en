@@ -29,6 +29,7 @@ HOST = "api.anthropic.com"
 BASE_URL = "https://" + HOST               # fixed: never from the environment (ANTHROPIC_BASE_URL is ignored)
 ENV_IGNORED = ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE", "ANTHROPIC_CONFIG_DIR")
 MODEL = "claude-haiku-5-5"
+WARM_RETRY_S = 60.0                       # a client build that raised is tried again after this
 DEFAULTS = {"enabled": False, "model": MODEL, "timeout_s": 2.5, "phrase_s": 4.0, "retry_s": 10.0,
             "summary_timeout_s": 3.0}
 KEY_RE = re.compile(r"\Ask-ant-[A-Za-z0-9_\-]{20,300}\Z")     # \Z: no trailing newline slips through
@@ -144,6 +145,12 @@ class Engine:
         self._cache: dict[str, dict] | None = None
         self._usage_log = (pathlib.Path(os.environ["LIVE_LOG_DIR"]) / "claude_usage.jsonl"
                            if os.environ.get("LIVE_LOG_DIR") else None)
+        self._warm_thread: threading.Thread | None = None
+        self._warm_tried = False                 # a build was tried since the key last changed
+        self._warm_retry_at = 0.0                # a build that raised is tried again from then on
+        self._key_gen = 0                        # +1 on each reload_key: a build for an older key does not count
+        if self.cfg.get("enabled"):
+            self.warm()
 
     # --- settings and key ----------------------------------------------------------------------
     @property
@@ -152,6 +159,8 @@ class Engine:
 
     def configure(self, cfg: dict | None):
         self.cfg = {**DEFAULTS, **(cfg or {})}
+        if self.cfg.get("enabled"):
+            self.warm()                          # AI chosen: have the client ready before the next phrase
 
     def reload_key(self):
         """Look for the key again (it was set or removed in Settings)."""
@@ -160,6 +169,11 @@ class Engine:
                 return
             self._client, self._key, self._key_source, self._key_checked = None, None, None, False
             self.up, self.down_reason, self.down_since = True, None, None
+            self._warm_tried = False
+            self._warm_retry_at = 0.0
+            self._key_gen += 1
+        if self.cfg.get("enabled"):
+            self.warm()
 
     def _lookup(self):
         """Find the key once (the Keychain tool may take a moment). No client, no SDK, no network."""
@@ -210,6 +224,40 @@ class Engine:
                             transport=httpx2.HTTPTransport(trust_env=False), trust_env=False, follow_redirects=False))
             return self._client
 
+    def warm(self):
+        """Build the client on a thread: the SDK import and the Keychain lookup take a moment, and
+        the caption path must never wait for them (usable() says no until it is built)."""
+        with self._lock:
+            if self._client is not None or self._closed or self._warm_tried or time.time() < self._warm_retry_at:
+                return
+            if self._warm_thread is not None and self._warm_thread.is_alive():
+                return
+            self._warm_thread = threading.Thread(target=self._warm_run, daemon=True, name="ai-client")
+            self._warm_thread.start()
+
+    def _warm_run(self):
+        gen, failed = self._key_gen, False
+        try:
+            self._lookup()
+            if self._key:
+                # the slow SDK import outside the lock, so key_present() is not held up behind it
+                try:
+                    import anthropic  # noqa: F401
+                    import httpx2  # noqa: F401
+                except ImportError:
+                    pass                         # client() says no client, as with no key
+            self.client()
+        except Exception:                        # noqa: BLE001  no client: the local models translate
+            failed = True
+        finally:
+            with self._lock:
+                if gen != self._key_gen:
+                    pass                         # a build for an older key does not count
+                elif failed:                     # the client raised (a passing fault): again in a minute,
+                    self._warm_retry_at = time.time() + WARM_RETRY_S   # not every phrase and not never
+                else:                            # once per key: no key or no SDK is not retried every phrase
+                    self._warm_tried = True
+
     def has_key(self) -> bool:
         return self.key_present()
 
@@ -217,7 +265,14 @@ class Engine:
         return self._key_source if self._key_checked or self._client is not None else None
 
     def usable(self) -> bool:
-        return self.up and not self._closed and self.client() is not None
+        """The API may be tried for this phrase. A client not built yet counts as not usable: the phrase
+        goes to the local model while it is built on a thread (warm), never on the caption path."""
+        if not self.up or self._closed:
+            return False
+        if self._client is None:
+            self.warm()
+            return False
+        return True
 
     # --- one request -----------------------------------------------------------------------------
     def call(self, system: str, messages: list[dict], max_tokens: int = 200, timeout: float | None = None,

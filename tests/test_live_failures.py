@@ -24,6 +24,7 @@ def _live(tmp_path, translate=lambda t, *a, **k: f"EN: {t}"):
     cfg = yaml.safe_load(open(CFG))
     cfg["live"].update(caption_pages=False, caption_flow=False)  # rolling lines: these tests are about other controls, not the page layout
     live = Live(cfg, types.SimpleNamespace(file=None))
+    live.lc["translate_sentences"] = False      # these test the piece-by-piece holds (sentence mode: test_sentences.py)
     live.log_path = tmp_path / "log.jsonl"
     live.tr = types.SimpleNamespace(translate=translate)
     live.pp = types.SimpleNamespace(show=lambda text: True, clear=lambda: True, last_error=None)
@@ -399,7 +400,10 @@ def test_setup_downloads_are_pinned():
     assert needed <= hf
     assert all(len(l[2]) in (40, 64) for l in lock if l[0] in ("hf", "dataset", "sha256"))
     setup = (root / "setup.sh").read_text()
-    assert "/master/" not in setup and "check models/vad/silero_vad.onnx" in setup
+    assert "/master/" not in setup
+    # the VAD file is checked against the lock (since 2026-11-18 by name: VAD=..., check $VAD)
+    assert "check models/vad/silero_vad.onnx" in setup or \
+        ("VAD=models/vad/silero_vad.onnx" in setup and "check $VAD" in setup)
 
 
 def test_double_start_loads_and_spawns_once(tmp_path):
@@ -408,21 +412,34 @@ def test_double_start_loads_and_spawns_once(tmp_path):
     def slow_load():
         calls["load"] += 1; time.sleep(0.3)
     live.load_translator = slow_load
-    live._start_engine = lambda device=None: calls.__setitem__("engine", calls["engine"] + 1)
+    live._start_engine = lambda device=None, fresh=True: calls.__setitem__("engine", calls["engine"] + 1)
     ts = [threading.Thread(target=live.start) for _ in range(2)]
     [t.start() for t in ts]; [t.join() for t in ts]
     assert calls == {"load": 1, "engine": 1} and live.running
 
 
 def test_profile_switch_waits_for_the_clause_being_translated(tmp_path):
-    live = _live(tmp_path, translate=lambda t, *a, **k: time.sleep(0.4) or "Brothers and sisters, we read.")
+    busy, release = threading.Event(), threading.Event()
+
+    def slow(t, *a, **k):                                # translating until the test lets it finish
+        busy.set()
+        assert release.wait(10)
+        return "Brothers and sisters, we read."
+    live = _live(tmp_path, translate=slow)
     live.lang.set_mode("ro-en")
     live.lc["translator"] = "nllb:other"                  # the quality profile uses another translator
     t = threading.Thread(target=live._handle, args=(_clause(1, ro="Frați și surori, astăzi citim."),))
-    t.start(); time.sleep(0.1)
+    t.start()
+    assert busy.wait(5)                                  # the clause is being translated
     other = next(p for p in live.cfg["profiles"] if p != live.profile)
-    live.set_profile(other)                              # not running: swaps settings, drops tr
-    t.join()
+    s = threading.Thread(target=live.set_profile, args=(other,))   # not running: swaps settings, drops tr
+    s.start()
+    try:
+        s.join(0.2)
+        assert s.is_alive(), "the switch did not wait for the clause"
+    finally:
+        release.set()
+    s.join(10); t.join(10)
     assert _log(live)[0]["outcome"] == "ok" and live.tr is None
 
 

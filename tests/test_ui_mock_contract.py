@@ -73,6 +73,7 @@ CALLS = [
     ["after", "POST", "export", {"format": "pdf"}],
     ["after", "POST", "unload", {}],
     ["live", "POST", "start", {}],
+    ["live", "POST", "restart_captions", {}],
     ["live", "POST", "pause", {"on": True}],
     ["live", "POST", "pause", {"on": "yes"}],
     ["live", "POST", "hold", {"on": False}],
@@ -85,6 +86,7 @@ CALLS = [
     ["live", "POST", "blank", {}],
     ["live", "POST", "diagnostics", {}],
     ["settings", "POST", "retract", {}],
+    ["settings", "POST", "restart_captions", {}],
     # Live Voice and the AI / Local knob
     ["live", "POST", "engine", {"engine": "ai"}],
     ["live", "POST", "engine", {"engine": "cloud"}],

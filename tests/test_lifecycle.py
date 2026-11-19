@@ -629,6 +629,7 @@ def test_translator_lost_mid_service_stays_visible(sandbox, monkeypatch):
         live._keep_warm = True                       # as in the app, which preloads at launch
         live.start()                                 # cold: a non-hold engine, whose stop re-preloads
         assert until(lambda: live._listening, 5)
+        reader = live._reader_thread                 # handles the engine's exit (may re-preload)
         monkeypatch.setattr(translate, "make_translator", broken)
         monkeypatch.setattr(lifecycle, "make_translator", broken)
         live.lc["keep_both_translators"] = False
@@ -638,7 +639,11 @@ def test_translator_lost_mid_service_stays_visible(sandbox, monkeypatch):
         with pytest.raises(RuntimeError):
             live.set_profile(other)
         assert until(lambda: not live.running, 5)
-        time.sleep(1.0)                              # a re-preload would have cleared it by now
+        # instead of waiting a while: wait for what could re-preload - the engine's reader handling
+        # its exit, then any re-preload it started - so a re-preload would have cleared the error
+        assert until(lambda: not reader.is_alive(), 10)
+        for th in [x for x in threading.enumerate() if x.name in ("re-preload", "rewarm")]:
+            th.join(10)
         st = live.state()
         assert st["phase"] == "error" and st["problem"]["code"] == "engine_stopped"
         assert "translator failed to load" in st["status"]
@@ -686,9 +691,11 @@ def test_a_rehearsal_from_a_warm_engine_stays_running_until_stopped(sandbox):
     live = report.attach(_live(sandbox))
     try:
         live.preload(wait=True)
+        warm, warm_reader = live.engine, live._reader_thread
         th = preflight.rehearse(live, _wav(sandbox / "s.wav", 16000, 20.0), timeout_s=60)
         assert until(lambda: live._engine_src is not None and live._listening, 15)
-        time.sleep(1.0)                                          # the warm engine has exited by now
+        # the warm engine has exited and its reader has handled the exit
+        assert until(lambda: warm.poll() is not None and not warm_reader.is_alive(), 10)
         st = live.state()
         assert st["running"] and st["rehearsal"]
         live.stop()

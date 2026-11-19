@@ -1,10 +1,9 @@
 // Hash routes -> screen modules. Each screen exports render(el, store) and may return a
-// cleanup function. S5a owns live/help, S5b owns setup/settings/after.
+// cleanup function. S5a owns live/help, S5b owns setup/settings.
 const ROUTES = {
   live: () => import("../screens/live.js"),
   setup: () => import("../screens/setup/index.js"),
   settings: () => import("../screens/settings/index.js"),
-  after: () => import("../screens/after.js"),
   help: () => import("../screens/help.js"),
   monitor: () => import("../screens/monitor.js"),
 };
@@ -21,7 +20,8 @@ export function firstLaunchRoute(state, hash) {
 export function startRouter(el, store, { only = null } = {}) {
   let cleanup = null, seq = 0;
   const show = async () => {
-    const name = only || (location.hash.slice(1) in ROUTES ? location.hash.slice(1) : "live");
+    const want = location.hash.slice(1).split("/")[0];      // "#settings/names": the screen, then its section
+    const name = only || (want in ROUTES ? want : "live");
     const mine = ++seq;
     const mod = await ROUTES[name]();
     if (mine !== seq) return;               // another hash change came in while this one loaded

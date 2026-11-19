@@ -4,7 +4,7 @@ the network server of the captions display (display.py, `display.port`) also ans
 feed of what the toolbar shows. Its full view (app_view, /remote/app/) is the Live screen
 itself: start and stop, gain, mode and quality too. Setup, Settings and quitting stay on this Mac.
 
-Every /remote request carries the PIN (`X-Live-Pin`), shown in Settings → ProPresenter and
+Every /remote request carries the PIN (`X-Live-Pin`), shown in Settings → Screens and
 kept in <user dir>/remote_pin. A new PIN drops every connected remote. Too many wrong PINs
 from one address lock that address out for a minute, and 50 in an hour from anywhere lock out
 every address but the remote that last knew the PIN (a request with no PIN is refused but not
@@ -37,7 +37,8 @@ PIN_COOKIE = "live_pin"
 # What the Live screen may do from there: the console's controls. Setup, Settings, After and
 # quitting stay on this Mac, and so do settings beyond the gain and ProPresenter's switch.
 APP_CALLS = {("POST", "/api/" + a) for a in ("start", "stop", "pause", "hold", "song", "blank", "retract",
-                                             "correct", "terms", "mode", "profile", "reconnect", "engine")} \
+                                             "correct", "terms", "mode", "profile", "reconnect", "engine",
+                                             "restart_captions")} \
     | {("GET", "/api/state"), ("GET", "/api/terms"), ("PUT", "/api/settings")}
 APP_SETTINGS = {"live.input_gain_db", "live.input_gain_auto", "propresenter.enabled"}
 MAX_FAILS, FAIL_WINDOW_S = 10, 60.0     # wrong PINs from one address within the window: locked out

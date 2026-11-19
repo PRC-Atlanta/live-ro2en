@@ -28,8 +28,12 @@ class StateMixin:
                   "latency_median": round(statistics.median(lat), 2) if lat else None,
                   "lag_s": self._lag_s(),
                   "heard": list(getattr(self, "heard", None) or []),
+                  # seq: the caption's number in the caption box (Fix last sends it back), when it got one
                   "lines": [{"src": h["source"], "dst": h["translation"], "lat": h["latency_s"],
-                             "lang": h["lang"]} for h in self.history],
+                             "lang": h["lang"], "seq": h.get("caption_seq")} for h in self.history],
+                  # last_seq: the caption box's last caption (the one Fix last acts on); after Remove
+                  # last it is the caption before, which the Fix dialog then starts from
+                  "last_seq": self.caps.last_seq,
                   "screen": self.caps.text, "pp_error": self.pp.last_error,
                   "warnings": list(self.warnings), "counts": dict(self.counts),
                   "alerts": self.alerts(),
@@ -77,8 +81,13 @@ class StateMixin:
         return out
 
     def _broadcast(self):
-        for q in list(self.listeners):
+        """The state, built once, to every /ws listener (the same object: listeners only read it)."""
+        listeners = list(self.listeners)
+        if not listeners:
+            return
+        st = self.state()
+        for q in listeners:
             try:
-                q.put_nowait(self.state())
+                q.put_nowait(st)
             except Exception:
                 pass

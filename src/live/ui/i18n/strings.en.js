@@ -11,7 +11,6 @@ export const S = {
     rehearsalStopHint: "Stop the rehearsal",
     names: "Names & words", settings: "Settings", help: "?", helpHint: "Help",
     navLabel: "Screens", live: "Live", liveHint: "The Live screen", setupHint: "Sound input and ProPresenter (Settings)",
-    after: "After", afterHint: "Summary, rating and transcript of the last service",
     setupName: (device, pp) => `${device || "No sound input"} → ${pp === "off" ? "this Mac only" : pp ? "ProPresenter" : "ProPresenter (not connected)"}`,
     display: "Captions display", displayHint: "A captions-only window for a second screen or projector",
     monitor: "Monitor", monitorHint: "Every segment: what was heard, what was translated and what Live Voice said",
@@ -91,6 +90,23 @@ export const S = {
     clear: "Clear", cleared: "Monitor cleared",
     count: n => `${n} segment${n === 1 ? "" : "s"}`,
     follow: "Follow newest",
+    // the strip above the rows, and the Numbers drawer (they used to be in Settings → Advanced)
+    delay: (last, typical, first) => `Last phrase ${fmtS(last)} · typical ${fmtS(typical)} · first words within 6 s: ${first == null ? "–" : `${Math.round(first)}%`}`,
+    numbers: "Numbers", outcomesTitle: "Phrases by outcome", alertsTitle: "Alerts and warnings", usageTitle: "Translated by",
+    none: "None", nothingYet: "Nothing yet", other: "Other", models: (a, b) => `Models: ${a || "?"} · ${b || "?"}`,
+    usage: { ai: "AI", local: "Local", local_fallback: "Local while AI did not answer" },
+    usageValue: v => (v ? `${v.phrases} captions · ${Math.round((v.s || 0) / 60)} min` : "–"),
+    // phrase outcome codes (app.py counts) in plain words; the code stays in the row's tooltip
+    outcomes: {
+      ok: "Shown", caught_up: "Merged to catch up", passthrough: "Shown unchanged", mt_truncated: "Translation cut short",
+      empty_stt: "Nothing heard", empty_mt: "No translation came back", mt_echo: "Came back untranslated",
+      stt_error: "Listening error", error: "Error", late: "Too late to show", pp_error: "ProPresenter error",
+      paused: "Heard while hidden", held: "Collected while held",
+      mt_loop: "Dropped: translation repeated itself", mt_overlong: "Dropped: translation far too long",
+      low_confidence: "Skipped: speech not recognised clearly", gate_cut: "Garbled words left out",
+      song: "Sung (Song on): not captioned", overlap_trimmed: "Repeated words left out",
+      overlap_repeat: "Skipped: repeated the phrase before",
+    },
   },
 
   hide: "Hide captions", hideKey: "H", hideTitle: "Blank ProPresenter and the stage display. Recognition and the log carry on. H again to show.",
@@ -173,6 +189,10 @@ export const S = {
                      action: { id: "settings", label: "Open Settings" } },
     voice_behind: { msg: "Live Voice is more than 10 seconds behind the speaker. It speaks faster and shortens what it says until it has caught up.",
                     action: { id: "help", label: "What this means" } },
+    voice_failing: { msg: "Live Voice keeps failing: phones may hear nothing or miss sentences. Captions are not affected. It is restarted if it does not recover.",
+                     action: { id: "help", label: "What this means" } },
+    translator_stuck: { msg: "The translator has stopped responding. Captions are paused. Restart captions to reload it (about a minute).",
+                        action: { id: "restart_captions", label: "Restart captions" } },
     models_missing: { msg: "Some translation files are missing. Open Setup to download them.",
                       action: { id: "setup", label: "Open Setup" } },
   },
@@ -189,6 +209,7 @@ export const S = {
     removed: "Last caption removed", fixed: "Last caption replaced",
     termsSaved: n => (n ? `${n} name${n === 1 ? "" : "s"} for today` : "Today's names cleared"),
     reconnecting: "Reconnecting to ProPresenter…",
+    restarting: "Restarting captions… back in about a minute",
     pressAgain: "Press Space again to stop",
     started: "Captioning", stopped: "Stopped",
     mode: m => `Speaker: ${m}`, quality: q => `Quality: ${q}`, engine: e => `Translator: ${e}`,
@@ -224,20 +245,25 @@ export const S = {
 
   help: {
     title: "Help",
-    intro: "Find what you see below. Each one says what to try first.",
     symptomsTitle: "Something's wrong",
+    // a plain string starts a group; [what you see, what to try first]
     symptoms: [
+      "Big screen",
       ["Nothing on the big screen", [
         "Look at the ProPresenter light at the bottom right. If it is red, press R (or Try again).",
         "Is “Hide captions” on? Press H to show them again.",
         "In ProPresenter, check that Network is turned on and the caption message is on the screen."]],
+      ["Something private is about to be said", [
+        "Press H. The big screen goes blank at once and stays blank until you press H again."]],
+      "Sound",
       ["The sound meter doesn't move", [
         "Check the cable from the mixer to this Mac.",
         "Make sure the mixer send for this input is up.",
-        "Pick the right sound input in Settings → Basic."]],
+        "Pick the right sound input in Settings → General."]],
       ["“Too quiet” or “Clipping”", [
         "Too quiet: raise the mixer send until speech sits in the green GOOD band.",
         "Clipping: lower the gain until the red Clip light stays off."]],
+      "Captions",
       ["Captions are late", [
         "Captions catch up by themselves; nothing is lost.",
         "If it keeps happening, turn the Quality knob to Quickest (press Q)."]],
@@ -246,13 +272,6 @@ export const S = {
         "It goes back to AI by itself. To stop trying, press A for Local."]],
       ["The Translator knob will not turn to AI", [
         "AI needs an Anthropic API key. Add it in Settings → AI."]],
-      ["People can't hear the voice on their phones", [
-        "Look at the VOICE light at the top. Red: open Settings → Live Voice. Captions are not affected.",
-        "The phone must be on the church Wi-Fi, the same network as this Mac.",
-        "Ask them to scan the QR code in Settings → Live Voice again and tap “Ascultă în română”."]],
-      ["The voice is late", [
-        "It catches up by itself: it speaks a little faster, then gives a short summary of what it missed.",
-        "Bible verses are always read in full."]],
       ["Wrong language", [
         "Turn the Speaker knob: press 2 for a Romanian speaker, 3 for an English speaker, 1 for Auto-detect."]],
       ["A name is spelled wrong", [
@@ -260,26 +279,41 @@ export const S = {
         "To keep it for every Sunday, tick “Also keep them for next time”."]],
       ["A caption is wrong", [
         "Press Backspace to remove it, or E to type the right words."]],
-      ["Something private is about to be said", [
-        "Press H. The big screen goes blank at once and stays blank until you press H again."]],
+      "Live Voice",
+      ["People can't hear the voice on their phones", [
+        "Look at the VOICE light at the top. Red: open Settings → Live Voice. Captions are not affected.",
+        "The phone must be on the church Wi-Fi, the same network as this Mac.",
+        "Ask them to scan the QR code in Settings → Live Voice again and tap “Ascultă în română”."]],
+      ["The voice is late", [
+        "It catches up by itself: it speaks a little faster, then gives a short summary of what it missed.",
+        "Bible verses are always read in full."]],
     ],
     rehearsalTitle: "Practise before the service",
-    rehearsalText: "Plays a recorded sermon through the translator so you can watch captions appear, without the microphone.",
+    rehearsalText: "Plays a recorded sermon so you can watch captions appear, without the microphone.",
     rehearsalBtn: "Run a rehearsal",
     diagTitle: "Send a problem report",
-    diagText: "Saves a file to the Desktop with what happened (no passwords). Send it to whoever looks after this app.",
+    diagText: "Saves a file to the Desktop (no passwords) to send to whoever looks after this app.",
     diagBtn: "Copy diagnostics",
     ppTitle: "Setting up ProPresenter",
     ppSteps: [
       "In ProPresenter, open Settings → Network and turn on Enable Network. Note the port number.",
       "Open the Messages panel and make a message called Live Translation whose text is one text token named Text.",
       "Show the message on the main screen (and on the stage display if you want it there).",
-      "In this app, open Settings → ProPresenter, enter the port and the message name, then press Test connection.",
+      "In this app, open Settings → Screens → Connection, enter the port and the message name, then press Test connection.",
       "Press Send test caption and check it appears on the big screen.",
     ],
     shortcutsTitle: "Keyboard shortcuts",
     back: "Back to Live",
   },
+
+  // review 2026-11-18: the Clear button (the same action as Esc), Fix last refused, restart, closed feed
+  clearBtn: "Clear", clearKey: "Esc",
+  clearTitle: "Wipe the captions now: the big screen, the stage display and the captions display. Remove last can't bring them back. New captions start with the next phrase.",
+  fixStale: "A newer caption came in, so nothing was changed.",
+  fixChanged: "The last caption changed while you typed (a newer one came in, or it was removed), so nothing was changed.",
+  resumed: "Restarted after a problem — captions resumed",
+  resumedFailed: "Restarted after a problem — captions did not start again: press Start",
+  connClosed: "This window lost its connection for good (the PIN changed, or Live Remote was turned off). Close it and open it again.",
 };
 
 export function fmtS(s) { return s == null ? "–" : `${Number(s).toFixed(1)} s`; }

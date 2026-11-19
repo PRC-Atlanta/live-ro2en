@@ -1,6 +1,8 @@
 """Live Voice never opens a connection (docs/live_voice_plan.md §7): the real voice process, with the
 real model, under the outbound-denying sandbox profile and the network audit, loads, serves a listener
-and speaks, and the audit log stays empty. Skipped where .venv-voice or the model is not set up."""
+and speaks, and the audit log stays empty. The real-model case loads the TTS model, so it runs only when
+asked for (LIVE_TEST_REAL_VOICE=1, one heavy model job at a time on this Mac) and where .venv-voice and the
+model are set up."""
 import http.client
 import json
 import os
@@ -19,6 +21,7 @@ from voice import model                                  # noqa: E402
 
 VOICE_PY = ROOT / ".venv-voice" / "bin" / "python"
 ready = VOICE_PY.exists() and model.model_dir() is not None
+asked = os.environ.get("LIVE_TEST_REAL_VOICE") == "1"     # opt-in: loads the real model
 
 
 def test_the_audit_hook_sees_an_outbound_connection(tmp_path):
@@ -36,6 +39,7 @@ def test_the_audit_hook_sees_an_outbound_connection(tmp_path):
     assert len(lines) == 1 and "192.0.2.1" in lines[0] and "socket.connect" in lines[0]
 
 
+@pytest.mark.skipif(not asked, reason="loads the real TTS model: set LIVE_TEST_REAL_VOICE=1 to run it")
 @pytest.mark.skipif(not ready, reason="needs .venv-voice and the Supertonic 3 files (setup.sh)")
 @pytest.mark.parametrize("sandbox", [False, True])
 def test_the_voice_process_opens_no_connection(tmp_path, sandbox):

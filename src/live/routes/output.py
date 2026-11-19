@@ -4,7 +4,10 @@ caption and reconnect. Owned by S2 (`profile` calls Live.set_profile, owned by S
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from output import StaleCorrection
 from routes import body, run
+
+MODES = ("auto", "ro-en", "en-ro")
 
 
 def _bad(msg: str) -> JSONResponse:
@@ -65,10 +68,20 @@ def router(live) -> APIRouter:
 
     @r.post("/api/correct")
     async def correct(request: Request):
-        text = (await body(request)).get("text")
+        b = await body(request)
+        text, based_on = b.get("text"), b.get("based_on")
         if not isinstance(text, str) or not text.strip():
             return _bad("text is required")
-        if not await run(live.correct, text):
+        if based_on is not None and not isinstance(based_on, str):
+            return _bad("based_on must be text")
+        seq = b.get("based_on_seq")            # the number of the caption being fixed (state lines[].seq)
+        if seq is not None and (not isinstance(seq, int) or isinstance(seq, bool)):
+            return _bad("based_on_seq must be a whole number")
+        try:
+            done = await run(live.correct, text, based_on, seq)
+        except StaleCorrection:                # the operator typed over a caption that is gone now
+            return JSONResponse({"error": "stale", "detail": "The last caption changed, so nothing was changed."}, 409)
+        if not done:
             return JSONResponse({"error": "nothing_to_change", "detail": "there is no caption to fix"}, 409)
         return live.state()
 
@@ -83,7 +96,10 @@ def router(live) -> APIRouter:
 
     @r.post("/api/mode")
     async def mode(request: Request):
-        live.set_mode((await body(request))["mode"])
+        mode = (await body(request)).get("mode")
+        if mode not in MODES:
+            return _bad("mode must be auto, ro-en or en-ro")
+        await run(live.set_mode, mode)
         return live.state()
 
     @r.post("/api/profile")
@@ -109,25 +125,23 @@ def router(live) -> APIRouter:
 
     @r.post("/api/engine")
     async def engine(request: Request):
-        body = await request.json() if await request.body() else {}
-        code, out = await run(live.set_engine, body.get("engine") if isinstance(body, dict) else None)
+        code, out = await run(live.set_engine, (await body(request)).get("engine"))
         return out if code == 200 else JSONResponse(out, status_code=code)
 
     @r.post("/api/ai/key")
     async def ai_key(request: Request):
-        body = await request.json() if await request.body() else {}
-        if not isinstance(body, dict) or "key" not in body or not (body["key"] is None or isinstance(body["key"], str)):
+        b = await body(request)
+        if "key" not in b or not (b["key"] is None or isinstance(b["key"], str)):
             return _bad("key must be a string, or null to remove it")
-        code, out = await run(live.set_ai_key, body["key"])
+        code, out = await run(live.set_ai_key, b["key"])
         return out if code == 200 else JSONResponse(out, status_code=code)
 
     @r.post("/api/voice/test")
     async def voice_test(request: Request):
-        body = await request.json() if await request.body() else {}
-        lang = body.get("lang", "ro") if isinstance(body, dict) else None
+        lang = (await body(request)).get("lang", "ro")
         if lang not in ("ro", "en"):
             return _bad("lang must be ro or en")
-        return {"ok": bool(live.voice_test(lang))}
+        return {"ok": bool(await run(live.voice_test, lang))}
 
     @r.post("/api/reconnect")
     async def reconnect():

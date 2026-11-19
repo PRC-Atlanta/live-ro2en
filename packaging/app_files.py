@@ -9,10 +9,14 @@
 - the bundled data files the code reads through paths.resource() and friends.
 Tests, logs, models, work/, results/ and the venvs are never listed. Model files and the
 rehearsal recordings are git-ignored, so assemble_app.sh adds those itself.
+
+The bundle is copied from the working tree, so a listed file with uncommitted changes would ship
+code no commit holds: it refuses then (ALLOW_DIRTY=1 overrides, for a local test build).
 """
 from __future__ import annotations
 
 import ast
+import os
 import pathlib
 import subprocess
 import sys
@@ -106,5 +110,21 @@ def main(repo: pathlib.Path) -> list[str]:
     return rel
 
 
+def dirty(repo: pathlib.Path, rel: list[str]) -> list[str]:
+    """The listed files whose working copy differs from HEAD (staged or not)."""
+    out = subprocess.run(["git", "--literal-pathspecs", "-C", str(repo), "diff", "--name-only", "-z",
+                          "HEAD", "--", *rel], capture_output=True, check=True).stdout
+    return sorted(f for f in out.decode().split("\0") if f)
+
+
 if __name__ == "__main__":
-    print("\n".join(main(pathlib.Path(sys.argv[1]).resolve())))
+    root = pathlib.Path(sys.argv[1]).resolve()
+    listed = main(root)
+    changed = dirty(root, listed)
+    if changed and os.environ.get("ALLOW_DIRTY") != "1":
+        sys.exit("app_files.py: these bundled files have uncommitted changes, so the app would hold "
+                 "code no commit has; commit them (or ALLOW_DIRTY=1 for a local test build):\n  "
+                 + "\n  ".join(changed))
+    if changed:
+        print(f"app_files.py: ALLOW_DIRTY=1: bundling {len(changed)} uncommitted file(s)", file=sys.stderr)
+    print("\n".join(listed))

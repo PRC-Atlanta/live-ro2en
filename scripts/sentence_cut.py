@@ -45,13 +45,10 @@ SACRED = re.compile(r"\d+\s*:\s*\d+|\d+ cu \d+|[„“”\"]|\bversetul\b|\bcapi
 
 
 def _shown(arg: str):
-    """The run's shown Romanian phrases, as bench.ref_score counts them, and the run's clock origin."""
-    log, info = bench._run_log(arg)
-    name = pathlib.Path(info.get("audio", "")).stem.removeprefix("corr_")
-    lines, end = bench.reference(name)
-    t0 = info["segment_start_wall"]
-    ph = [r for r in bench._records(log) if r.get("outcome") and "t_start" in r
-          and (end is None or r["t_start"] - t0 < end + 1.0)]
+    """The run's shown Romanian phrases, counted by the same rule as bench.ref_score (bench.ref_phrases:
+    a --from/--to run gets its reference clipped and moved to the segment's clock, or is refused), the
+    reference lines and the run's clock origin."""
+    log, _, _, lines, ph, t0 = bench.ref_phrases(arg)
     scr = bench.on_screen(ph)
     ok = [r for r in scr if r["outcome"] == "ok" and r.get("lang", "ro") == "ro"]
     return ok, lines, t0, log.parent.parent if log.parent.name == "services" else log.parent
@@ -219,6 +216,9 @@ def report(args) -> None:
     if len(cut) == len(sents):
         for u, ws in zip(sents, cut):
             u["verse"] = any(ph[w["piece"]].get("verse") for w in ws)
+    else:                               # translated with another --cap or --limit: the cuts do not line up
+        print(f"warning: {len(sents)} translated sentences but {len(cut)} cut now (another --cap or --limit?): "
+              f"verse flags not applied, so a verse may be shortened", flush=True)
     # which sentences the queue would shorten: replay the queue, shortening as it goes
     if args.budget:
         free, need = 0.0, []

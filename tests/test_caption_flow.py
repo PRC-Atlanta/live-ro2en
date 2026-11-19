@@ -398,3 +398,20 @@ def test_retract_takes_back_flowing_words_too():
     c.add("and we see ourselves very close to God.", fresh=True)
     assert c.retract() is not None                          # the second sentence is gone; the first goes up
     assert " ".join(c.lines) == "We see the children very far from God," and not c._flow
+
+
+def test_fix_last_on_flowing_words_that_still_wait_keeps_the_screen_and_the_number():
+    """Merge of flow pages with the review's caption numbers: a caption gets a number in flow too,
+    and Fix last on one that is still waiting swaps its words without changing the screen."""
+    now = [0.0]
+    c = _flow_box(now)
+    c.add("We see the children very far from God,", fresh=True)
+    first = c.last_seq
+    c.add("and we see ourselves very close to God.", fresh=True)
+    assert c.last_seq == first + 1
+    screen = list(c.lines)
+    assert c.replace_last("and we see ourselves near to Him.") is not None
+    assert c.lines == screen and c.last_seq == first + 1
+    waiting = " ".join(c.queue + c._flow)
+    assert "near to Him." in waiting and "very close" not in waiting
+    assert c.retract() is not None and c.last_seq == first      # Remove last takes the fixed caption back

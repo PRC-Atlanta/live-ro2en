@@ -8,7 +8,8 @@ known errors, so each translation change is measured on the same material.
       --from HH:MM:SS --to HH:MM:SS                 a stretch of the service (wall-clock times)
       --gain DB  --profile quality|fast  --mode auto|ro-en|en-ro
       --speed N                                     replay N times faster (default 2; 1 = real time)
-      --set live.key=value ...                      any other config override
+      --set live.key=value ...                      any other config override (a WALL_TIMERS wait given
+                                                    here is its live value: scaled like the rest)
       --name NAME                                   run folder name (default: time + settings)
       --terms FILE                                  today's names, one per line (as typed in Names & words)
       --code DIR                                    run another checkout's code (a branch worktree;
@@ -24,9 +25,10 @@ known errors, so each translation change is measured on the same material.
 
 The engine plays the file on an audio clock (LIVE_FILE_SPEED / LIVE_FILE_T0): frame times are
 the recording's own wall-clock times, so a replayed phrase lines up with the live log and the
-error list. Pauses and phrase cuts count frames, so they come out as live; the short-fragment
-hold (live.hold_s) is scaled by the speed. Catch-up merging is switched off (it would depend
-on how fast the replay runs). Latency numbers are only meaningful at --speed 1.
+error list. Pauses and phrase cuts count frames, so they come out as live; the pipeline's
+wall-clock waits (WALL_TIMERS: the fragment holds and the sentence buffer's last-resort wait) are
+scaled by the speed. Catch-up merging is switched off (it would depend on how fast the replay
+runs). Latency numbers are only meaningful at --speed 1.
 
 Runs never use port 8765 (headless), never send to ProPresenter, and keep their logs under
 logs/bench/runs/<name>/. Recordings and results stay on this Mac (logs/ is git-ignored)."""
@@ -142,6 +144,30 @@ def _set(cfg: dict, key: str, value) -> None:
     cur[last] = value
 
 
+# The pipeline's waits that run on the wall clock (threading.Timer), not on the audio clock: at
+# --speed N the audio arrives N times faster, so each is divided by N to wait as long as it would
+# live, measured in speech. (Checked 2026-11-18: sentence_quiet_s / sentence_gap_s / sentence_pause_s
+# and the engine's pause and commit settings count audio time, so they need nothing. The caption
+# box's pacing - caption_min_line_s, caption_min_read_s, caption_max_lag_s - is wall clock too, but
+# it only changes how lines scroll on screen, not the translations the score reads. The translator
+# and AI time-outs measure the models' own time, which a faster replay does not change.)
+WALL_TIMERS = {"hold_s": 1.2, "hold_slow_s": 6.5, "sentence_wait_s": 8.0}
+
+
+def scale_timers(cfg: dict, profile: str, speed: float) -> dict:
+    """Divide the WALL_TIMERS by the replay speed, where they are set: in `live` and, when the
+    chosen profile sets one of its own (it wins over `live`), in that profile too. Returns the
+    overrides made, for run.json."""
+    out = {}
+    prof = (cfg.get("profiles") or {}).get(profile) or {}
+    for k, default in WALL_TIMERS.items():
+        v = float(cfg["live"].get(k, default) or 0) / speed
+        cfg["live"][k] = out[f"live.{k}"] = v
+        if k in prof:
+            prof[k] = out[f"profiles.{profile}.{k}"] = float(prof[k] or 0) / speed
+    return out
+
+
 def run(args) -> pathlib.Path:
     audio = pathlib.Path(args.audio).resolve()
     meta = _meta(audio)
@@ -167,8 +193,6 @@ def run(args) -> pathlib.Path:
         "propresenter.enabled": False, "propresenter.health_every_s": 0,
         "display.network": False, "live.autostart": False, "live.preload": False,
         "live.lag_warn_s": 0, "live.catchup_max_words": 0,
-        "live.hold_s": float(cfg["live"].get("hold_s", 1.2)) / speed,
-        "live.sentence_wait_s": float(cfg["live"].get("sentence_wait_s", 8.0)) / speed,
         "live.input_gain_db": float(args.gain), "live.language_mode": args.mode,
         "live.input_device": None,
         # At x1 the keep-warm ping stays on, as in a service: without it an idle translator (Gemma when
@@ -191,13 +215,18 @@ def run(args) -> pathlib.Path:
             overrides[k] = v
     for k, v in overrides.items():
         _set(cfg, k, v)
+    # after --set: a timer given there is the live value, scaled like the configured one
+    overrides.update(scale_timers(cfg, args.profile, speed))
     (rdir / "config.yaml").write_text(yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False))
     (rdir / "settings.yaml").write_text("schema_version: 1\n")
     git = subprocess.run(["git", "-C", str(code), "rev-parse", "--short", "HEAD"],
                          capture_output=True, text=True).stdout.strip()
-    dirty = bool(subprocess.run(["git", "-C", str(code), "status", "--porcelain", "src", "config.yaml"],
+    dirty = bool(subprocess.run(["git", "-C", str(code), "status", "--porcelain", "--", *PROVENANCE],
                                 capture_output=True, text=True).stdout.strip())
+    off, ch, sr, width = _wav_layout(seg)
     info = {"audio": str(audio), "from": args.t_from, "to": args.t_to, "segment_start_wall": seg_t0,
+            "recording_start_wall": meta["start_wall"],
+            "segment_end_wall": seg_t0 + (seg.stat().st_size - off) / (ch * width) / sr,
             "gain": args.gain, "profile": args.profile, "mode": args.mode, "speed": speed,
             "overrides": overrides, "git": git + ("+dirty" if dirty else ""), "code": str(code),
             "started": dt.datetime.now().isoformat(timespec="seconds")}
@@ -227,6 +256,13 @@ def run(args) -> pathlib.Path:
         sys.exit(f"run failed (exit {rc}); see {rdir / 'app.log'}")
     print(f"done in {info['wall_s']:.0f} s: {logs[-1]}")
     return rdir
+
+
+# what a run's result depends on, for the "+dirty" mark: the code, its config and the data files
+# at the checkout's root that the app reads (the glossary, keyword and term lists, the defaults),
+# and data/ (idioms, lexicon, Bible books, the MT data the translation uses)
+PROVENANCE = ("src", "data", "config.yaml", "defaults.yaml", "glossary.csv", "keywords_en.txt",
+              "blocklist.txt", "terms.txt")
 
 
 def _record_voice(port: int, rdir: pathlib.Path, proc) -> list:
@@ -316,9 +352,17 @@ def on_screen(ph: list[dict]) -> list[dict]:
     return out
 
 
+# per-error statuses: "fixed" right; "fixed?" the bad text is gone but the good one is not there
+# either (its own column: neither right nor wrong for sure); "still" wrong; "dropped" the phrases
+# near it were all held back (no caption shown there: wrong, not fixed - a stricter filter must not
+# look like a fix); "missing" nothing recognised near it at all
+WRONG = ("still", "dropped", "missing")
+
+
 def judge(err: dict, phrases: list[dict], day: str, window: float = 25.0, t: float | None = None) -> tuple[str, str]:
-    """('fixed' | 'still' | 'missing', the text found) for one known error. on=ro (the seam
-    catalogue): the regexes are matched on the shown Romanian transcript, folded and joined."""
+    """('fixed' | 'fixed?' | 'still' | 'dropped' | 'missing', the text found) for one known error.
+    on=ro (the seam catalogue): the regexes are matched on the shown Romanian transcript, folded
+    and joined."""
     t = _day_ts(day, err["t"]) if t is None else t
     if err.get("on") == "ro":
         window = min(window, 12.0)
@@ -335,6 +379,9 @@ def judge(err: dict, phrases: list[dict], day: str, window: float = 25.0, t: flo
     text = " | ".join(lines)
     if not near:
         return "missing", ""
+    if not any(r.get("outcome") == "ok" for r in near):          # recognised, but nothing shown there
+        return "dropped", " | ".join(f"({r.get('outcome')}) {r.get('translation') or r.get('source') or ''}".strip()
+                                     for r in near)
     bad, good = err.get("bad"), err.get("good")
     if bad and any(re.search(bad, ln, re.I) for ln in lines):    # line by line: ^ and $ mean a whole caption
         return "still", text
@@ -378,6 +425,7 @@ def metrics(recs: list[dict], t_lo: float | None = None, t_hi: float | None = No
           and (t_lo is None or r.get("t_start", 0) >= t_lo) and (t_hi is None or r.get("t_start", 0) <= t_hi)]
     ok = [r for r in ph if r["outcome"] == "ok"]
     words = [len((r.get("translation") or "").split()) for r in ok]
+    mts = [r["mt_s"] for r in ok if r.get("mt_s") is not None]   # a phrase without a time is not 0 s
     flips = sum(1 for a, b in zip(ok, ok[1:]) if a.get("lang") != b.get("lang"))
     out = {"phrases": len(ph), "shown": len(ok),
            "not_shown": {k: sum(r["outcome"] == k for r in ph) for k in sorted({r["outcome"] for r in ph}) if k != "ok"},
@@ -385,7 +433,7 @@ def metrics(recs: list[dict], t_lo: float | None = None, t_hi: float | None = No
            "short_lt5": round(sum(w < 5 for w in words) / len(words), 3) if words else 0,
            "model_junk": sum(bool(GARBAGE.search(r.get("translation") or "")) for r in ok),
            "language_switches": flips,
-           "mt_median_s": round(st.median(r.get("mt_s") or 0 for r in ok), 2) if ok else None}
+           "mt_median_s": round(st.median(mts), 2) if mts else None}
     lv = [r["level"]["speech_db"] for r in ok if isinstance(r.get("level"), dict) and r["level"].get("speech_db") is not None]
     if lv:
         out["speech_db_median"] = round(st.median(lv), 1)
@@ -423,19 +471,21 @@ def score(arg: str, errors_path: str | None, quiet: bool = False) -> dict:
         counts.setdefault(e["cat"], {}).setdefault(status, 0)
         counts[e["cat"]][status] += 1
     summary = {"log": str(log), "run": info, "errors_in_range": len(res),
-               "fixed": sum(s.startswith("fixed") for s, _, _ in res.values()),
+               "fixed": sum(s == "fixed" for s, _, _ in res.values()),
+               "fixed?": sum(s == "fixed?" for s, _, _ in res.values()),
                "still": sum(s == "still" for s, _, _ in res.values()),
+               "dropped": sum(s == "dropped" for s, _, _ in res.values()),
                "missing": sum(s == "missing" for s, _, _ in res.values()),
                "by_category": counts, "metrics": metrics(recs, lo, hi),
                "per_error": {k: s for k, (s, _, _) in res.items()}}
     if not quiet:
-        print(f"{log}\n{len(res)} known errors in range: fixed {summary['fixed']}, still {summary['still']}, "
-              f"missing {summary['missing']}")
+        print(f"{log}\n{len(res)} known errors in range: fixed {summary['fixed']}, fixed? {summary['fixed?']}, "
+              f"still {summary['still']}, dropped {summary['dropped']}, missing {summary['missing']}")
         for cat, c in sorted(counts.items()):
             print(f"  {cat:12s} " + ", ".join(f"{k} {v}" for k, v in sorted(c.items())))
         print("metrics: " + json.dumps(summary["metrics"], ensure_ascii=False))
         for k, (s, text, e) in res.items():
-            mark = {"fixed": "OK ", "fixed?": "ok?", "still": "XX ", "missing": "-- "}[s]
+            mark = {"fixed": "OK ", "fixed?": "ok?", "still": "XX ", "dropped": "DR ", "missing": "-- "}[s]
             print(f"  {mark} {e['id']:5s} {e.get('t') or e.get('t_src')} {e['cat']:10s} {e['note'][:60]}")
             if s != "fixed" and text:
                 print(f"         now: {text[:150]}")
@@ -446,7 +496,7 @@ def compare(a: str, b: str, errors_path: str | None) -> None:
     sa, sb = score(a, errors_path, quiet=True), score(b, errors_path, quiet=True)
     print(f"A: {sa['log']}\nB: {sb['log']}")
     print(f"{'':22s}{'A':>10s}{'B':>10s}")
-    for k in ("errors_in_range", "fixed", "still", "missing"):
+    for k in ("errors_in_range", "fixed", "fixed?", "still", "dropped", "missing"):
         print(f"{k:22s}{sa[k]:>10}{sb[k]:>10}")
     for k in sa["metrics"]:
         print(f"{k:22s}{str(sa['metrics'].get(k)):>10.10s}{str(sb['metrics'].get(k)):>10.10s}")
@@ -533,29 +583,66 @@ def windows(lines: list[dict], phrases: list[tuple[float, float]], window_s: flo
     return out
 
 
-def ref_score(arg: str, window_s: float = 20.0, quiet: bool = False) -> dict:
-    """Score a corrected-sermon run: Romanian transcript WER against the corrected text, and,
-    where the sermon has a reference translation, the English translation against it (chrF++
-    and BLEU over ~window_s stretches of the reference's timed lines)."""
-    from scoring import score as wer  # noqa: PLC0415
-    from textnorm import tokens  # noqa: PLC0415
+def _segment_span(info: dict) -> tuple[float, float | None]:
+    """Where the replayed stretch lies in the recording: (start, end) in seconds into it, end None
+    for "to the end". A run without --from/--to is (0, None)."""
+    if not (info.get("from") or info.get("to")):
+        return 0.0, None
+    rec_t0 = info.get("recording_start_wall")
+    if rec_t0 is None:                                   # a run from before 2026-11-18: the recording's sidecar
+        rec_t0 = _meta(pathlib.Path(info["audio"]))["start_wall"]
+    a = info["segment_start_wall"] - rec_t0
+    b = info.get("segment_end_wall")
+    if b is None and info.get("to"):
+        day = dt.datetime.fromtimestamp(rec_t0).date().isoformat()
+        b = _clock(day, info["to"])
+    return a, (None if b is None else b - rec_t0)
+
+
+def ref_phrases(arg: str) -> tuple[pathlib.Path, dict, str, list[dict], list[dict], float]:
+    """A corrected-sermon run's phrases that count against its reference: (log, run info, sermon
+    name, reference lines, phrases, clock origin). Line times ("t") and phrase times minus the
+    origin are both seconds into the replayed segment (segment.wav). A --from/--to run gets the
+    reference lines that start inside its stretch, moved to the segment's clock; a reference
+    without times cannot be clipped, so such a partial run is refused. Shared with
+    scripts/sentence_cut.py, so both count the same phrases."""
     log, info = _run_log(arg)
     name = pathlib.Path(info.get("audio", "")).stem.removeprefix("corr_")
     if name not in SERMONS:
         sys.exit(f"{arg}: not a corrected-sermon run (audio {info.get('audio')}); known: {', '.join(SERMONS)}")
     lines, end = reference(name)
     t0 = info["segment_start_wall"]
+    a, b = _segment_span(info)
+    if a or b is not None:
+        if any(x["t"] is None for x in lines):
+            sys.exit(f"{arg}: a --from/--to run of {name}, whose reference has no times, so it cannot be "
+                     f"cut to the stretch replayed: replay the whole recording")
+        lines = [{**x, "t": x["t"] - a} for x in lines if x["t"] >= a and (b is None or x["t"] < b)]
+        if not lines:
+            sys.exit(f"{arg}: no reference line starts inside the stretch replayed")
     # where the corrected stretch ends before the recording does, a phrase counts when its middle
     # lies before that end. (Until 2026-11-15 every phrase that started up to 1 s after it counted,
     # whole: nelu-suciu carried ~9 extra words from the first uncorrected phrase, 0.8 points.)
     ph = [r for r in _records(log) if r.get("outcome") and "t_start" in r
           and (end is None or (r["t_start"] + r.get("t_end", r["t_start"])) / 2 - t0 < end)]
+    return log, info, name, lines, ph, t0
+
+
+def ref_score(arg: str, window_s: float = 20.0, quiet: bool = False) -> dict:
+    """Score a corrected-sermon run: Romanian transcript WER against the corrected text, and,
+    where the sermon has a reference translation, the English translation against it (chrF++
+    and BLEU over ~window_s stretches of the reference's timed lines)."""
+    from scoring import score as wer  # noqa: PLC0415
+    from textnorm import key_tokens  # noqa: PLC0415
+    log, info, name, lines, ph, t0 = ref_phrases(arg)
     # a word-cut redo's source holds the previous piece again (idea 25): that piece's words count once
     by_id = {r.get("id"): r for r in on_screen(ph)}
     ph = [r for r in ph if not (by_id[r.get("id")].get("outcome") == "replaced"
                                 and by_id.get(by_id[r.get("id")]["replaced_by"], {}).get("cut_word"))]
-    ro = [tokens(r.get("source") or r.get("ro") or "") for r in ph]
-    ref_ro = [tokens(x["ro"]) for x in lines]
+    # compared as scripts/stt_replay.py does (phonetic keys, digits spelled out): «12» against
+    # «doisprezece» is not an error
+    ro = [key_tokens(r.get("source") or r.get("ro") or "", numbers=True) for r in ph]
+    ref_ro = [key_tokens(x["ro"], numbers=True) for x in lines]
     ref_words = [w for ws in ref_ro for w in ws]
     w_all = wer(ref_words, [w for ws in ro for w in ws], free_ends=False)
     w_shown = wer(ref_words, [w for r, ws in zip(ph, ro) if r["outcome"] == "ok" for w in ws], free_ends=False)
