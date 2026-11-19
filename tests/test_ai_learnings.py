@@ -128,7 +128,7 @@ def test_a_piece_that_ends_on_a_negation_is_held_whatever_the_engine(tmp_path):
     assert dangling("în ceața aceea că nu.") and dangling("noi nu mai.") and dangling("și nici.")
     live = A.live_with(tmp_path, lambda kw: "In that fog we no longer recognize the way home.")
     live.lang.set_mode("ro-en")
-    live.lc.update(hold_slow_s=30, hold_dangling=True)
+    live.lc.update(hold_slow_s=30, hold_dangling=True, translate_sentences=False)
     t = time.time() - 20
     live._on_clause(A.clause(1, t, ro="în ceața aceea că nu."))
     assert live._pending is not None and live.client.calls == []      # waits for the rest: nothing sent yet

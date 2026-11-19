@@ -18,14 +18,24 @@ class NoCache(StaticFiles):
 
 
 async def state_feed(live, sock, still_ok=lambda: True):
-    """The /ws feed on an accepted socket: every state as it changes, and at least once a second.
-    Ends when the page goes, or when `still_ok()` turns false (checked at least once a second)."""
-    q: asyncio.Queue = asyncio.Queue(maxsize=50)
+    """The /ws feed on an accepted socket: the newest state as it changes, and at least once a second.
+    Ends when the page goes, or when `still_ok()` turns false (checked at least once a second).
+    One slot per page: a slow page skips states it has not sent yet and gets the newest one,
+    never a queue of old ones (the old queue kept the oldest 50 and dropped the newest)."""
+    q: asyncio.Queue = asyncio.Queue(maxsize=1)
     loop = asyncio.get_running_loop()
+
+    def latest(s):                             # on the event loop: no other put can come in between
+        if q.full():
+            try:
+                q.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+        q.put_nowait(s)
 
     class Bridge:
         def put_nowait(self, s):
-            loop.call_soon_threadsafe(lambda: q.full() or q.put_nowait(s))
+            loop.call_soon_threadsafe(latest, s)
     b = Bridge()
     live.listeners.add(b)
     try:

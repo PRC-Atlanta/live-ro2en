@@ -11,18 +11,84 @@ models). The recording and its error list are kept on the church's Mac only (log
 this exits with 2, saying what is missing, where they are not present.
 
 AI answers are kept in logs/bench/ai_cache.jsonl (LIVE_AI_CACHE): the same input is paid for once, so
-a re-run after a change that does not touch the prompt costs nothing. Needs an API key (Keychain, or
-ANTHROPIC_API_KEY in .env); the key is never printed."""
+a re-run after a change that does not touch the prompt costs nothing. --max-calls (default 400) caps the
+paid API calls of one replay (cache hits are free): past it the replay is stopped and nothing is scored
+(exit 4). Needs an API key (Keychain, or ANTHROPIC_API_KEY in .env); the key is never printed."""
 from __future__ import annotations
 
 import argparse
 import os
 import pathlib
+import signal
 import subprocess
 import sys
+import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+
+
+def _paid_calls(path: pathlib.Path) -> int:
+    """API calls paid for so far: the app writes one line per call to claude_usage.jsonl in its log
+    folder (src/live/ai.py; a cache hit writes none)."""
+    try:
+        with open(path, "rb") as f:
+            return sum(1 for _ in f)
+    except OSError:
+        return 0
+
+
+TERM_GRACE_S = 30.0   # after SIGTERM, how long the bench and the app it started get to end
+
+
+def _group_alive(pgid: int) -> bool:
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:                        # still there (a member we may not signal)
+        return True
+    return True
+
+
+def _stop_group(p: subprocess.Popen, grace: float = TERM_GRACE_S) -> None:
+    """SIGTERM the replay's process group; SIGKILL whatever of it is still there after `grace` s.
+    The bench exiting is not enough: the app it started (and its engine) are in the same group and
+    may still be running, holding the models in memory."""
+    pgid = p.pid
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    end = time.monotonic() + grace
+    try:
+        p.wait(max(0.0, end - time.monotonic()))
+    except subprocess.TimeoutExpired:
+        pass
+    while _group_alive(pgid) and time.monotonic() < end:
+        time.sleep(0.1)
+    if _group_alive(pgid):
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    p.wait()
+
+
+def replay(cmd: list[str], env: dict, usage: pathlib.Path, max_calls: int,
+           grace: float = TERM_GRACE_S) -> tuple[int, int, bool]:
+    """Run one bench replay; stop it (the bench and the app it started, as a group) once it has paid
+    for more than max_calls API calls (0 = no cap). (return code, calls paid in this replay, capped:
+    whether it was stopped for the cap; the return code alone cannot say, -1 is also a signal)."""
+    before = _paid_calls(usage)                    # a re-run of the same name appends to the same file
+    p = subprocess.Popen(cmd, cwd=str(ROOT), env=env, start_new_session=True)
+    while p.poll() is None:
+        n = _paid_calls(usage) - before
+        if max_calls and n > max_calls:
+            _stop_group(p, grace)
+            return p.returncode, n, True
+        time.sleep(1.0)
+    return p.returncode, _paid_calls(usage) - before, False
 
 
 def main() -> int:
@@ -35,6 +101,8 @@ def main() -> int:
     ap.add_argument("--speed", default="2")
     ap.add_argument("--name", default="aireg")
     ap.add_argument("--reuse", action="store_true", help="score the runs of this name that are already there")
+    ap.add_argument("--max-calls", type=int, default=400,
+                    help="stop a replay that pays for more API calls than this (cache hits are free; 0 = no cap)")
     a = ap.parse_args()
     for k in ("audio", "errors"):                                  # relative paths are the repo's, wherever this runs
         p = pathlib.Path(getattr(a, k))
@@ -54,22 +122,28 @@ def main() -> int:
                 if v:
                     cmd += [flag, v]
             env = {**os.environ, "LIVE_AI_CACHE": str(ROOT / "logs" / "bench" / "ai_cache.jsonl")}
-            rc = subprocess.run(cmd, cwd=str(ROOT), env=env).returncode
+            rc, paid, capped = replay(cmd, env, bench.BENCH / "runs" / name / "claude_usage.jsonl", a.max_calls)
+            if capped:
+                print(f"ai_regression: the {mode} replay was stopped after {paid} paid API calls "
+                      f"(--max-calls {a.max_calls}); nothing scored", file=sys.stderr)
+                return 4
             if rc:
                 print(f"ai_regression: the {mode} replay failed ({rc})", file=sys.stderr)
                 return 3
         res[mode] = bench.score(name, a.errors, quiet=True)
     loc, ai = res["local"], res["ai"]
-    wrong = {m: r["still"] + r["missing"] for m, r in res.items()}
+    # wrong: still wrong, dropped (nothing shown there) or not recognised; "fixed?" is neither
+    wrong = {m: sum(r[k] for k in bench.WRONG) for m, r in res.items()}
     used = {}
     for r in bench._records(pathlib.Path(ai["log"])):               # which engine really answered, in the AI run
         if r.get("outcome"):
             used[r.get("engine") or "local"] = used.get(r.get("engine") or "local", 0) + 1
     print(f"marked errors in range: {loc['errors_in_range']}")
-    print(f"  Local: {wrong['local']} still wrong (fixed {loc['fixed']})")
-    print(f"  AI   : {wrong['ai']} still wrong (fixed {ai['fixed']}); phrases by engine {used}")
-    worse = sorted(k for k, s in ai["per_error"].items() if not s.startswith("fixed") and loc["per_error"].get(k, "").startswith("fixed"))
-    better = sorted(k for k, s in ai["per_error"].items() if s.startswith("fixed") and not loc["per_error"].get(k, "").startswith("fixed"))
+    for m, r, tail in (("Local", loc, ""), ("AI   ", ai, f"; phrases by engine {used}")):
+        print(f"  {m}: {wrong[m.strip().lower()]} still wrong (fixed {r['fixed']}, fixed? {r['fixed?']}, "
+              f"of the wrong: dropped {r['dropped']}, missing {r['missing']}){tail}")
+    worse = sorted(k for k, s in ai["per_error"].items() if s in bench.WRONG and loc["per_error"].get(k) == "fixed")
+    better = sorted(k for k, s in ai["per_error"].items() if s == "fixed" and loc["per_error"].get(k) in bench.WRONG)
     print(f"  right with Local, wrong with AI: {', '.join(worse) or '-'}")
     print(f"  wrong with Local, right with AI: {', '.join(better) or '-'}")
     if wrong["ai"] > wrong["local"]:

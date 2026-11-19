@@ -2,11 +2,15 @@
 
 The download runs in a separate child (model_setup.py) with LIVE_ALLOW_NETWORK=1, so this
 process never gets network access. The wizard polls GET /api/setup for `download` progress."""
+import threading
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 import model_setup
 from routes import body, run
+
+_pa_lock = threading.Lock()               # one PortAudio restart / device list at a time (/api/devices)
 
 
 def router(live) -> APIRouter:
@@ -23,7 +27,17 @@ def router(live) -> APIRouter:
     def devices():
         try:
             import sounddevice as sd
-            return [{"index": i, "name": d["name"]} for i, d in enumerate(sd.query_devices())
+            with _pa_lock:
+                # PortAudio lists the devices it saw when it started: start it again, so an input
+                # plugged in since then shows up. Safe here: this process never opens a sound
+                # stream (the engine and the voice are their own processes with their own PortAudio).
+                try:
+                    sd._terminate()
+                    sd._initialize()
+                except Exception:              # noqa: BLE001  the old list is better than none
+                    pass
+                devs = sd.query_devices()
+            return [{"index": i, "name": d["name"]} for i, d in enumerate(devs)
                     if d["max_input_channels"] > 0]
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)

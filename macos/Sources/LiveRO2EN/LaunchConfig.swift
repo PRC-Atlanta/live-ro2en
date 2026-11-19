@@ -24,8 +24,11 @@ struct LaunchConfig {
     /// The marker every orchestrator command line contains; stale-process cleanup checks it.
     static let scriptMarker = "src/live/app.py"
 
-    func arguments(port: Int) -> [String] {
+    /// `resume`: restarted after a crash or hang while the captions were live: start them at
+    /// once (--autostart) and show the operator that it happened (--resumed).
+    func arguments(port: Int, resume: Bool = false) -> [String] {
         [python.path] + preArgs + [script.path, "--port", String(port)]
+            + (resume ? ["--autostart", "--resumed"] : [])
     }
 
     static func setting(_ env: String, _ key: String) -> String? {
@@ -38,6 +41,9 @@ struct LaunchConfig {
         let fm = FileManager.default
         var env = ProcessInfo.processInfo.environment
         env["PYTHONUNBUFFERED"] = "1"
+        // Restart captions (POST /api/restart_captions) then just exits: the supervisor relaunches
+        // it with --autostart --resumed, as after a crash (a terminal run re-execs itself instead)
+        env["LIVE_SUPERVISED"] = "1"
         env.removeValue(forKey: "PYTHONHOME")
 
         // Packaged app

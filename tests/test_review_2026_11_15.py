@@ -40,6 +40,7 @@ class PP:
 
 def _live(tmp_path, translate=lambda t, src, tgt, *a, **k: f"[{tgt}] {t}"):
     live = Live(yaml.safe_load(open(ROOT / "config.yaml")), types.SimpleNamespace(file=None))
+    live.lc["translate_sentences"] = False      # these test the piece-by-piece holds (sentence mode: test_sentences.py)
     live.log_path = tmp_path / "log.jsonl"
     live.seen = []
     live.tr = types.SimpleNamespace(translate=lambda t, src, tgt, *a, **k: live.seen.append((src, tgt, t)) or translate(t, src, tgt))

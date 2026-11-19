@@ -13,9 +13,9 @@ has been read: a reader reads the lines in order at `read_wps` words a second, e
 least `min_read_s`, so it finishes line i at max(it came up, line i-1 read) + its reading
 time. Words added to a line already on screen are read from when they appeared (the line's
 reading is not counted from when it first came up). Lines that cannot go up yet wait in
-`queue`, in order; none is dropped and `max_queue` does not apply. Lag guard: while a waiting
-line (its speech end: `spoken_ago` given to add(), else
-from when it was added) or the reveal's words behind them would come up more than `max_lag_s`
+`queue`, in order; none is dropped and `max_queue` does not apply (a hard limit does: past
+HARD_QUEUE waiting lines or HARD_LAG_X × max_lag_s behind, lines go up unread). Lag guard:
+while a waiting line (its speech end: `spoken_ago` given to add(), else from when it was added) or the reveal's words behind them would come up more than `max_lag_s`
 behind at `read_wps`, reading is counted at `catchup_wps`, back to `read_wps` once caught up.
 
 With `reveal` a clause given its speaking time (`audio_s`) does not land in one jump: its
@@ -51,6 +51,11 @@ CARRY_MAX = 20             # pending words that roll on, faster, into the next c
 NEW_LINE_WORDS = 3         # a reveal step starts a new line with at least this many words
 ORPHAN_WAIT_S = 2.5        # a clause's last words that would start a line alone wait this long for the next
 MIN_STEP_S = 0.5           # timer-driven screen changes at most twice a second (ProPresenter)
+# Read pacing's hard limit: the catch-up speed alone cannot keep up with a fast speaker for
+# long, so past these a waiting line goes up even though the one above was not read yet
+# (each line still stays up min_read_s, so none flashes by)
+HARD_LAG_X = 2.0           # ...when a waiting line would come up more than this × max_lag_s late
+HARD_QUEUE = 10            # ...or more than this many lines wait (also with max_lag_s 0)
 
 # Words that start a chunk lowercase when it continues the previous one (never names, God, I)
 _LOWER = set("""a an the and but or nor so yet to of in on at for from with by as into onto upon
@@ -112,7 +117,8 @@ class RollingCaptions:
         self.lines: list[str] = []                 # on screen
         self.queue: list[str] = []                 # waiting for a line to have been read
         self._since: list[float] = []              # when each screen line came up
-        self._undo: list[tuple] = []               # the state before each add(), newest last
+        self._undo: list[tuple] = []               # (state before, words added, caption seq) per add(), newest last
+        self._seq = 0                              # captions added so far: each add() gets the next number
         self._undo_depth = undo_depth
         self.reveal = bool(reveal)
         self.reveal_wps = float(reveal_wps)
@@ -207,7 +213,8 @@ class RollingCaptions:
         if not revealing or len(self.pending) > CARRY_MAX:
             self._reveal_all()                     # the last clause's words first: none lag behind
         self._spoken = self.clock() - max(0.0, float(spoken_ago or 0.0))
-        self._undo = (self._undo + [self._snap()])[-self._undo_depth:]
+        self._seq += 1
+        self._undo = (self._undo + [(self._snap(), len(words), self._seq)])[-self._undo_depth:]
         if self.pending:                           # a few words of the last clause roll on into this one
             if close and not self.pending[-1].endswith(tuple(".!?…:;,")):
                 self.pending[-1] += close
@@ -278,7 +285,8 @@ class RollingCaptions:
             if len(self.lines) >= self.max_lines:
                 if self.read_wps > 0:
                     done = self._read_done(self._wps(now))
-                    if not (now >= done - 1e-6 or force):
+                    if not (now >= done - 1e-6 or force or (
+                            self._too_far_behind(now) and now >= self._hard_due() - 1e-6)):
                         break
                     self._prev_read = min(done, now)   # forced: the reader goes on from here
                 else:
@@ -313,6 +321,17 @@ class RollingCaptions:
             done = max(done, t) + n / wps
         return max(done, start + self.min_read_s)
 
+    def _too_far_behind(self, now: float) -> bool:
+        """Read pacing's hard limit (see HARD_LAG_X): the box must not fall behind without
+        bound. Lines go up one at a time until it is back under the limit."""
+        if len(self.queue) > HARD_QUEUE:
+            return True
+        return self.max_lag_s > 0 and self.projected_lag(now) > HARD_LAG_X * self.max_lag_s
+
+    def _hard_due(self) -> float:
+        """Past the hard limit the top line still stays up min_read_s."""
+        return (self._since[0] if self._since else float("-inf")) + self.min_read_s
+
     def _guard_on(self) -> bool:
         return self.max_lag_s > 0 and self.catchup_wps > self.read_wps
 
@@ -341,8 +360,8 @@ class RollingCaptions:
         read = [max(now, self._read_done(self.read_wps))]
         for ln in seq[1:]:
             read.append(read[-1] + max(self.min_read_s, len(ln.split()) / self.read_wps))
-        return max(0.0, max(read[j - self.max_lines] - spoken[j]
-                            for j in range(len(self.lines), len(seq))))
+        return max(0.0, max((read[j - self.max_lines] - spoken[j]
+                             for j in range(len(self.lines), len(seq))), default=0.0))
 
     def next_due(self) -> float | None:
         """When advance() can next change the screen (clock time): the next reveal step or
@@ -355,6 +374,8 @@ class RollingCaptions:
             self._sync(self.clock())
             if len(self.lines) < self.max_lines or not self._reads:
                 due.append(self.clock())       # room on screen: up at once
+            elif self._too_far_behind(self.clock()):
+                due.append(min(self._hard_due(), self._read_done(self._wps(self.clock()))))
             else:
                 due.append(self._read_done(self._wps(self.clock())))
         elif self.queue and self._since:
@@ -368,21 +389,59 @@ class RollingCaptions:
         there is nothing to take back (empty, or just cleared/resized)."""
         if not self._undo:
             return None
-        self._restore(self._undo.pop())
+        self._restore(self._undo.pop()[0])
         self._reveal_all()                         # the caption before it, whole
-        self.advance(force=True)
+        # not forced: lines that were waiting come up at reading speed (or after the dwell),
+        # as they would have; forcing them up scrolled them past unread
+        self.advance(force=False)
         return self.text
 
+    @property
+    def last_seq(self) -> int | None:
+        """The number of the last caption (the one Remove last / Fix last act on), or None
+        when there is none. Fix last keeps the number: the fixed caption is the same caption."""
+        return self._undo[-1][2] if self._undo else None
+
     def replace_last(self, clause: str) -> str | None:
-        """The operator's text in place of the last caption. None when there is no last
-        caption to replace. It goes up at once, in place of all of the last caption (also
-        its words not revealed yet)."""
-        if not self._undo:
+        """The operator's text in place of all of the last caption (also its words not
+        revealed yet), wherever that caption is: when any of it is on screen, the fixed text
+        is shown at once; when all of it is still waiting, the fixed text waits in its place
+        and the screen does not change. None when there is no last caption to replace."""
+        clause = " ".join(str(clause).split())
+        if not self._undo or not clause:
             return None
-        self._restore(self._undo.pop())
+        snap, n, seq = self._undo[-1]
+        if len(" ".join(self.queue + self.pending).split()) >= n:
+            # all of it waits (its words are the last n waiting): swap the words, keep the screen
+            self._undo[-1] = (snap, len(clause.split()), seq)
+            self._drop_waiting(n)
+            self._reveal_all()                     # words of the caption before it, before the fix
+            self._append(clause)
+            self.advance(force=False)
+            return self.text
+        self._undo.pop()
+        self._restore(snap)
         self.add(clause)
-        self.advance(force=True)
+        self._undo[-1] = (*self._undo[-1][:2], seq)
+        self._seq -= 1                             # no new caption was added
+        self.flush()
+        self.advance(force=True)                   # it was on screen: the fix is, at once
         return self.text
+
+    def _drop_waiting(self, n: int):
+        """Take the last `n` waiting words away (pending first, then the waiting lines)."""
+        while n and self.pending:
+            self.pending.pop()
+            n -= 1
+        while n and self.queue:
+            words = self.queue[-1].split()
+            if len(words) <= n:
+                n -= len(words)
+                self.queue.pop()
+                self._qspoken.pop()
+            else:
+                self.queue[-1] = " ".join(words[:-n])
+                n = 0
 
     def resize(self, max_lines: int | None = None, max_chars: int | None = None) -> str:
         """New box size: the current text is wrapped again and only whole lines are kept.

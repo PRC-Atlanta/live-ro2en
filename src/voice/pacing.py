@@ -33,6 +33,9 @@ def settings(cfg: dict | None) -> dict:
     for k, v in (cfg or {}).items():
         if k in DEFAULTS and v is not None:
             out[k] = str(v) if k in TEXT_SETTINGS else float(v)
+    # speed_max below speed would make the speed jump between the two (next_speed clamps to both):
+    # the top speed is never below the normal one
+    out["speed_max"] = max(out["speed_max"], out["speed"])
     return out
 
 

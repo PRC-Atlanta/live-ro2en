@@ -13,19 +13,24 @@ import { dialFor, delayOf, pillsFor, bannerFor, heardLines, ppStrip } from "../c
 import { send, messageFor, routeFor } from "../components/actions.js";
 import { toast } from "../components/toast.js";
 import { ask } from "../components/dialog.js";
-import { get } from "../core/api.js";
+import { get, REMOTE } from "../core/api.js";
 import { call as settingsCall } from "./setup/kit.js";
 
 const VIEWS = ["heard", "screen", "both"];
 const HOLD_MS = 600;
 const setHTML = (node, html) => { if (node._html !== html) { node._html = html; node.innerHTML = html; } };
+let resumedSeen = false;                               // "restarted after a problem": said once per page
+const RESUMED = "restarted after a problem";            // lifecycle.RESUMED_WARNING (the Mac app relaunched it)
 const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 const DECK = `
   <div class="mirror" data-mirror>
-    <div class="mtabs" role="tablist" aria-label="What to show">
-      ${VIEWS.map(v => `<button class="mtab" role="tab" data-view="${v}">${S.tabs[v]}</button>`).join("")}
+    <div class="mtabs">
+      <div class="mtablist" role="tablist" aria-label="What to show">
+        ${VIEWS.map(v => `<button class="mtab" role="tab" data-view="${v}">${S.tabs[v]}</button>`).join("")}
+      </div>
       <span class="sub tabhint">${S.tabs.hint} <span class="hidtag">${S.tabs.hiddenTag}</span></span>
+      <button type="button" class="clearbtn" data-clear title="${S.clearTitle}">${S.clearBtn} <kbd>${S.clearKey}</kbd></button>
     </div>
     <div class="views" data-views>
       <div class="view v-heard" role="tabpanel">
@@ -182,6 +187,7 @@ export function render(el, store) {
   const DONE = {
     pause: b => (b.on ? S.toast.hidden : S.toast.shown), blank: () => S.toast.blanked,
     retract: () => S.toast.removed, correct: () => S.toast.fixed, reconnect: () => S.toast.reconnecting,
+    restart_captions: () => S.toast.restarting,
     start: () => S.toast.started, stop: () => S.toast.stopped,
     mode: b => S.toast.mode(S.mode.long[b.mode]), profile: b => S.toast.quality(S.quality.long[b.profile] || b.profile),
     engine: b => S.toast.engine(S.engine.long[b.engine] || b.engine),
@@ -191,8 +197,9 @@ export function render(el, store) {
     const [action, body] = call;
     const res = await send(action, body);
     if (res.ok && res.data && typeof res.data === "object" && "running" in res.data) store.set({ ...store.get(), ...res.data });
-    const msg = messageFor(res, action) || DONE[action]?.(body);
-    const calm = res.notBuilt || res.data?.error === "nothing_to_change";
+    const stale = res.data?.error === "stale";            // Fix last: a newer caption came in meanwhile
+    const msg = stale ? (S.fixChanged || S.fixStale) : messageFor(res, action) || DONE[action]?.(body);
+    const calm = res.notBuilt || stale || res.data?.error === "nothing_to_change";
     toast(msg, res.ok ? "ok" : calm ? "info" : "warn");
     if (res.ok && msg) say(msg);
     return res;
@@ -203,6 +210,7 @@ export function render(el, store) {
       toast(S.engine.noKey, "info", 4000); say(S.engine.noKey); return;
     }
     if (intent === "view") return setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]);
+    if (intent === "voice" && REMOTE) return;            // Live Remote may not change it (the knob is hidden there)
     if (intent === "voice") {                            // the Live Voice knob (L)
       const on = !(voiceWant ?? voiceOn());
       voiceWant = on; setVoice(on ? "on" : "off");
@@ -218,10 +226,19 @@ export function render(el, store) {
       return;
     }
     if (intent === "fix") {
-      const last = [...(s.lines || [])].reverse().find(l => l.dst);
+      // the caption box's last caption (after Remove last, the one before it, still on screen);
+      // an older app (no last_seq) or a caption not in the lines yet: the newest line
+      const lines = [...(s.lines || [])].reverse();
+      const last = (Number.isInteger(s.last_seq) && lines.find(l => l.dst && l.seq === s.last_seq))
+        || lines.find(l => l.dst);
       if (!last) return toast(S.toast.nothingToFix, "info");
       const r = await ask({ title: S.fix.title, hint: S.fix.hint, value: last.dst, ok: S.fix.ok, cancel: S.fix.cancel });
-      if (r && r.text.trim()) post(callFor("correct", s, { text: r.text.trim() }));
+      // based_on(_seq): the caption the operator was fixing (its number in the caption box); the app
+      // changes nothing if the last caption is another one by now (a newer one, or this one removed)
+      if (r && r.text.trim()) {
+        const [a, b] = callFor("correct", s, { text: r.text.trim() });
+        post([a, { ...b, based_on: last.dst, ...(Number.isInteger(last.seq) ? { based_on_seq: last.seq } : {}) }]);
+      }
       return;
     }
     if (intent === "terms") {
@@ -238,7 +255,7 @@ export function render(el, store) {
     const call = callFor(intent, s);
     if (call) return post(call);
     const route = routeFor(intent);
-    if (route) { location.hash = route; return; }
+    if (route) { if (!REMOTE) location.hash = route; return; }   // Live Remote shows the Live screen only
     return post([intent, {}]);                           // a backend-named action we don't know yet
   }
 
@@ -296,6 +313,7 @@ export function render(el, store) {
   unbind.push(() => { removeEventListener("keydown", onKey); removeEventListener("keyup", onKeyUp); });
 
   q("[data-hide]").onclick = () => run("pause");
+  q("[data-clear]").onclick = () => run("blank");       // Clear: the same one-shot wipe as Esc
   q("[data-banner] .bbtn").onclick = () => { const b = bannerFor(s); if (b) run(b.action.id); };
   q("[data-ppstrip] button").onclick = () => { const p = ppStrip(s); if (p) run(p.action.id); };
 
@@ -395,7 +413,17 @@ export function render(el, store) {
       bn.dataset.severity = b.severity; bn.dataset.code = b.code;
       if (bn.firstChild.textContent !== b.msg) bn.firstChild.textContent = b.msg;
       bn.lastChild.textContent = b.action.label;
+      bn.lastChild.hidden = REMOTE && !!routeFor(b.action.id);   // opens another screen: not in Live Remote
     } else { delete bn.dataset.code; }
+    if (ps) strip.querySelector("button").hidden = REMOTE && !!routeFor(ps.action.id);
+
+    const resumedW = !resumedSeen && (s.warnings || []).find(w => String(w).startsWith(RESUMED));
+    if (resumedW) {
+      resumedSeen = true;                                // the app was restarted mid-service: live again, or
+      // (lifecycle.RESUMED_FAILED_WARNING) Start failed and the operator must press it
+      const t = String(resumedW).includes("press Start") ? (S.resumedFailed || S.resumed) : S.resumed;
+      toast(t, "info", 10000); say(t);
+    }
 
     f.update(s);
   }

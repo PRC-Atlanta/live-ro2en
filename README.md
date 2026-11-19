@@ -226,7 +226,9 @@ writes `results/en_test/<name>/`:
 ## 5. Tests and benchmarks
 
 ```bash
-.venv/bin/python -m pytest -q tests                      # normalisation, WER, segmentation, ProPresenter, Google (mocked)
+.venv-mt/bin/python -m pytest -q tests --ignore=tests/test_google_stt.py   # the app, bench, normalisation, WER, segmentation, ProPresenter
+.venv/bin/python -m pytest -q tests/test_google_stt.py   # Google (mocked): needs the research venv's google-cloud-speech
+LIVE_TEST_REAL_VOICE=1 .venv-mt/bin/python -m pytest -q tests/test_voice_offline.py   # loads the real TTS model: only when nothing else heavy runs
 .venv/bin/python src/score_bible.py                      # Phase 1 Bible scores -> results/bible_scores.csv
 .venv-mt/bin/python src/mt_bench.py score                # Phase 2 -> results/mt_scores.csv
 .venv-mt/bin/python src/live/e2e.py --audio <file>       # end-to-end latency through the mock ProPresenter

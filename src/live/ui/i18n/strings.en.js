@@ -171,6 +171,10 @@ export const S = {
                      action: { id: "settings", label: "Open Settings" } },
     voice_behind: { msg: "Live Voice is more than 10 seconds behind the speaker. It speaks faster and shortens what it says until it has caught up.",
                     action: { id: "help", label: "What this means" } },
+    voice_failing: { msg: "Live Voice keeps failing: phones may hear nothing or miss sentences. Captions are not affected. It is restarted if it does not recover.",
+                     action: { id: "help", label: "What this means" } },
+    translator_stuck: { msg: "The translator has stopped responding. Captions are paused. Restart captions to reload it (about a minute).",
+                        action: { id: "restart_captions", label: "Restart captions" } },
     models_missing: { msg: "Some translation files are missing. Open Setup to download them.",
                       action: { id: "setup", label: "Open Setup" } },
   },
@@ -187,6 +191,7 @@ export const S = {
     removed: "Last caption removed", fixed: "Last caption replaced",
     termsSaved: n => (n ? `${n} name${n === 1 ? "" : "s"} for today` : "Today's names cleared"),
     reconnecting: "Reconnecting to ProPresenter…",
+    restarting: "Restarting captions… back in about a minute",
     pressAgain: "Press Space again to stop",
     started: "Captioning", stopped: "Stopped",
     mode: m => `Speaker: ${m}`, quality: q => `Quality: ${q}`, engine: e => `Translator: ${e}`,
@@ -278,6 +283,15 @@ export const S = {
     shortcutsTitle: "Keyboard shortcuts",
     back: "Back to Live",
   },
+
+  // review 2026-11-18: the Clear button (the same action as Esc), Fix last refused, restart, closed feed
+  clearBtn: "Clear", clearKey: "Esc",
+  clearTitle: "Wipe the captions now: the big screen, the stage display and the captions display. Remove last can't bring them back. New captions start with the next phrase.",
+  fixStale: "A newer caption came in, so nothing was changed.",
+  fixChanged: "The last caption changed while you typed (a newer one came in, or it was removed), so nothing was changed.",
+  resumed: "Restarted after a problem — captions resumed",
+  resumedFailed: "Restarted after a problem — captions did not start again: press Start",
+  connClosed: "This window lost its connection for good (the PIN changed, or Live Remote was turned off). Close it and open it again.",
 };
 
 export function fmtS(s) { return s == null ? "–" : `${Number(s).toFixed(1)} s`; }

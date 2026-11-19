@@ -197,7 +197,18 @@ class FakeTr:
         self.context = []
 
 
-def _running(tmp_path, monkeypatch, keep, load_s=0.0):
+class LoadGate:
+    """A translator load that starts and then waits until the test lets it finish, so the test acts
+    while the load is surely in progress (no sleeps that guess how long the machine takes)."""
+    def __init__(self):
+        self.started, self.release = threading.Event(), threading.Event()
+
+    def wait(self):
+        self.started.set()
+        assert self.release.wait(10), "the test never let the load finish"
+
+
+def _running(tmp_path, monkeypatch, keep, load_s=0.0, gate: LoadGate | None = None):
     live = _live(tmp_path)
     live.cfg["profiles"]["fast"]["translator"] = "fake:fast"
     live.cfg["profiles"]["quality"]["translator"] = "fake:quality"
@@ -211,7 +222,10 @@ def _running(tmp_path, monkeypatch, keep, load_s=0.0):
 
     def make(spec):
         loads.append(spec)
-        time.sleep(load_s)
+        if gate is not None:
+            gate.wait()
+        else:
+            time.sleep(load_s)
         return FakeTr(spec)
     monkeypatch.setattr(P2.translate, "make_translator", make)
     live.stop = lambda: pytest.fail("the hot switch must not stop the engine")
@@ -244,25 +258,36 @@ def test_hot_switch_keeps_the_engine_and_sends_cfg(tmp_path, monkeypatch):
 
 
 def test_hot_switch_translates_while_the_new_translator_loads(tmp_path, monkeypatch):
-    live, loads = _running(tmp_path, monkeypatch, keep=True, load_s=0.8)
+    gate = LoadGate()
+    live, loads = _running(tmp_path, monkeypatch, keep=True, gate=gate)
     t = threading.Thread(target=live.set_profile, args=("quality",))
-    t.start(); time.sleep(0.1)
-    t0 = time.time()
-    live._handle(_clause(1, "Frați și surori, astăzi citim."))       # not blocked by the load
-    assert time.time() - t0 < 0.4 and _log(live)[-1]["translation"].startswith("[fake:fast]")
-    t.join()
+    t.start()
+    try:
+        assert gate.started.wait(5)                                    # the new translator is loading
+        h = threading.Thread(target=live._handle, args=(_clause(1, "Frați și surori, astăzi citim."),))
+        h.start(); h.join(5)
+        assert not h.is_alive(), "a clause waited for the translator load"
+        assert _log(live)[-1]["translation"].startswith("[fake:fast]")
+    finally:
+        gate.release.set()
+    t.join(10)
     assert live.tr.spec == "fake:quality"
     assert [r for r in _log(live) if r.get("event") == "profile"][0]["blocked_s"] < 0.2
 
 
 def test_a_settings_save_during_a_slow_switch_is_kept(tmp_path, monkeypatch):
-    live, loads = _running(tmp_path, monkeypatch, keep=True, load_s=0.6)
+    gate = LoadGate()
+    live, loads = _running(tmp_path, monkeypatch, keep=True, gate=gate)
     live.settings_path = tmp_path / "settings.yaml"
     t = threading.Thread(target=live.set_profile, args=("quality",))
-    t.start(); time.sleep(0.15)
-    code, _ = live.put_settings({"values": {"live.hold_s": 3.5}})     # saved while the switch loads
-    assert code == 200
-    t.join()
+    t.start()
+    try:
+        assert gate.started.wait(5)
+        code, _ = live.put_settings({"values": {"live.hold_s": 3.5}})     # saved while the switch loads
+        assert code == 200
+    finally:
+        gate.release.set()
+    t.join(10)
     assert live.profile == "quality" and live.lc["hold_s"] == 3.5 and live.lc["translator"] == "fake:quality"
 
 
@@ -277,12 +302,17 @@ def test_low_memory_switch_reloads_with_the_engine_running(tmp_path, monkeypatch
 
 
 def test_clauses_wait_during_a_warm_reload_and_are_caught_up(tmp_path, monkeypatch):
-    live, loads = _running(tmp_path, monkeypatch, keep=False, load_s=0.5)
+    gate = LoadGate()
+    live, loads = _running(tmp_path, monkeypatch, keep=False, gate=gate)
     t = threading.Thread(target=live.set_profile, args=("quality",))
-    t.start(); time.sleep(0.1)
-    live._submit(_clause(1, "Frați și surori, astăzi citim."))
-    live._submit(_clause(2, "din epistola către Romani."))
-    t.join(); live._drain()
+    t.start()
+    try:
+        assert gate.started.wait(5)                                    # the old one freed, the new loading
+        live._submit(_clause(1, "Frați și surori, astăzi citim."))
+        live._submit(_clause(2, "din epistola către Romani."))
+    finally:
+        gate.release.set()
+    t.join(10); live._drain()
     recs = [r for r in _log(live) if r.get("outcome") == "ok"]
     assert recs and all(r["translation"].startswith("[fake:quality]") for r in recs)
 
@@ -292,7 +322,7 @@ def test_a_different_speech_model_still_restarts_the_engine(tmp_path, monkeypatc
     live.cfg["profiles"]["quality"]["stt_model"] = "another-model"
     calls = []
     live.stop = lambda: (calls.append("stop"), setattr(live, "running", False))
-    live.start = lambda *a: calls.append("start")
+    live.start = lambda *a, **k: calls.append("start")
     live.set_profile("quality")
     assert calls == ["stop", "start"] and live.engine.cmds() == [] and loads == []   # start() loads it
     assert live.tr is None and live._spare_tr["fake:fast"].spec == "fake:fast"

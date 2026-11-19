@@ -23,8 +23,10 @@ import os
 import pathlib
 import signal
 import subprocess
+import sys
 import threading
 import time
+import traceback
 
 import paths
 from translate import WARMUP, assemble, direction_specs, make_translator, members, translator_key
@@ -41,6 +43,13 @@ RESTART_WAIT_S = 180.0                   # a crash while a switch/Start holds _c
 ENGINE_LOG_MAX = 20_000_000              # bytes: engine.log becomes engine.old.log at the next spawn
 LEVEL_STALE_S = 1.5                      # no level event for this long: the meter shows nothing
 LISTEN_ACK_S = 2.0                       # Start waits this long for the engine to go live
+PRELOAD_READY_S = 180.0                  # a warm engine that is not ready this long after its spawn is hung
+START_PRELOAD_WAIT_S = 120.0             # Start waits this long for a preload, then replaces its engine
+EVENT_ERRORS_LOGGED = 20                 # engine events that failed: this many tracebacks in app_errors.log
+EVENT_FAILED_WARNING = "an engine event could not be handled (see logs/app_errors.log); captions carry on"
+RESUMED_WARNING = "restarted after a problem: captions resumed"   # app.py --resumed (the Mac app relaunched it)
+RESUMED_FAILED_WARNING = "restarted after a problem: captions did not start again, press Start"   # ... and Start failed
+RESTART_EXIT_CODE = 75                   # /api/restart_captions under the Mac app: it relaunches with --resumed
 # problem.code -> (severity, action id, action label); the UI has the words (strings.en.js)
 PROBLEMS = {
     "models_missing": ("error", "setup", "Open Setup"),
@@ -52,11 +61,13 @@ PROBLEMS = {
     "pp_unreachable": ("error", "reconnect", "Try again"),
     "pp_message_missing": ("error", "settings", "Open Settings"),
     "disk_full": ("error", "help", "What to do"),
+    "translator_stuck": ("error", "restart_captions", "Restart captions"),   # a model call hung (pipeline.TR_STUCK_S)
     "recognition_behind": ("warn", "quickest", "Switch to Quickest"),
     "captions_behind": ("warn", "quickest", "Switch to Quickest"),
     "english_unavailable": ("info", "lock_ro", "Romanian speaker only"),
     "voice_stopped": ("warn", "settings", "Open Settings"),      # Live Voice: captions are not affected
     "voice_behind": ("info", "help", "What this means"),
+    "voice_failing": ("warn", "help", "What this means"),        # Live Voice runs but keeps failing (voicelink.py)
 }
 
 
@@ -95,6 +106,29 @@ def _terminate(pid: int, wait_s: float = 2.0) -> None:
             pass
 
 
+def _supervised() -> bool:
+    """Launched by the Mac app (LaunchConfig sets LIVE_SUPERVISED=1): it relaunches us on exit."""
+    return os.environ.get("LIVE_SUPERVISED") == "1"
+
+
+def _relaunch():
+    """A fresh process that resumes the captions: under the Mac app, exit and let it relaunch
+    (`--autostart --resumed`, as after a crash); from a terminal, exec this command line again
+    with those two flags (sys.orig_argv keeps the interpreter's own flags)."""
+    for f in (sys.stdout, sys.stderr):
+        try:
+            f.flush()
+        except Exception:                    # noqa: BLE001
+            pass
+    if _supervised():
+        os._exit(RESTART_EXIT_CODE)
+    argv = list(getattr(sys, "orig_argv", None) or [sys.executable, *sys.argv])[1:]
+    for flag in ("--autostart", "--resumed"):
+        if flag not in argv:
+            argv.append(flag)
+    os.execv(sys.executable, [sys.executable, *argv])
+
+
 class LifecycleMixin:
     def _mixin_init(self):
         self.phase_hint: str | None = None       # starting / stopping while a control runs
@@ -130,9 +164,16 @@ class LifecycleMixin:
         self._ran = False                        # a service ran since launch: idle = stopped
         self._models_cache: tuple[float, list] = (-1e9, [])
         self._engine_warnings: list[str] = []    # from loading: kept across services
+        self._send_lock = threading.Lock()       # one writer at a time on the engine's stdin (_send)
+        self._event_errors = 0                   # engine events that raised (_event_failed), this service
+        self._autostart_pending = False          # app.py's resumed autostart has not run Start yet (phase "starting")
+        self._autostart_waiting = False          # app.py's autostart has not run Start yet
+        self._autostart_cancel = False           # the operator's Stop came first: autostart does not go live
+        self._preload_t0 = 0.0                   # when the warm engine was spawned (PRELOAD_READY_S)
         self._pid_dir: pathlib.Path | None = None
         self._t_launch = time.time()
         self.exit_process = lambda: os.kill(os.getpid(), signal.SIGTERM)   # /api/shutdown; tests replace it
+        self.relaunch_process = _relaunch        # /api/restart_captions; tests replace it
         self.register_state(self._lifecycle_state)
 
     def _profile_cfg(self, name: str) -> dict:
@@ -165,15 +206,16 @@ class LifecycleMixin:
             if engine_up and not restart:
                 cfg = {k: new[k] for k in ENGINE_CFG_KEYS if k in new and k not in self.RESTART_KEYS}
                 try:
-                    self.engine.stdin.write(json.dumps({"cmd": "cfg", "cfg": cfg}) + "\n")
-                    self.engine.stdin.flush()
+                    with self._send_lock:
+                        self.engine.stdin.write(json.dumps({"cmd": "cfg", "cfg": cfg}) + "\n")
+                        self.engine.stdin.flush()
                     sent = True
                 except Exception as e:                 # noqa: BLE001 - the engine reader reports a death
                     self._warn(f"could not send the new pause settings to the engine: {e}")
             self._log_event({"event": "profile", "from": old, "to": name,
                              "hot": self.running and not restart, "engine_cfg": sent, **info})
             if restart:
-                self.start()
+                self.start(fresh=False)                # the same service goes on: nothing is wiped
             self._broadcast()
 
     def _translator_lost(self, e: Exception):
@@ -239,15 +281,18 @@ class LifecycleMixin:
                 if self.running or self._shutting_down or self._warm_alive():
                     return
                 self._spawn_engine(device, hold=True, src=getattr(self.args, "file", None))
+                eng, deadline = self.engine, time.monotonic() + PRELOAD_READY_S
             self._broadcast()
             try:
                 self.load_translator()                 # meanwhile the engine loads in its own process
             except Exception as e:                     # noqa: BLE001  Start retries and shows it
                 self._start_error = f"translator failed to load: {type(e).__name__}: {e}"
                 self.status = self._start_error
-            eng = self.engine
             while not self._ready_evt.wait(0.2):       # the engine is loading its models
                 if eng is None or eng.poll() is not None or eng is not self.engine or self._shutting_down:
+                    break
+                if time.monotonic() > deadline:        # hung while loading: never "loading" for ever
+                    self._preload_hung(eng)
                     break
             if self._ready_evt.is_set() and self.tr is not None and hasattr(self, "preload_translators"):
                 self._spares_thread = threading.Thread(target=self._spares, daemon=True, name="spare-translators")
@@ -256,6 +301,17 @@ class LifecycleMixin:
             if self.phase_hint == "loading":
                 self.phase_hint = None
             self._broadcast()
+
+    def _preload_hung(self, eng):
+        """The warm engine did not get ready within PRELOAD_READY_S: end it and say so (phase
+        error, "Start again" spawns a new one)."""
+        with self._control:
+            if eng is not self.engine or self.running or self._ready_evt.is_set():
+                return                                 # a Start replaced it, or it got ready just now
+            self._retire_engine()
+            self._start_error = self.status = (f"speech recognition did not finish loading in "
+                                               f"{PRELOAD_READY_S:.0f} s: press Start to try again")
+        self._broadcast()
 
     def _spares(self):
         """The other profile's translator too (S4, only when RAM allows): the first switch is instant."""
@@ -277,12 +333,17 @@ class LifecycleMixin:
         ms.cancel()
         return True
 
-    def start(self, device=None):
+    def start(self, device=None, fresh: bool = True, autostart: bool = False):
+        """Start captions. `fresh`: a new service (the operator's Start, autostart), which
+        begins clean (_new_run). A profile switch that restarts the engine passes False: the
+        same service goes on, with its caption box, history and translator context.
+        `autostart`: app.py's autostart, which the operator's Stop cancels (stop) while it waits."""
         paused = self._pause_download()                # the service gets the network and the CPU
-        self._await_preload()                          # Start pressed while still loading: wait
+        self._await_preload(START_PRELOAD_WAIT_S)      # Start pressed while still loading: wait (a hung
+                                                       # engine is then not _warm_usable: it is replaced)
         with self._control:
-            if self.running:
-                return
+            if self.running or (autostart and self._autostart_cancel):
+                return                                 # (Stop pressed while the autostart waited)
             self.running = True                        # Start is disabled while loading
             self.status = "starting"
             self.phase_hint = "starting"
@@ -292,12 +353,12 @@ class LifecycleMixin:
                 self._drain()                          # a previous run's clauses finish first
                 src = getattr(self.args, "file", None)
                 if self._warm_usable(src):
-                    self._go_live(device)
+                    self._go_live(device, fresh)
                 else:
                     self._retire_engine()              # warm on another input or model: replace it
                     self._await_spare()
                     self.load_translator()
-                    self._start_engine(device)
+                    self._start_engine(device, fresh)
                 if paused:                             # after _new_run, which resets the warnings
                     self._warn("the model download was paused for the service; resume it in Setup")
             except Exception as e:
@@ -307,6 +368,8 @@ class LifecycleMixin:
                 self._start_error = self.status
                 self._broadcast()
                 raise
+        if hasattr(self, "_send_wanted_screen"):
+            self._send_wanted_screen()                 # the new service's blank screen, outside _control
 
     def _await_spare(self):
         """A spare that is loading may be this profile's translator: take it, not a second copy."""
@@ -314,12 +377,12 @@ class LifecycleMixin:
         if self.tr is None and sp is not None and sp.is_alive() and sp is not threading.current_thread():
             sp.join()
 
-    def _go_live(self, device=None):
+    def _go_live(self, device=None, fresh: bool = True):
         """Start on the warm engine: a new service log, then {"cmd":"listen","on":true}."""
         self._await_spare()
         self.load_translator()                         # loaded by preload; reloaded after an unload
         want = device if device is not None else self.lc.get("input_device")
-        self._new_run()
+        self._new_run(fresh)
         self._run_src, self._run_device = self._engine_src, want
         if self._engine_src is None and want != self._engine_device:
             self._send({"cmd": "device", "device": want})
@@ -334,8 +397,13 @@ class LifecycleMixin:
             self.status = f"listening ({self.input_name or self._engine_src or 'default'})"
         self._broadcast()
 
-    def _new_run(self):
-        """A new service: its own log file, fresh counters and warnings."""
+    def _new_run(self, fresh: bool = True):
+        """A new service log, fresh counters and warnings. With `fresh` (the operator's Start,
+        autostart) also a new service: nothing left over from the last service or rehearsal: an
+        empty caption box (Remove last / Fix last cannot reach back into it) and screen, no
+        history or delays, translators that remember nothing, and the full engine-restart
+        budget. Stop leaves the last caption up; Start takes it down. A profile switch that
+        restarts the engine (fresh False) keeps all that: the service goes on."""
         logdir = paths.services_dir(self.lc["transcript_log_dir"], self.root)
         logdir.mkdir(parents=True, exist_ok=True)
         stem = f"{dt.datetime.now():%Y-%m-%d_%H%M%S}"
@@ -345,25 +413,34 @@ class LifecycleMixin:
             path = logdir / f"{stem}_{n}.jsonl"           # sorts after the first one
         self.log_path = path
         self.warnings, self.counts = list(self._engine_warnings), collections.Counter()
+        self._event_errors = 0                         # the first failures of this log get their tracebacks
         if hasattr(self, "_speech_reset"):
             self._speech_reset()                       # Live Voice: no sentence of the last service is left
         if hasattr(self, "_voice_new_run"):
             self._voice_new_run()
         if hasattr(self, "_engine_new_run"):
-            self._engine_new_run()
+            self._engine_new_run(fresh)
         self.behind_s = self.stt_behind = None
         self.eof.clear()
         self._stopping = False
         self._ran = True
+        if not fresh:
+            return
+        self._restarts.clear()                         # crashes before this service do not count against it
+        with self.lock:
+            self.history, self.lat, self.partial = [], [], ""
+        if hasattr(self, "_new_run_screen"):
+            self._new_run_screen()                     # output.py: caption box, its undo, the screen
+        self._reset_translator_context()               # the last service's sentences are no context here
 
     def _engine_cfg(self) -> dict:
         return {**{k: self.lc[k] for k in ENGINE_CFG_KEYS if k in self.lc},
                 "input_gain_db": self._gain_now(),     # a restarted engine carries on from the auto gain
                 "ro_names": list(self.cfg.get("ro_names") or [])}   # boosted by the Romanian recogniser
 
-    def _start_engine(self, device=None):
+    def _start_engine(self, device=None, fresh: bool = True):
         """A service on a new engine (file runs, or nothing warm): live as soon as it is ready."""
-        self._new_run()
+        self._new_run(fresh)
         self.audio_fault = None
         self._audio_kind = None
         want = device or self.lc.get("input_device")
@@ -414,8 +491,9 @@ class LifecycleMixin:
         if eng is None or eng.poll() is not None:
             return False
         try:
-            eng.stdin.write(json.dumps(cmd) + "\n")
-            eng.stdin.flush()
+            with self._send_lock:                      # two threads' lines never interleave on the pipe
+                eng.stdin.write(json.dumps(cmd) + "\n")
+                eng.stdin.flush()
             return True
         except (OSError, ValueError, AttributeError):
             return False
@@ -470,6 +548,9 @@ class LifecycleMixin:
                 and self._engine_spec == self._spec())
 
     def stop(self):
+        if self._autostart_waiting:                    # before app.py's autostart went live: it is
+            self._autostart_cancel = True              # cancelled (start checks after the preload), and
+            self._autostart_pending = False            # the phase no longer reads "starting"
         with self._control:
             eng = self.engine
             if not self.running and self._warm_alive() and not self._shutting_down:
@@ -575,6 +656,49 @@ class LifecycleMixin:
             if hasattr(self, "_bonjour_stop"):
                 self._bonjour_stop()              # Live Remote stops finding this Mac
             self._drop_pidfiles()
+
+    def restart_captions(self):
+        """POST /api/restart_captions, after its answer (translator_stuck): a hung MLX/CTranslate2 call
+        can't be ended in-process, and a second copy of the model beside it would be two MLX jobs at
+        once, so the process starts again and resumes the captions. Nothing here waits for _proc_lock,
+        _control or _drain (shutdown does, behind the hung call): the engine and Live Voice are ended
+        directly, then relaunch_process()."""
+        if getattr(self, "_restarting", False):  # a second click while the first one runs
+            return                               # (no lock: nothing here may wait on another thread)
+        self._restarting = True
+        self._shutting_down = True               # no engine or Live Voice restart from here on
+        self._keep_warm = False
+        ended = []
+        for name, proc in (("engine", self.engine), ("voice", getattr(self, "voice", None))):
+            if proc is None or proc.poll() is not None:
+                continue
+            if name == "voice":                  # its own clean stop first (as at Quit), bounded
+                t = threading.Thread(target=self.voice_stop, daemon=True, name="voice-stop")
+                t.start()
+                t.join(4.0)
+            else:
+                proc.retired = True              # its exit is ours, not a crash to restart
+            if proc.poll() is None:
+                _terminate(proc.pid, 3.0)        # SIGTERM, then SIGKILL
+            try:
+                proc.wait(1.0)                   # reaped: no zombie across exec
+            except Exception:                    # noqa: BLE001
+                pass
+            ended.append(name)
+        if hasattr(self, "_bonjour_stop"):
+            try:
+                self._bonjour_stop()             # its watcher follows our pid, which exec keeps
+            except Exception:                    # noqa: BLE001
+                pass
+        try:
+            self._log_event({"event": "restart_captions", "ended": ended})
+        except Exception:                        # noqa: BLE001
+            pass
+        self._app_error(f"restart_captions: the operator restarted the captions (ended: {', '.join(ended) or 'nothing'}); "
+                        f"{'the Mac app relaunches it' if _supervised() else 'exec'} with --autostart --resumed")
+        if all(p is None or p.poll() is not None for p in (self.engine, getattr(self, "voice", None))):
+            self._drop_pidfiles()                # else the next launch's claim_pidfiles ends what is left
+        self.relaunch_process()
 
     def set_mode(self, mode: str):
         self.lang.set_mode(mode)
@@ -684,81 +808,84 @@ class LifecycleMixin:
         played_out = False                   # this engine said eof (self.eof outlives it: a warm engine
         for line in engine.stdout:           # started after a rehearsal must still count as crashing)
             try:
-                ev = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            t = ev.get("type")
-            current = engine is self.engine
-            if t == "level":
-                if current:
-                    self._on_level(ev)
-                continue
-            if t == "loading":
-                if current:
-                    self._eng_load = (str(ev.get("label", "")), float(ev.get("pct", 0)))
-            elif t == "input":
-                if current:
-                    self.input_name = ev.get("device")
-            elif t == "listen":
-                if current:
-                    self._listening = bool(ev.get("on"))
-                    if self.phase_hint == "starting" and self._listening:
-                        self.phase_hint = None
-                    self._listen_ack.set()
-            elif t == "ready":
-                if current:
-                    self._engine_ready = True
-                    self._eng_load = None
-                    if ev.get("hold"):
-                        self.status = f"ready ({ev.get('source', 'default')})"
-                    else:
-                        self._listening = True
-                        if self.phase_hint == "starting":
+                try:
+                    ev = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                t = ev.get("type")
+                current = engine is self.engine
+                if t == "level":
+                    if current:
+                        self._on_level(ev)
+                    continue
+                if t == "loading":
+                    if current:
+                        self._eng_load = (str(ev.get("label", "")), float(ev.get("pct", 0)))
+                elif t == "input":
+                    if current:
+                        self.input_name = ev.get("device")
+                elif t == "listen":
+                    if current:
+                        self._listening = bool(ev.get("on"))
+                        if self.phase_hint == "starting" and self._listening:
                             self.phase_hint = None
-                        self.status = f"listening ({ev['source']})"
-                    self._ready_evt.set()
-            elif t == "warn":
-                # e.g. the multilingual model failed to load: auto-detect degrades to RO only
-                if ev["msg"] == "audio input reopened":
-                    self.audio_fault = None              # the device is back
-                    self._audio_kind = None
-                else:
+                        self._listen_ack.set()
+                elif t == "ready":
+                    if current:
+                        self._engine_ready = True
+                        self._eng_load = None
+                        if ev.get("hold"):
+                            self.status = f"ready ({ev.get('source', 'default')})"
+                        else:
+                            self._listening = True
+                            if self.phase_hint == "starting":
+                                self.phase_hint = None
+                            self.status = f"listening ({ev['source']})"
+                        self._ready_evt.set()
+                elif t == "warn":
+                    # e.g. the multilingual model failed to load: auto-detect degrades to RO only
+                    if ev["msg"] == "audio input reopened":
+                        self.audio_fault = None              # the device is back
+                        self._audio_kind = None
+                    else:
+                        self._warn(ev["msg"])
+                        if not self._engine_ready:            # a loading problem: kept for every service
+                            self._engine_warnings = (self._engine_warnings + [ev["msg"]])[-20:]
+                        if ev["msg"].startswith("multilingual model unavailable"):
+                            self._english_unavailable = True
+                    self._elog({"event": "warn", "msg": ev["msg"]})
+                elif t == "error":
+                    self._on_engine_error(ev)
+                elif t == "mode":
+                    # the engine could not run the requested mode (no multilingual model)
+                    self.lang.set_mode(ev["mode"])
                     self._warn(ev["msg"])
-                    if not self._engine_ready:            # a loading problem: kept for every service
-                        self._engine_warnings = (self._engine_warnings + [ev["msg"]])[-20:]
-                    if ev["msg"].startswith("multilingual model unavailable"):
-                        self._english_unavailable = True
-                self._elog({"event": "warn", "msg": ev["msg"]})
-            elif t == "error":
-                self._on_engine_error(ev)
-            elif t == "mode":
-                # the engine could not run the requested mode (no multilingual model)
-                self.lang.set_mode(ev["mode"])
-                self._warn(ev["msg"])
-                self._english_unavailable = True
-                self._elog({"event": "mode", "mode": ev["mode"], "msg": ev["msg"]})
-            elif t == "backlog":
-                self.stt_behind = None if ev["ok"] else ev["msg"]
-                self._elog({"event": "backlog", "ok": ev["ok"], "s": ev["s"]})
-            elif t == "audio":
-                self.audio_fault = None if ev["ok"] else ev["msg"]
-                self._audio_kind = None if ev["ok"] else (ev.get("fault") or "no_frames")
-                self._elog({"event": "audio", "ok": ev["ok"], "msg": ev["msg"]})
-            elif t == "partial":
-                self.partial = ev["text"]
-            elif t == "clause":
-                self._on_clause(ev)
-            elif t == "quiet":                   # silence after the last piece (the sentence buffer)
-                if current:
-                    self._on_quiet(ev)
-                continue
-            elif t == "eof":
-                self._flush()
-                self._drain()                # the last clause is shown and logged before eof
-                self.status = "input ended"
-                played_out = True
-                self.eof.set()
-            self._broadcast()
+                    self._english_unavailable = True
+                    self._elog({"event": "mode", "mode": ev["mode"], "msg": ev["msg"]})
+                elif t == "backlog":
+                    self.stt_behind = None if ev["ok"] else ev["msg"]
+                    self._elog({"event": "backlog", "ok": ev["ok"], "s": ev["s"]})
+                elif t == "audio":
+                    self.audio_fault = None if ev["ok"] else ev["msg"]
+                    self._audio_kind = None if ev["ok"] else (ev.get("fault") or "no_frames")
+                    self._elog({"event": "audio", "ok": ev["ok"], "msg": ev["msg"]})
+                elif t == "partial":
+                    self.partial = ev["text"]
+                elif t == "clause":
+                    self._on_clause(ev)
+                elif t == "quiet":                   # silence after the last piece (the sentence buffer)
+                    if current:
+                        self._on_quiet(ev)
+                    continue
+                elif t == "eof":
+                    played_out = True            # first: a failure below is not a crash of the engine
+                    self._flush()
+                    self._drain()                # the last clause is shown and logged before eof
+                    self.status = "input ended"
+                    self.eof.set()
+                self._broadcast()
+            except Exception:                    # noqa: BLE001  one bad event must not end the reader:
+                self._event_failed(line)         # the engine would run on with nobody reading it
         rc = engine.wait()
         self._drop_engine_pid(engine)
         if engine is not self.engine:        # an older engine; a newer run owns the state
@@ -785,6 +912,24 @@ class LifecycleMixin:
         if ended and self._keep_warm and not getattr(self.args, "file", None):
             # a rehearsal file played out: warm the sound input again for the next Start
             threading.Thread(target=self.preload, daemon=True, name="re-preload").start()
+
+    def _event_failed(self, line: str):
+        """An engine event could not be handled: count it, log it to app_errors.log (the first
+        EVENT_ERRORS_LOGGED, so a recurring fault cannot fill the disk), warn once per service."""
+        self._event_errors += 1
+        if self._event_errors <= EVENT_ERRORS_LOGGED:
+            try:
+                logs = paths.log_dir(self.root)
+                logs.mkdir(parents=True, exist_ok=True)
+                with open(logs / "app_errors.log", "a") as f:
+                    f.write(f"{dt.datetime.now().isoformat()} engine event failed: {str(line)[:300]!r}\n"
+                            f"{traceback.format_exc()}\n")
+            except Exception:                              # noqa: BLE001  the log must not end the reader either
+                pass
+        try:
+            self._warn(EVENT_FAILED_WARNING)               # listed once (_warn), until the next Start
+        except Exception:                                  # noqa: BLE001
+            pass
 
     def _restart_after_crash(self, rc, dead=None) -> bool:
         """The engine died on its own: start it again with the same input, file and mode (the
@@ -922,6 +1067,10 @@ class LifecycleMixin:
     def _phase(self) -> str:
         if self._unloading:
             return "unloading"
+        if self._autostart_pending and not self.running:
+            # a relaunch that resumes the service (app.py autostart_when_up): live from the
+            # start, so the Mac app keeps it awake and, after a second crash, resumes it again
+            return "starting"
         if self.running:
             if self.phase_hint == "stopping":
                 return "stopping"
@@ -986,7 +1135,21 @@ class LifecycleMixin:
         return val
 
     def _problem_code(self, phase: str) -> str | None:
-        """The one problem the banner shows, most urgent first (docs/app_contract.md)."""
+        """The one problem the banner shows, most urgent first (docs/app_contract.md).
+        ProPresenter's own problems come last: the Live screen shows them in the strip under the
+        meter, not in the banner, so they must not hide a problem ranked below them."""
+        code = self._problem_code_but_pp(phase)
+        if code is not None:
+            return code
+        pp = getattr(self, "pp", None)
+        code = pp.status().get("error_code") if hasattr(pp, "status") else None
+        if code in ("unreachable", "auth"):
+            return "pp_unreachable"
+        if code == "message_missing":
+            return "pp_message_missing"
+        return None
+
+    def _problem_code_but_pp(self, phase: str) -> str | None:
         if phase == "needs_setup":
             return "models_missing"
         if phase == "error":
@@ -1001,15 +1164,11 @@ class LifecycleMixin:
                 return "device_lost"
             if kind == "digital_silence":
                 return "no_sound"
-        pp = getattr(self, "pp", None)
-        code = pp.status().get("error_code") if hasattr(pp, "status") else None
-        if code in ("unreachable", "auth"):
-            return "pp_unreachable"
-        if code == "message_missing":
-            return "pp_message_missing"
         pre = getattr(self, "_preflight", None) or {}
         if any(c.get("code") == "disk_full" and not c.get("ok") for c in pre.get("checks") or []):
             return "disk_full"
+        if hasattr(self, "translator_stuck") and self.translator_stuck():
+            return "translator_stuck"           # above *_behind: Switch to Quickest waits behind the hung call
         if self.running and self.stt_behind:
             return "recognition_behind"
         if self.running:

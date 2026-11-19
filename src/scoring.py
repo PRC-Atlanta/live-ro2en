@@ -56,7 +56,11 @@ def _dp_rows(r: np.ndarray, h: np.ndarray, free_ends: bool, keep: bool):
 
 def align(ref: list[str], hyp: list[str], free_ends: bool = True) -> Align:
     """Align hyp to ref. With free_ends, unmatched reference prefix/suffix cost nothing,
-    so a partial transcript can be scored against a whole book."""
+    so a partial transcript can be scored against a whole book.
+
+    Beware: with free_ends an empty hyp scores 0 errors over n_ref 0 (WER 0), the same as a perfect
+    transcript, since all of ref is "unmatched prefix". A caller that may pass an empty transcript
+    (nothing recognised) must check for it, or use free_ends=False (every reference word deleted)."""
     if not hyp:
         return Align(0, 0 if free_ends else len(ref), 0, 0 if free_ends else len(ref), 0, 0, [])
     r, h = _vocab_ids(ref, hyp)

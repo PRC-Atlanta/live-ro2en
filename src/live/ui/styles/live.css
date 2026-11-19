@@ -56,6 +56,7 @@ main:has(> .unit) { padding: 12px 16px; }
 .mirror { margin-top: 10px; padding: 10px 14px 12px; background: #050b0e; border: 1px solid #0f2a33;
           box-shadow: inset 0 0 14px rgba(0,0,0,.9); }
 .mtabs { display: flex; align-items: center; margin: -2px 0 6px; }
+.mtablist { display: flex; align-items: center; }   /* the tabs alone: the hint and Clear sit beside the tablist */
 .mtab { font: 600 11px var(--font); letter-spacing: .12em; text-transform: uppercase; color: var(--mute);
         background: linear-gradient(#1a2024, #101417); border: 1px solid #2c3438; margin-left: -1px;
         padding: 7px 12px; min-height: 32px; cursor: pointer; }
@@ -63,6 +64,13 @@ main:has(> .unit) { padding: 12px 16px; }
 .mtab[aria-selected="true"] { color: var(--cyan-hi); border-color: var(--cyan-dim); position: relative;
         background: linear-gradient(#123742, #0b2028); box-shadow: inset 0 0 8px rgba(70,214,236,.25); }
 .mtabs .tabhint { margin-left: auto; }
+/* Clear (Esc): wipe the caption box and every screen now, at the right end of the tab row */
+.clearbtn { margin-left: 12px; display: inline-flex; align-items: center; gap: 6px; font: 600 11px var(--font);
+            letter-spacing: .12em; text-transform: uppercase; color: var(--cyan-hi); cursor: pointer;
+            background: linear-gradient(#1a2024, #101417); border: 1px solid var(--cyan-dim); border-radius: 3px;
+            padding: 4px 8px 4px 12px; min-height: 32px; }
+.clearbtn kbd { font-size: 10px; padding: 1px 5px; letter-spacing: 0; }
+.clearbtn:focus-visible { outline: 2px solid var(--cyan-hi); outline-offset: 2px; }
 .views { display: grid; gap: 14px; }
 .views[data-view="both"] { grid-template-columns: 1fr 1fr; }
 .view { display: none; min-width: 0; }
@@ -332,11 +340,16 @@ kbd { font: 600 12px var(--num); color: var(--cyan-hi); background: #050b0e; bor
 .remote main:has(> .unit) { padding: 0; max-width: none; margin: 0; }
 .remote .unit { width: 990px; max-width: none; margin: 0; border: 0; box-shadow: none; }
 .remote .tbar { display: none; }
+/* ... without the Live Voice knob (Live Remote may not change that setting; its place stays, so
+   nothing moves) and without banner/strip buttons that open another screen (live.js hides them) */
+.remote [data-k-voice] { visibility: hidden; }
+.bbtn[hidden], .ppstrip button[hidden] { display: none; }
 
 @media (max-width: 560px) { .hgrid { grid-template-columns: 1fr; } }
 @media (max-width: 560px) {
   main:has(> .unit) { padding: 0; }
   .tb.wide, .mtabs .tabhint { display: none; }
+  .clearbtn { margin-left: auto; }
   .tbar { justify-content: flex-end; flex-wrap: wrap; } .tlogo { margin-right: auto; }
   .views[data-view="both"] { grid-template-columns: 1fr; }
   .views[data-view="both"] .v-screen { border-left: 0; padding-left: 0; border-top: 1px solid #0f2a33; padding-top: 8px; }
