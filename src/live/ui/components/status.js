@@ -72,13 +72,13 @@ export function voicePill(s) {
   return ["", v.state === "speaking" ? S.pills.voice.speaking(n) : S.pills.voice.ready(n)];
 }
 
-// The engine that is translating now. Amber when AI is chosen but the local models are answering.
+// The engine that is translating now. Amber when AI (or AI Catchup) is chosen but the local models are answering.
 export function enginePill(s) {
   const a = s.ai;
   if (!a) return null;
   if (a.state === "fallback") return ["warn", a.down_s != null ? S.pills.engine.fallbackFor(a.down_s) : S.pills.engine.fallback];
   if (a.state === "no_key") return ["warn", S.pills.engine.no_key];
-  return ["", a.state === "ai" ? S.pills.engine.ai : S.pills.engine.local];
+  return ["", a.state === "ai" ? S.pills.engine.ai : a.state === "catchup" ? S.pills.engine.catchup : S.pills.engine.local];
 }
 
 // -> null or {code, severity, msg, action:{id,label}}
@@ -105,9 +105,10 @@ export function ppStrip(s) {
   return key ? { code: key, ...S.ppStrip[key] } : null;
 }
 
-// Heard: last 4 source phrases (failed ones too: dst null) and the words still coming in
+// Heard: last 4 source phrases (failed ones too: dst null) and the words still coming in.
+// With whole sentences (live.translate_sentences) `heard` holds each piece as it is heard.
 export function heardLines(s, n = 4) {
-  const src = (s.lines || []).map(l => l.src).filter(Boolean);
+  const src = (s.heard && s.heard.length ? s.heard : s.lines || []).map(l => l.src).filter(Boolean);
   const out = src.slice(-n);
   if (s.partial) out.push(s.partial);
   return out.slice(-n);

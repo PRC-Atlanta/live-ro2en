@@ -37,8 +37,9 @@ export function callFor(intent, s, extra = {}) {
     case "mode_en": return ["mode", { mode: "en-ro" }];
     case "quality": return ["profile", { profile: profiles[(profiles.indexOf(s.profile) + 1) % profiles.length] }];
     case "quickest": return ["profile", { profile: "fast" }];
-    case "engine": return ["engine", { engine: s.ai?.selected === "ai" ? "local" : "ai" }];
+    case "engine": return ["engine", { engine: { local: "catchup", catchup: "ai", ai: "local" }[s.ai?.selected || "local"] }];
     case "engine_ai": return ["engine", { engine: "ai" }];
+    case "engine_catchup": return ["engine", { engine: "catchup" }];
     case "engine_local": return ["engine", { engine: "local" }];
     case "retract": return ["retract", {}];
     case "correct": return ["correct", { text: extra.text ?? "" }];

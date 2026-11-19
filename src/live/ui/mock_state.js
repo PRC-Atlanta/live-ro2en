@@ -19,7 +19,7 @@ const PROBLEMS = {
 export function baseState() {
   return {
     running: false, status: "idle", mode: "auto", profile: "fast", profiles: ["fast", "quality"],
-    lang: "ro", partial: "", latency_last: null, latency_median: null, lag_s: null, lines: [], screen: "", last_seq: null,
+    lang: "ro", partial: "", latency_last: null, latency_median: null, lag_s: null, heard: [], lines: [], screen: "", last_seq: null,
     pp_error: null, warnings: [], counts: {}, alerts: [],
     translator: "nllb:nllb-200-distilled-1.3B", stt: "jackrabbit-ctc-lm-b8",
     phase: "ready", progress: null,
@@ -117,6 +117,7 @@ const MOCK_FIELDS = {
   "propresenter.stage_message": { group: "propresenter", type: "bool", apply: "now" },
   "propresenter.health_every_s": { group: "propresenter", type: "int", min: 0, max: 60, apply: "launch" },
   "ai.enabled": { group: "basic", type: "bool", apply: "now", default: false },
+  "ai.catchup": { group: "basic", type: "bool", apply: "now", default: false },
   "ai.timeout_s": { group: "advanced", type: "num", min: 1.0, max: 6.0, apply: "now", default: 2.5 },
   "voice.enabled": { group: "voice", type: "bool", apply: "now", default: false },
   "voice.en.enabled": { group: "voice", type: "bool", apply: "now", default: true },
@@ -141,6 +142,9 @@ const MOCK_FIELDS = {
   "live.caption_read_wps": { group: "advanced", type: "num", min: 0, max: 8, apply: "now" },
   "live.caption_min_read_s": { group: "advanced", type: "num", min: 0, max: 5, apply: "now" },
   "live.caption_max_lag_s": { group: "advanced", type: "num", min: 0, max: 60, apply: "now" },
+  "live.caption_pages": { group: "advanced", type: "bool", apply: "now", default: true },
+  "live.caption_flow": { group: "advanced", type: "bool", apply: "now", default: true },
+  "live.caption_flow_max_chars": { group: "advanced", type: "int", min: 30, max: 80, apply: "now", default: 50 },
   "live.partial_every_s": { group: "advanced", type: "num", min: 0, max: 5, apply: "start" },
   "live.lag_warn_s": { group: "advanced", type: "num", min: 2, max: 30, apply: "now" },
   "live.gate_min_real": { group: "advanced", type: "num", min: 0, max: 0.9, apply: "now" },
@@ -158,11 +162,11 @@ const MOCK_DEFAULTS = {
   "propresenter.host": "127.0.0.1", "propresenter.port": 50001, "propresenter.message_id": "Live Translation",
   "propresenter.token_name": "Text", "propresenter.max_lines": 2, "propresenter.max_chars_per_line": 42,
   "propresenter.stage_message": false, "live.vad_threshold": 0.5,
-  "live.hold_min_words": 4, "live.hold_s": 1.2, "live.phrase_min_words": 6, "live.hold_dangling": true, "live.hold_slow_s": 6.5, "live.overlap_trim": true, "live.song_detect": false, "live.song_symbol": "♪", "live.sentence_pause_s": 1.0, "live.translate_sentences": true, "live.caption_min_line_s": 2.5, "live.caption_reveal": true, "live.caption_reveal_wps": 1.5, "live.caption_read_wps": 2.7, "live.caption_min_read_s": 1.2, "live.caption_max_lag_s": 20, "live.partial_every_s": 0, "live.lag_warn_s": 6.0, "live.gate_min_real": 0.6,
+  "live.hold_min_words": 4, "live.hold_s": 1.2, "live.phrase_min_words": 6, "live.hold_dangling": true, "live.hold_slow_s": 6.5, "live.overlap_trim": true, "live.song_detect": false, "live.song_symbol": "♪", "live.sentence_pause_s": 1.0, "live.translate_sentences": true, "live.caption_min_line_s": 2.5, "live.caption_reveal": true, "live.caption_reveal_wps": 1.5, "live.caption_read_wps": 2.7, "live.caption_min_read_s": 1.2, "live.caption_max_lag_s": 20, "live.caption_pages": true, "live.caption_flow": true, "live.caption_flow_max_chars": 50, "live.partial_every_s": 0, "live.lag_warn_s": 6.0, "live.gate_min_real": 0.6,
   "propresenter.health_every_s": 5, "live.keep_both_translators": "auto", "live.engine_restarts": 2,
   "propresenter.enabled": true, "display.size": "large", "display.lines": 2, "display.colors": "white_on_black",
   "display.network": false, "display.show_hidden": false, "display.remote": false,
-  "ai.enabled": false, "ai.timeout_s": 2.5,
+  "ai.enabled": false, "ai.catchup": false, "ai.timeout_s": 2.5,
   "voice.enabled": false, "voice.en.enabled": true, "voice.speed": 1.25, "voice.speed_max": 1.5, "voice.port": 8767,
 };
 // model_lock.py items: each profile includes the ones before it
@@ -502,9 +506,9 @@ export async function mockApi(method, path, body = {}) {
     case "POST blank": case "POST clear": case "POST reconnect": case "POST layout": return live();
     case "POST remote/pin": return live({ remote: B.remote(true) });
     case "POST engine": {
-      if (body.engine !== "ai" && body.engine !== "local") return status(400, { error: "bad_request", detail: "engine must be ai or local" });
+      if (!["ai", "catchup", "local"].includes(body.engine)) return status(400, { error: "bad_request", detail: "engine must be ai, catchup or local" });
       const cur = stateNow().ai;
-      if (body.engine === "ai" && !cur.available) return status(409, { error: "no_key", detail: "Add an Anthropic API key in Settings first." });
+      if (body.engine !== "local" && !cur.available) return status(409, { error: "no_key", detail: "Add an Anthropic API key in Settings first." });
       return live({ ai: { ...cur, selected: body.engine, state: body.engine } });
     }
     case "POST ai/key":

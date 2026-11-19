@@ -3,7 +3,7 @@
   "about": "Contract between the orchestrator (src/live/app.py), the UI (src/live/ui/) and the Mac shell. Types: bool, str, num, int, null, unions 'a|b', {enum:[...]}, {list:T}, {map:T}, {object:{field:T}}; '@name' = types.name. An endpoint's 'errors' maps a refusal's HTTP status to the types its body can have. 'built' false = planned; the owner session adds it. Read docs/app_contract.md first.",
 
   "types": {
-    "ai": {"object": {"selected": {"enum": ["ai", "local"]}, "state": {"enum": ["local", "ai", "fallback", "no_key"]},
+    "ai": {"object": {"selected": {"enum": ["ai", "catchup", "local"]}, "state": {"enum": ["local", "ai", "catchup", "fallback", "no_key"]},
                       "available": "bool", "key_source": {"enum": ["env", "keychain", "dotenv", "test", null]},
                       "model": "str", "reason": "str|null", "down_s": "num|null", "latency_median_s": "num|null",
                       "used": {"object": {"ai": "@engine_use", "local": "@engine_use", "local_fallback": "@engine_use"}}}},
@@ -92,6 +92,7 @@
     "lag_s":          {"type": "num|null", "built": true},
     "latency_median": {"type": "num|null", "built": true},
     "lines":          {"type": {"list": "@line"}, "built": true},
+    "heard":          {"type": {"list": {"object": {"src": "str", "lang": "str"}}}, "built": true},
     "screen":         {"type": "str", "built": true},
     "last_seq":       {"type": "int|null", "built": true},
     "pp_error":       {"type": "str|null", "built": true},
@@ -178,9 +179,9 @@
     {"method": "POST", "path": "/api/pp/test_caption", "owner": "S2", "built": true, "response": "@pp_test_caption"},
     {"method": "POST", "path": "/api/remote/pin",   "owner": "S11", "built": true, "response": "@state"},
     {"method": "POST", "path": "/api/reconnect",    "owner": "S2", "built": true, "response": "@state"},
-    {"method": "POST", "path": "/api/engine",       "owner": "LV", "built": true, "request": {"engine": {"enum": ["ai", "local"]}},
+    {"method": "POST", "path": "/api/engine",       "owner": "LV", "built": true, "request": {"engine": {"enum": ["ai", "catchup", "local"]}},
      "response": "@state", "errors": {"400": ["@bad_request"], "409": ["@no_key"]},
-     "about": "the AI / Local knob, live (no restart); saved as ai.enabled. ai without a key: 409"},
+     "about": "the AI / Local knob, live (no restart); saved as ai.enabled (ai) and ai.catchup (catchup: local captions, Live Voice's summaries by AI). ai or catchup without a key: 409"},
     {"method": "POST", "path": "/api/ai/key",       "owner": "LV", "built": true, "request": {"key": "str|null"},
      "response": "@state", "errors": {"400": ["@bad_request"], "507": ["@write_failed"]},
      "about": "store the Anthropic API key in the macOS Keychain (null removes it and the knob goes back to Local); never echoed, never in state; this Mac only (not Live Remote)"},

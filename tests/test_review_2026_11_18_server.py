@@ -52,6 +52,7 @@ def _live(tmp_path, monkeypatch, file=None):
     monkeypatch.setenv("LIVE_LOG_DIR", str(tmp_path / "logs"))
     cfg = yaml.safe_load(open(ROOT / "config.yaml"))
     cfg["propresenter"]["health_every_s"] = 0
+    cfg["live"].update(caption_pages=False, caption_flow=False)  # rolling lines: a caption is on screen at once (pages: test_caption_flow.py)
     for prof in cfg["profiles"].values():
         prof.pop("translator_en_ro", None)
     live = Live(cfg, types.SimpleNamespace(file=file, settings=str(tmp_path / "settings.yaml")))

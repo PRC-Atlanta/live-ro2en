@@ -506,6 +506,109 @@ def test_summaries_fall_back_to_the_local_model_when_the_api_fails(tmp_path):
     live._ai_engine.close()
 
 
+def test_the_length_asked_for_can_always_pass_the_check():
+    """A summary of exactly the length asked for is never refused as not shorter (an input under 17
+    words was asked for 10 words where the check took 60%: 2026-11-18)."""
+    import summarize
+    for n in range(summarize.MIN_IN_WORDS, 300):
+        t = summarize.target_words(n)
+        assert 1 <= t <= summarize.MAX_RATIO * n
+    src = ["Isus Hristos este pacea noastră și El ne ține în mijlocul furtunii în fiecare zi."]
+    assert len(src[0].split()) == 15 and summarize.target_words(15) == 9
+    assert summarize.check(src, "Isus Hristos este pacea noastră în orice furtună.", "ro") is None
+
+
+def test_a_too_long_ai_summary_is_asked_for_once_more_shorter(tmp_path):
+    def reply(kw):                                                  # too long, until told how long it was
+        last = kw["messages"][-1]["content"]
+        return "Christ brings peace in storms." if last.startswith("That has") else \
+            "Christ brings peace even in the middle of the storm."
+    live = live_with(tmp_path, reply, selected=False)
+    live.set_engine("catchup")
+    text = ["If you have Christ, you have peace even in the middle of the storm, dear friends."]
+    res = live._voice_summary(text, "en", time.time() + 4)
+    assert res["ok"] and res["text"] == "Christ brings peace in storms." and res["engine"] == "ai"
+    assert res["retried"]["first_reason"].startswith("not_shorter")
+    *firsts, again = live.client.calls                               # two lengths at once, then the second try
+    assert len(firsts) == 2
+    assert again["messages"][1] == {"role": "assistant", "content": "Christ brings peace even in the middle of the storm."}
+    assert "That has 10 words" in again["messages"][2]["content"] and "at most 9 words" in again["messages"][2]["content"]
+    live._ai_engine.close()
+
+
+def test_two_lengths_are_asked_at_once_and_the_longest_that_passes_is_kept(tmp_path):
+    """AI summaries: one call asks for about 40%, one for 55% (under the 60% limit), in parallel; the longest
+    answer that passes every guard is used, so less meaning is cut."""
+    text = ["Parents, on this side, we see the children very far from God and we see ourselves very close "
+            "to God, somewhere the truth is in the middle, neither they nor we are very close."]   # 34 words
+    short = "We see children far from God and ourselves close, but neither is close."                # 13
+    full = ("Parents, we see children far from God and ourselves close to God, but the truth lies "
+            "in the middle.")                                                                    # 19
+    too_long = " ".join(["word"] * 25)
+
+    def reply(kw):
+        ask = kw["messages"][0]["content"]
+        return short if "at most 14 words" in ask else full
+    live = live_with(tmp_path, reply, selected=False)
+    live.set_engine("catchup")
+    res = live._voice_summary(text, "en", time.time() + 4)
+    assert res["ok"] and res["text"] == full and res["engine"] == "ai"
+    asks = sorted(c["messages"][0]["content"].split(":")[0] for c in live.client.calls)
+    assert asks == ["Sentences (34 words; answer in at most 14 words)", "Sentences (34 words; answer in at most 18 words)"]
+    assert [c["text"] for c in res["candidates"]] and all(c["reason"] is None for c in res["candidates"])
+    live.client.reply = lambda kw: short if "at most 14 words" in kw["messages"][0]["content"] else too_long
+    res = live._voice_summary(text, "en", time.time() + 4)
+    assert res["ok"] and res["text"] == short                         # the longer one did not fit
+    live._ai_engine.close()
+
+
+def test_no_second_try_without_the_time_for_it(tmp_path):
+    live = live_with(tmp_path, lambda kw: "Christ brings peace even in the middle of the storm.", selected=False)
+    live.set_engine("catchup")
+    text = ["If you have Christ, you have peace even in the middle of the storm, dear friends."]
+    res = live._voice_summary(text, "en", time.time() + 0.9)     # leaves under RETRY_MIN_S for a second call
+    assert not res["ok"] and res["reason"].startswith("not_shorter") and len(live.client.calls) == 2   # no third
+    assert "retried" not in res
+    live._ai_engine.close()
+
+
+def test_ai_catchup_translates_locally_and_sends_only_the_summaries(tmp_path):
+    """AI Catchup (the knob's middle position, ai.catchup): the captions come from the local models and
+    nothing about them goes to the API; Live Voice's catch-up summaries are written by the AI."""
+    live = live_with(tmp_path, lambda kw: "Tatăl meu m-a învățat să citesc Biblia în fiecare seară.", selected=False)
+    live.lang.set_mode("ro-en")
+    live.running = True
+    code, st = live.set_engine("catchup")
+    check_state(st)
+    assert code == 200 and st["ai"]["selected"] == "catchup" and st["ai"]["state"] == "catchup"
+    assert live.cfg["ai"]["enabled"] is False and live.cfg["ai"]["catchup"] is True
+    live._handle(clause(1, time.time() - 20, ro="Bună dimineața tuturor fraților și surorilor."))
+    assert recs(live)[-1]["engine"] == "local" and recs(live)[-1]["translation"].startswith("Local:")
+    assert live.client.calls == []                                   # the caption never reached the API
+    res = live._voice_summary(TEXT, "ro", time.time() + 4)
+    assert res["ok"] and res["engine"] == "ai" and len(live.client.calls) == 2    # two lengths at once
+    assert live._voice_full_state()["summarizer"] is True
+    assert [x["selected"] for x in recs(live) if x.get("event") == "engine"] == ["catchup"]
+    code, st = live.set_engine("ai")                                 # AI clears Catchup, and back
+    assert st["ai"]["selected"] == "ai" and live.cfg["ai"]["catchup"] is False
+    code, st = live.set_engine("local")
+    assert st["ai"]["selected"] == "local" and live.cfg["ai"]["enabled"] is False and live.cfg["ai"]["catchup"] is False
+
+    class Gen:
+        name, tr = "local", object()
+
+        def generate(self, texts, lang):
+            return "Tatăl meu m-a învățat să citesc Biblia."
+    live._voice_summarizer = lambda: Gen()
+    n = len(live.client.calls)
+    assert live._voice_summary(TEXT, "ro", time.time() + 4)["engine"] == "local"   # Local: summaries stay here
+    assert len(live.client.calls) == n
+    nokey = live_with(tmp_path / "k" if (tmp_path / "k").mkdir() is None else tmp_path, selected=False, key=False)
+    code, body = nokey.set_engine("catchup")
+    assert code == 409 and body["error"] == "no_key"
+    live._ai_engine.close()
+
+
 # --- the offline rule: Local reaches nothing; AI reaches api.anthropic.com and nothing else ------------------------
 def test_the_audit_lets_only_the_named_host_through(tmp_path):
     log = tmp_path / "net.log"

@@ -64,6 +64,7 @@ FIELDS: dict[str, dict] = {
     "display.remote":          {"group": "propresenter", "type": "bool", "apply": "now"},
     # the AI / Local knob (aimode.py): Claude Haiku 5.5 with the local models as a hot spare
     "ai.enabled":              {"group": "basic", "type": "bool", "apply": "now", "default": False},
+    "ai.catchup":              {"group": "basic", "type": "bool", "apply": "now", "default": False},
     "ai.timeout_s":            {"group": "advanced", "type": "num", "min": 1.0, "max": 6.0, "apply": "now", "default": 2.5},
     # Live Voice (docs/live_voice_plan.md §5, §8)
     "voice.enabled":           {"group": "voice", "type": "bool", "apply": "now", "default": False},
@@ -90,6 +91,9 @@ FIELDS: dict[str, dict] = {
     "live.caption_read_wps":   {"group": "advanced", "type": "num", "min": 0, "max": 8, "apply": "now"},
     "live.caption_min_read_s": {"group": "advanced", "type": "num", "min": 0, "max": 5, "apply": "now"},
     "live.caption_max_lag_s":  {"group": "advanced", "type": "num", "min": 0, "max": 60, "apply": "now"},
+    "live.caption_pages":      {"group": "advanced", "type": "bool", "apply": "now", "default": True},
+    "live.caption_flow":       {"group": "advanced", "type": "bool", "apply": "now", "default": True},
+    "live.caption_flow_max_chars": {"group": "advanced", "type": "int", "min": 30, "max": 80, "apply": "now", "default": 50},
     "live.partial_every_s":    {"group": "advanced", "type": "num", "min": 0, "max": 5, "apply": "start"},
     "live.lag_warn_s":         {"group": "advanced", "type": "num", "min": 2, "max": 30, "apply": "now"},
     "live.gate_min_real":      {"group": "advanced", "type": "num", "min": 0, "max": 0.9, "apply": "now"},
@@ -446,6 +450,12 @@ class SettingsMixin:
             self.caps.reveal = bool(get(self.cfg, "live.caption_reveal"))   # from the next phrase
         if "live.caption_reveal_wps" in changed and hasattr(self.caps, "reveal_wps"):
             self.caps.reveal_wps = float(get(self.cfg, "live.caption_reveal_wps") or 1.5)
+        if "live.caption_pages" in changed and hasattr(self.caps, "pages"):
+            self.caps.pages = bool(get(self.cfg, "live.caption_pages"))   # from the next line that comes up
+        if "live.caption_flow" in changed and hasattr(self.caps, "flow"):
+            self.caps.flow = bool(get(self.cfg, "live.caption_flow"))     # from the next caption
+        if "live.caption_flow_max_chars" in changed and hasattr(self.caps, "flow_max_chars"):
+            self.caps.flow_max_chars = int(get(self.cfg, "live.caption_flow_max_chars") or 50)
         for key, attr in (("caption_read_wps", "read_wps"), ("caption_min_read_s", "min_read_s"),
                           ("caption_max_lag_s", "max_lag_s")):
             if f"live.{key}" in changed and hasattr(self.caps, attr):

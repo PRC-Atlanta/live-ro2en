@@ -1,7 +1,9 @@
 """The AI / Local knob (docs/live_voice_plan.md "AI translation"): which engine translates the captions
 and writes the voice's summaries. Local = the profile's own models (NLLB, Gemma), nothing leaves the
 Mac. AI = Claude Haiku 5.5 through ai.Engine, with the local models as a hot spare (translate.
-HybridTranslator falls back per phrase). Changed live, no restart. Mixed into live.app.Live."""
+HybridTranslator falls back per phrase). AI Catchup (`ai.catchup`) = the local models translate and
+only Live Voice's catch-up summaries go to the AI (local when it does not answer), so the local
+translator is never held up by a summary. Changed live, no restart. Mixed into live.app.Live."""
 from __future__ import annotations
 
 import threading
@@ -27,7 +29,18 @@ class AIMixin:
         return self.cfg.get("ai") or {}
 
     def ai_selected(self) -> bool:
+        """AI translates the captions (the knob on AI)."""
         return bool(self.ai_cfg().get("enabled", False))
+
+    def ai_mode(self) -> str:
+        """The knob: "ai", "catchup" (AI Catchup: local captions, AI summaries) or "local"."""
+        if self.ai_selected():
+            return "ai"
+        return "catchup" if self.ai_cfg().get("catchup", False) else "local"
+
+    def ai_summaries(self) -> bool:
+        """Live Voice's summaries go to the AI (AI or AI Catchup)."""
+        return self.ai_mode() != "local"
 
     def ai(self) -> ai.Engine:
         with self._ai_lock:
@@ -39,7 +52,8 @@ class AIMixin:
         """engine_down / engine_up / engine into the service log while a service runs, and the
         operator's list of what the app did by itself."""
         if rec.get("event") == "engine_down":
-            self._auto("AI is not answering: translating with the local models")
+            self._auto("AI is not answering: summaries by the local models" if self.ai_mode() == "catchup"
+                       else "AI is not answering: translating with the local models")
         elif rec.get("event") == "engine_up":
             self._auto("AI is answering again")
         if getattr(self, "running", False) and getattr(self, "log_path", None):
@@ -80,12 +94,14 @@ class AIMixin:
 
     # --- the knob --------------------------------------------------------------------------------
     def set_engine(self, name: str) -> tuple[int, dict]:
-        """"ai" or "local", now. AI needs a key: without one the knob stays on Local and says why."""
-        if name not in ("ai", "local"):
-            return 400, {"error": "bad_request", "detail": "engine must be ai or local"}
-        if name == "ai" and not self.ai().key_present():
+        """"ai", "catchup" or "local", now. AI and AI Catchup need a key: without one the knob stays on
+        Local and says why."""
+        if name not in ("ai", "catchup", "local"):
+            return 400, {"error": "bad_request", "detail": "engine must be ai, catchup or local"}
+        if name != "local" and not self.ai().key_present():
             return 409, {"error": "no_key", "detail": "Add an Anthropic API key in Settings first."}
-        code, body = self.put_settings({"values": {"ai.enabled": name == "ai"}}, by_hand=False)
+        code, body = self.put_settings({"values": {"ai.enabled": name == "ai", "ai.catchup": name == "catchup"}},
+                                       by_hand=False)
         if code != 200:
             return code, body
         return 200, self.state()
@@ -97,8 +113,8 @@ class AIMixin:
             self._ai_engine.configure(self.ai_cfg())
         if "ai.enabled" in changed:
             self._ai_reset = True                       # a change of engine starts clean, like a profile switch
-            if getattr(self, "running", False):
-                self._log_event({"event": "engine", "selected": "ai" if self.ai_selected() else "local"})
+        if ("ai.enabled" in changed or "ai.catchup" in changed) and getattr(self, "running", False):
+            self._log_event({"event": "engine", "selected": self.ai_mode()})
 
     def set_ai_key(self, key: str | None) -> tuple[int, dict]:
         """Store (or with None remove) the API key in the macOS Keychain. The key is never echoed."""
@@ -111,13 +127,14 @@ class AIMixin:
             if not ai.keychain_set(key):
                 return 507, {"error": "write_failed", "detail": "The key could not be saved in the Keychain."}
         self.ai().reload_key()
-        if not self.ai().key_present() and self.ai_selected():
-            self.put_settings({"values": {"ai.enabled": False}}, by_hand=False)
+        if not self.ai().key_present() and self.ai_summaries():
+            self.put_settings({"values": {"ai.enabled": False, "ai.catchup": False}}, by_hand=False)
         return 200, self.state()
 
     # --- what the operator sees ---------------------------------------------------------------------
     def _ai_state(self) -> dict:
-        sel = self.ai_selected()
+        mode = self.ai_mode()
+        sel = mode != "local"
         eng = self.ai()
         has = eng.key_present(wait=False)               # only whether a key exists: no client, no host allowed,
                                                         # and never waiting for the Keychain in the state feed
@@ -128,8 +145,8 @@ class AIMixin:
         elif not has:
             state = "no_key"
         else:
-            state = "ai" if eng.up else "fallback"
-        return {"ai": {"selected": "ai" if sel else "local", "state": state, "available": has,
+            state = ("ai" if mode == "ai" else "catchup") if eng.up else "fallback"
+        return {"ai": {"selected": mode, "state": state, "available": has,
                        "key_source": eng.key_source(), "model": eng.model,
                        "reason": eng.down_reason if state == "fallback" else None,
                        "down_s": round(time.time() - eng.down_since, 1) if state == "fallback" and eng.down_since else None,
@@ -158,13 +175,14 @@ class AIMixin:
 
     # --- the voice's summaries follow the same rule (voicelink.py) ---------------------------------------
     def _voice_summary(self, texts: list[str], lang: str, deadline: float) -> dict:
-        if self.ai_selected() and self.ai().usable():
+        if self.ai_summaries() and self.ai().usable():
             why = summarize.refuse(texts, False)
             if why:
                 return {"ok": False, "reason": why, "text": "", "gemma_s": 0.0, "engine": None}
             left = deadline - time.time() - 0.2
             if left > 0.5:
-                gen = ai.ClaudeSummarizer(self.ai(), timeout=min(left, float(self.ai_cfg().get("summary_timeout_s", 3.0))))
+                gen = ai.ClaudeSummarizer(self.ai(), timeout=min(left, float(self.ai_cfg().get("summary_timeout_s", 3.0))),
+                                          deadline=deadline - 0.2)
                 # (a summary that times out says nothing about captions: ClaudeSummarizer calls with soft=True)
                 res = summarize.summarize(gen, texts, lang)
                 if not str(res.get("reason") or "").startswith("error"):
@@ -172,6 +190,6 @@ class AIMixin:
         return self._voice_summary_local(texts, lang, deadline)
 
     def _voice_can_summarize(self) -> bool:
-        if self.ai_selected() and self._ai_engine is not None and self._ai_engine.usable():
+        if self.ai_summaries() and self._ai_engine is not None and self._ai_engine.usable():
             return True
         return super()._voice_can_summarize()

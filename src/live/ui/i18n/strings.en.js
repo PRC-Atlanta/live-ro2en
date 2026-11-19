@@ -3,7 +3,8 @@
 // One message and one action for each contract.json problem_code (the test fails on a missing one).
 
 export const S = {
-  app: { mark: ["LIVE", "TRANSLATE"], brand: "RO ⇄ EN", offline: "Offline · on this Mac", online: "AI translation · online" },
+  app: { mark: ["LIVE", "TRANSLATE"], brand: "RO ⇄ EN", offline: "Offline · on this Mac", online: "AI translation · online",
+         onlineCatchup: "AI catch-up summaries · online" },
 
   toolbar: {
     rehearsal: "Rehearsal", rehearsalHint: "Run a rehearsal with a recorded sermon",
@@ -57,13 +58,14 @@ export const S = {
     long: { fast: "Quickest", quality: "Best quality" },
     label: "Quality", keys: "Q",
   },
-  // the AI / Local knob: which engine translates (and writes Live Voice's summaries)
+  // the AI / Local knob: which engine translates (and writes Live Voice's summaries); AI Catchup: the
+  // local models translate, only Live Voice's catch-up summaries go to the AI
   engine: {
-    knob: { local: "Local", ai: "AI" },
-    face: { local: "Local", ai: "AI" },
-    long: { local: "Local models", ai: "AI (Claude Haiku)" },
+    knob: { local: "Local", catchup: "AI Catchup", ai: "AI" },
+    face: { local: "Local", catchup: "Catchup", ai: "AI" },
+    long: { local: "Local models", catchup: "AI Catchup (local captions, AI summaries)", ai: "AI (Claude Haiku)" },
     label: "Translator", keys: "A",
-    title: "Local: this Mac's own models, nothing leaves it. AI: Claude Haiku over the internet; the local models take over by themselves when it does not answer.",
+    title: "Local: this Mac's own models, nothing leaves it. AI Catchup: local models translate; only Live Voice's catch-up summaries go to Claude Haiku. AI: Claude Haiku translates over the internet; the local models take over by themselves when it does not answer.",
     noKey: "AI needs an Anthropic API key. Add one in Settings → AI.",
   },
   // the Live Voice knob: the voice on phones, on or off (the same switch as Settings → Live Voice)
@@ -130,7 +132,7 @@ export const S = {
       listeners: (ro, en, both) => (both ? `${ro} RO · ${en} EN` : `${ro} listening`),
     },
     engine: {
-      local: "Local models", ai: "AI translating", fallback: "AI not answering: Local", no_key: "AI has no key: Local",
+      local: "Local models", ai: "AI translating", catchup: "Local · AI catch-up", fallback: "AI not answering: Local", no_key: "AI has no key: Local",
       fallbackFor: s => `AI not answering (${Math.round(s)} s): Local`,
     },
   },

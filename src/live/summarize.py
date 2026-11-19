@@ -17,6 +17,7 @@ MAX_RATIO = 0.6               # the summary has at most this share of the input'
 MIN_IN_WORDS = 12             # shorter inputs come back unchanged: not sent
 MIN_RO_SCORE = 0.15           # langid.score above this reads as Romanian
 MAX_TOKENS = 160
+PREFILL_STEP = 16              # prompt tokens per step while a deadline is set (a stalled read stops between steps)
 MIN_TIME_LEFT_S = 1.5         # a summary is not started with less than this left before the voice gives up
 SYSTEM = {
     "ro": ("You condense a live Romanian translation of a sermon for listeners whose audio fell behind. "
@@ -159,11 +160,43 @@ def refuse(texts: list[str], scripture: bool) -> str | None:
     return None
 
 
-def messages(texts: list[str], lang: str) -> list[dict]:
+RETRY_MIN_S = 0.8             # a too-long summary is asked for again only with this much time left
+
+
+def target_words(n: int) -> int:
+    """The length asked for: about 40% of the input, at least 10 words, and never more than the check
+    lets through (MAX_RATIO): a short input asked for 10 words could never pass (2026-11-18)."""
+    return max(1, min(max(10, round(n * 0.4)), int(n * MAX_RATIO)))
+
+
+def limit_words(n: int) -> int:
+    """The most words the check lets through (MAX_RATIO of the input)."""
+    return max(1, int(n * MAX_RATIO))
+
+
+LONG_RATIO = 0.55             # the second length asked for at once (AI): a little under the limit, as the
+                              # model tends to run over the length it is given (2026-11-18)
+
+
+def long_words(n: int) -> int:
+    """The longer of the two lengths asked for at once: LONG_RATIO of the input, within the limit."""
+    return max(1, min(int(n * LONG_RATIO), limit_words(n)))
+
+
+def messages(texts: list[str], lang: str, retry: str | None = None, target: int | None = None) -> list[dict]:
+    """The prompt, asking for at most `target` words (default target_words). `retry`: the model's answer
+    that came back too long; it is told how long it was and asked to tighten it to the limit, keeping
+    its meaning (AI summaries, which answer in under a second)."""
     n = sum(len(t.split()) for t in texts)
-    target = max(10, round(n * 0.4))
-    return [{"role": "system", "content": SYSTEM[lang] + DATA_RULE},
+    target = target or target_words(n)
+    msgs = [{"role": "system", "content": SYSTEM[lang] + DATA_RULE},
             {"role": "user", "content": f"Sentences ({n} words; answer in at most {target} words):\n" + "\n".join(texts)}]
+    if retry:
+        limit = limit_words(n)
+        msgs += [{"role": "assistant", "content": retry},
+                 {"role": "user", "content": f"That has {len(retry.split())} words. Tighten it to at most {limit} words, "
+                                             f"keeping its meaning."}]
+    return msgs
 
 
 def clean(out: str) -> str:
@@ -177,11 +210,15 @@ class GemmaSummarizer:
     full prompt again (§2.5)."""
     name = "local"
 
-    def __init__(self, tr):
+    def __init__(self, tr, deadline: float | None = None):
         self.tr = tr
+        self.deadline = deadline          # time.time() past which generation stops (the voice gave up)
+        self.stats: dict = {}             # the last run's speed: prompt and generated tokens, tokens/s
 
     def generate(self, texts: list[str], lang: str) -> str:
-        from mlx_lm import generate
+        """Token by token, stopping at `deadline`: past it the voice no longer waits, and the model
+        is the live translator's, so captions wait as long as it runs (TimeoutError)."""
+        from mlx_lm import stream_generate
         from mlx_lm.sample_utils import make_sampler
         tok, model = self.tr.tok, self.tr.model
         msgs = messages(texts, lang)
@@ -192,9 +229,28 @@ class GemmaSummarizer:
                                              add_generation_prompt=True, tokenize=False)
         kw = {"logits_processors": self.tr._suppress()} if hasattr(self.tr, "_suppress") else {}
         n = sum(len(t.split()) for t in texts)
-        budget = min(MAX_TOKENS, 40 + 4 * max(10, round(n * 0.4)))     # the answer is short: so is the time it may take
-        return generate(model, tok, prompt=prompt, max_tokens=budget, sampler=make_sampler(temp=0.0),
-                        verbose=False, **kw)
+        budget = min(MAX_TOKENS, 40 + 4 * target_words(n))     # the answer is short: so is the time it may take
+        out, r = [], None
+        if self.deadline is not None:
+            # Reading the prompt can stall too (2026-11-17: 5 tokens/s instead of 190, 40 s before the
+            # first word): read it in small steps and stop between two of them once past the deadline.
+            def progress(done, total, deadline=self.deadline):
+                if time.time() > deadline:
+                    self.stats = {"prompt_tokens": total, "prompt_read": done, "stalled": "prompt"}
+                    raise TimeoutError
+            kw.update(prefill_step_size=PREFILL_STEP, prompt_progress_callback=progress)
+        for r in stream_generate(model, tok, prompt=prompt, max_tokens=budget, sampler=make_sampler(temp=0.0), **kw):
+            out.append(r.text)
+            if self.deadline is not None and time.time() > self.deadline:
+                self._note(r)
+                raise TimeoutError
+        self._note(r)
+        return "".join(out)
+
+    def _note(self, r):
+        if r is not None:
+            self.stats = {"prompt_tokens": r.prompt_tokens, "prompt_tps": round(r.prompt_tps, 1),
+                          "gen_tokens": r.generation_tokens, "gen_tps": round(r.generation_tps, 1)}
 
 
 def summarize(gen, texts: list[str], lang: str, scripture: bool = False) -> dict:
@@ -206,12 +262,39 @@ def summarize(gen, texts: list[str], lang: str, scripture: bool = False) -> dict
     if gen is None:
         return {"ok": False, "reason": "no_summarizer", "text": "", "gemma_s": 0.0, "engine": None}
     t0 = time.perf_counter()
+    tried = None
     try:
         import translate
-        out = clean(translate.clean_output(gen.generate(texts, lang)))
+        if callable(getattr(gen, "candidates", None)):
+            # several answers at once (AI: two lengths asked in parallel): the longest that passes every
+            # guard keeps the most meaning; none passes: the shortest goes on, with its reason
+            outs = [clean(translate.clean_output(o)) for o in gen.candidates(texts, lang)]
+            tried = [{"text": o, "reason": check(texts, o, lang)} for o in outs]
+            good = [c for c in tried if c["reason"] is None]
+            pick = max(good, key=lambda c: len(c["text"].split())) if good else \
+                min(tried, key=lambda c: len(c["text"].split()))
+            out = pick["text"]
+        else:
+            out = clean(translate.clean_output(gen.generate(texts, lang)))
+    except TimeoutError:
+        return {"ok": False, "reason": "timeout", "text": "", "gemma_s": round(time.perf_counter() - t0, 3),
+                "engine": getattr(gen, "name", None), **(getattr(gen, "stats", None) or {})}
     except Exception as e:                                  # noqa: BLE001
         return {"ok": False, "reason": f"error ({type(e).__name__})", "text": "",
                 "gemma_s": round(time.perf_counter() - t0, 3), "engine": getattr(gen, "name", None)}
-    took = round(time.perf_counter() - t0, 3)
     why = check(texts, out, lang)
-    return {"ok": why is None, "reason": why, "text": out, "gemma_s": took, "engine": getattr(gen, "name", None)}
+    retried = None
+    if why and why.startswith("not_shorter") and callable(getattr(gen, "retry", None)):
+        # once more, told how long it was (a generator with `retry` does it only while time is left)
+        try:
+            again = gen.retry(texts, lang, out)
+        except Exception:                                   # noqa: BLE001  the first answer's reason stands
+            again = None
+        if again is not None:
+            again = clean(translate.clean_output(again))
+            retried = {"first": out, "first_reason": why}
+            out, why = again, check(texts, again, lang)
+    took = round(time.perf_counter() - t0, 3)
+    return {"ok": why is None, "reason": why, "text": out, "gemma_s": took, "engine": getattr(gen, "name", None),
+            **({"candidates": tried} if tried and len(tried) > 1 else {}),
+            **({"retried": retried} if retried else {}), **(getattr(gen, "stats", None) or {})}

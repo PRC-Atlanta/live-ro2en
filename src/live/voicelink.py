@@ -438,6 +438,8 @@ class VoiceMixin:
                         gen = self._voice_summarizer()
                         if gen is None:
                             return summarize.summarize(None, texts, lang)
+                        if hasattr(gen, "deadline"):    # stop at the voice's deadline: captions wait on this model
+                            gen.deadline = deadline
                         with self._spare_lock:          # the keep-warm ping must not run on this model now
                             self._tr_used[id(gen.tr)] = time.time()
                             res = summarize.summarize(gen, texts, lang)

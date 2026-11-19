@@ -327,7 +327,7 @@ export function render(el, store) {
       };
       const box = h("div");
       pickRow = row("Translate with", box, {
-        info: "Local: this Mac translates, and nothing leaves the building. AI: Claude Haiku translates over the internet and writes Live Voice's short summaries; this Mac takes over, phrase by phrase, whenever the AI does not answer in time. The same switch as the Translator knob on the Live screen (key A)." });
+        info: "Local: this Mac translates, and nothing leaves the building. AI Catchup: this Mac translates the captions and Claude Haiku writes only Live Voice's short catch-up summaries, so a summary never holds up the next caption. AI: Claude Haiku translates over the internet and writes Live Voice's short summaries; this Mac takes over, phrase by phrase, whenever the AI does not answer in time. The same switch as the Translator knob on the Live screen (key A)." });
       const translator = card("Translator", {}, pickRow);
 
       const input = h("input", { type: "password", placeholder: "sk-ant-…", autocomplete: "off", spellcheck: false,
@@ -353,6 +353,7 @@ export function render(el, store) {
 
       const SRC = { keychain: "Saved in the Keychain", env: "From this Mac's environment", dotenv: "From the developer's .env file", test: "Test key" };
       const STATE = { local: ["This Mac is translating", ""], ai: ["AI is translating", "good"],
+                      catchup: ["This Mac is translating; AI writes Live Voice's summaries", "good"],
                       no_key: ["No key: this Mac is translating", "warn"], fallback: ["AI is not answering: this Mac is translating", "warn"] };
       let lastSel = null;
       onState = s => {
@@ -361,8 +362,11 @@ export function render(el, store) {
         remove.hidden = a.key_source !== "keychain";
         if (a.selected !== lastSel || box.dataset.av !== String(!!a.available)) {
           lastSel = a.selected; box.dataset.av = String(!!a.available);
-          box.replaceChildren(seg("Translator", [["local", "Local", "Nothing leaves this Mac"], ["ai", "AI", "Claude Haiku, online"]],
-                                  a.selected || "local", pick, { disabled: a.available ? {} : { ai: "Add a key first" } }));
+          box.replaceChildren(seg("Translator", [["local", "Local", "Nothing leaves this Mac"],
+                                                 ["catchup", "AI Catchup", "Local captions, AI summaries for Live Voice"],
+                                                 ["ai", "AI", "Claude Haiku, online"]],
+                                  a.selected || "local", pick,
+                                  { disabled: a.available ? {} : { ai: "Add a key first", catchup: "Add a key first" } }));
         }
         const [word, tone] = STATE[a.state] || ["", ""];
         translator.status([word, a.state === "fallback" && a.down_s != null ? `(${Math.round(a.down_s)} s so far)` : "",

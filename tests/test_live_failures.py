@@ -21,7 +21,9 @@ CFG = pathlib.Path(__file__).resolve().parents[1] / "config.yaml"
 
 
 def _live(tmp_path, translate=lambda t, *a, **k: f"EN: {t}"):
-    live = Live(yaml.safe_load(open(CFG)), types.SimpleNamespace(file=None))
+    cfg = yaml.safe_load(open(CFG))
+    cfg["live"].update(caption_pages=False, caption_flow=False)  # rolling lines: these tests are about other controls, not the page layout
+    live = Live(cfg, types.SimpleNamespace(file=None))
     live.lc["translate_sentences"] = False      # these test the piece-by-piece holds (sentence mode: test_sentences.py)
     live.log_path = tmp_path / "log.jsonl"
     live.tr = types.SimpleNamespace(translate=translate)

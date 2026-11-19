@@ -194,7 +194,11 @@ def run(args) -> pathlib.Path:
         "display.network": False, "live.autostart": False, "live.preload": False,
         "live.lag_warn_s": 0, "live.catchup_max_words": 0,
         "live.input_gain_db": float(args.gain), "live.language_mode": args.mode,
-        "live.input_device": None, "live.translator_keepalive_s": 0,
+        "live.input_device": None,
+        # At x1 the keep-warm ping stays on, as in a service: without it an idle translator (Gemma when
+        # NLLB translates an English speaker, used only for Live Voice summaries) is paged out by macOS,
+        # and each summary pays ~35 s reloading it while captions wait (docs/bench.md, 2026-11-17).
+        "live.translator_keepalive_s": float(cfg["live"].get("translator_keepalive_s", 60)) if speed == 1 else 0,
     }
     voice_port = None
     if getattr(args, "voice", False):                    # Live Voice on (docs/live_voice_plan.md §9): its own port,

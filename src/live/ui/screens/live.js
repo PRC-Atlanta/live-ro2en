@@ -161,14 +161,15 @@ export function render(el, store) {
     ],
     onPick: p => { if (p !== s.profile) run("quality"); },
   });
-  // AI / Local: which engine translates. Without a key the knob stays on Local and says why.
+  // AI / AI Catchup / Local: which engine translates and summarizes. Without a key the knob stays on Local and says why.
   const setEngine = knob(q("[data-k-engine]"), {
     id: "engine", label: S.engine.label, keys: S.engine.keys, face: S.engine.face,
     positions: [
-      { value: "local", label: S.engine.knob.local, at: "left:-4px;top:66px", angle: 50 },
-      { value: "ai", label: S.engine.knob.ai, at: "right:-4px;top:66px", angle: -50 },
+      { value: "local", label: S.engine.knob.local, at: "left:-14px;top:66px", angle: 50 },
+      { value: "catchup", label: S.engine.knob.catchup, at: "left:50%;top:-12px;transform:translateX(-50%)", angle: 180 },
+      { value: "ai", label: S.engine.knob.ai, at: "right:-14px;top:66px", angle: -50 },
     ],
-    onPick: e => { if (e !== (s.ai?.selected || "local")) run(e === "ai" ? "engine_ai" : "engine_local"); },
+    onPick: e => { if (e !== (s.ai?.selected || "local")) run({ ai: "engine_ai", catchup: "engine_catchup", local: "engine_local" }[e]); },
   });
   // Live Voice on / off: the same setting as the switch in Settings → Live Voice
   const voiceOn = () => !!(s.voice && s.voice.enabled);
@@ -206,7 +207,8 @@ export function render(el, store) {
   }
   async function run(intent) {
     // no key on this Mac: the Translator knob is disabled, and says why (nothing is sent)
-    if ((intent === "engine_ai" || (intent === "engine" && s.ai?.selected !== "ai")) && s.ai && !s.ai.available) {
+    if ((intent === "engine_ai" || intent === "engine_catchup" || (intent === "engine" && (s.ai?.selected || "local") === "local"))
+        && s.ai && !s.ai.available) {
       toast(S.engine.noKey, "info", 4000); say(S.engine.noKey); return;
     }
     if (intent === "view") return setView(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]);
@@ -337,7 +339,7 @@ export function render(el, store) {
     ek.dataset.state = s.ai?.state || "local";           // fallback / no_key: amber ring
     ek.classList.toggle("nokey", !!s.ai && !s.ai.available);
     ek.title = s.ai && !s.ai.available ? S.engine.noKey : S.engine.title;
-    ek.setAttribute("aria-disabled", String(!!s.ai && !s.ai.available && s.ai.selected !== "ai"));
+    ek.setAttribute("aria-disabled", String(!!s.ai && !s.ai.available && (s.ai.selected || "local") === "local"));
     if (voiceWant !== null && voiceWant === voiceOn()) voiceWant = null;   // the setting has landed
     const vOn = voiceWant ?? voiceOn();
     setVoice(vOn ? "on" : "off");

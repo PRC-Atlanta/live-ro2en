@@ -25,6 +25,7 @@ def _live(tmp_path, monkeypatch, **disp):
     monkeypatch.setenv("LIVE_LOG_DIR", str(tmp_path / "logs"))
     monkeypatch.setenv("LIVE_USER_DIR", str(tmp_path / "user"))
     cfg = yaml.safe_load(open(ROOT / "config.yaml"))
+    cfg["live"].update(caption_pages=False, caption_flow=False)  # rolling lines: these tests are about other controls, not the page layout
     cfg["propresenter"].update(health_every_s=0)
     cfg.setdefault("display", {}).update(disp)
     live = Live(cfg, types.SimpleNamespace(file=None, settings=str(tmp_path / "settings.yaml")))

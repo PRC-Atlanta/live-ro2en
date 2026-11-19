@@ -328,6 +328,16 @@ def test_non_english_words_are_counted():
     assert non_english("Praise the Lord for this day, brother Dragoș.") == 0
 
 
+def test_a_long_english_sentence_is_not_dropped_for_a_word_said_twice():
+    from live.pipeline import en_foreign_max
+    s = ("And this morning we want to talk about the dangers of this issue, more specifically the hidden "
+         "dangers that a lot of times we don't notice and how they creep up.")
+    assert non_english("dangers and dangers") <= 1                  # a word said again counts once
+    assert en_foreign_max("Get one coborila up cu tre de woman.") == 2
+    assert en_foreign_max(s) == 4
+    assert non_english("Get one coborila up cu tre de woman.") >= en_foreign_max("Get one coborila up cu tre de woman.")
+
+
 @pytest.mark.parametrize("multi", ["She shall kut the children.", "Get one coborila up cu tre de woman."])
 def test_a_lone_english_piece_with_foreign_words_is_not_captioned_in_romanian(tmp_path, multi):
     live = _live(tmp_path)
