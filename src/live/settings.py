@@ -95,8 +95,6 @@ FIELDS: dict[str, dict] = {
     "live.gate_min_real":      {"group": "advanced", "type": "num", "min": 0, "max": 0.9, "apply": "now"},
     "live.keep_both_translators": {"group": "advanced", "type": "enum", "choices": ["auto", True, False], "apply": "now"},
     "live.engine_restarts":    {"group": "advanced", "type": "int", "min": 0, "max": 5, "apply": "now"},
-    "ui.show_latency":         {"group": "advanced", "type": "bool", "apply": "now", "default": False},
-    "ui.show_counts":          {"group": "advanced", "type": "bool", "apply": "now", "default": False},
 }
 MAX_ITEMS, MAX_LEN = 500, 120              # per list, per word / term
 MAX_GLOSSARY = 2000                         # the user's saved glossary rows
@@ -542,7 +540,7 @@ class SettingsMixin:
             return 400, {"error": "invalid", "detail": {"user": f"not a word or phrase (max {MAX_LEN} characters): {bad[:5]}"}}
         with self._settings_lock:
             write_lines(paths.user_keywords(self.root), list(dict.fromkeys(clean_word(w) for w in words)),
-                        "Names & words you added. Edited in Settings → Names & Spellings.")
+                        "Names & words you added. Edited in Settings → Names & words.")
             self._apply_lists()
         return 200, self.keywords_view()
 
@@ -559,7 +557,7 @@ class SettingsMixin:
             return 400, {"error": "invalid", "detail": {"user": f"not a word or phrase (max {MAX_LEN} characters): {bad[:5]}"}}
         with self._settings_lock:
             write_lines(paths.user_blocklist(self.root), list(dict.fromkeys(clean_word(w) for w in words)),
-                        "Words to hide that you added. Edited in Settings → Names & Spellings.")
+                        "Words to hide that you added. Edited in Settings → Names & words.")
         return 200, self.blocklist_view()
 
     def put_spellings(self, body: dict) -> tuple[int, dict]:
@@ -616,7 +614,7 @@ class SettingsMixin:
         new = {r["en"] for r in rows}
         words = [w for w in self.user_keywords() if w not in new] + [r["en"] for r in rows]
         write_lines(paths.user_keywords(self.root), list(dict.fromkeys(words))[-MAX_ITEMS:],
-                    "Names & words you added. Edited in Settings → Names & Spellings.")
+                    "Names & words you added. Edited in Settings → Names & words.")
         sp = term_spellings(rows)
         if sp:                                     # newest kept when a list is full (stays editable)
             user = copy.deepcopy(self._user)

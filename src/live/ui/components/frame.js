@@ -1,12 +1,11 @@
 // The plugin-style frame every screen shares (docs/ui_mockup/live.html, APP_PLAN §1.3: Setup,
-// Settings, After and Help use the same frame): a black toolbar strip of bevelled buttons, the
+// Settings and Help use the same frame): a black toolbar strip of bevelled buttons, the
 // teal panel with a glowing edge, and the LIVE|TRANSLATE footer. It is the app's only header and
 // navigation (index.html has none). The button for the screen on show has aria-current="page".
 // frame(el, {onRehearsal, onNames}) -> {panel, setSetupName(text), update(state)}.
 import { S } from "../i18n/strings.en.js";
 import { send, messageFor } from "./actions.js";
 import { toast } from "./toast.js";
-import { isLive } from "./keys.js";
 
 // Loads styles/live.css once; resolves when it has applied (so nothing flashes unstyled).
 let loaded = null;
@@ -20,10 +19,10 @@ export function ensureStyles() {
 }
 
 // toolbar button -> the screen it opens (the wide setup button opens Settings)
-const GOES = { live: "live", setup: "settings", names: "settings", monitor: "monitor", settings: "settings", after: "after", help: "help" };
+const GOES = { live: "live", setup: "settings/general", names: "settings/names", monitor: "monitor", settings: "settings", help: "help" };
 
 export function frame(el, opts = {}) {
-  const here = (location.hash.slice(1) || "live");
+  const here = (location.hash.slice(1).split("/")[0] || "live");
   el.innerHTML = `
     <div class="unit" style="visibility:hidden">
       <nav class="tbar" aria-label="${S.toolbar.navLabel}">
@@ -35,7 +34,6 @@ export function frame(el, opts = {}) {
         <button class="tb" data-tb="monitor" title="${S.toolbar.monitorHint}">${S.toolbar.monitor}</button>
         <button class="tb" data-tb="names">${S.toolbar.names}</button>
         <button class="tb" data-tb="settings">${S.toolbar.settings}</button>
-        <button class="tb" data-tb="after" title="${S.toolbar.afterHint}" hidden>${S.toolbar.after}</button>
         <button class="tb" data-tb="help" title="${S.toolbar.helpHint}" aria-label="${S.toolbar.helpHint}">${S.toolbar.help}</button>
       </nav>
       <div class="panel"><div class="panel-body"></div>
@@ -69,18 +67,16 @@ export function frame(el, opts = {}) {
   for (const [n, screen] of Object.entries(GOES)) if (!tb(n).onclick) tb(n).onclick = go(screen);
   if (opts.onNames) tb("names").onclick = opts.onNames;
   // only the Live button stands for Live; Settings and Help for themselves
-  for (const n of ["live", "monitor", "settings", "after", "help"]) if (here === n) tb(n).setAttribute("aria-current", "page");
+  for (const n of ["live", "monitor", "settings", "help"]) if (here === n) tb(n).setAttribute("aria-current", "page");
   const api = {
     panel: el.querySelector(".panel-body"),
     setSetupName(t) { if (tb("setup").textContent !== t) tb("setup").textContent = t; },
-    // the parts of the toolbar that follow the state: the setup name, and After once a service ran
+    // the part of the toolbar that follows the state: the setup name
     update(s) {
       s ||= {};
       if (rehearsing !== !!s.rehearsal) setRehearsing(s.rehearsal);
       api.setSetupName(S.toolbar.setupName(s.audio?.device,
         s.pp?.enabled === false ? "off" : !(s.pp ? !s.pp.connected : s.pp_error)));
-      const ran = s.elapsed_s != null || Object.keys(s.counts || {}).length > 0;
-      tb("after").hidden = !(here === "after" || (ran && !isLive(s)));
       // the footer says "offline" only while it is true: with AI chosen, speech goes to the API as text
       const where = el.querySelector("[data-where]");
       const text = s.ai?.selected === "ai" ? S.app.online : S.app.offline;

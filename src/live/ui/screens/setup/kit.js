@@ -1,4 +1,4 @@
-// Shared pieces for the Setup, Settings and After screens (S5b): backend calls that never
+// Shared pieces for the Setup and Settings screens (S5b): backend calls that never
 // throw, a tiny element builder, and the plugin-look form controls. No top-level DOM access,
 // so the logic can be imported by the node tests.
 
@@ -132,3 +132,89 @@ export const MODES = [
   ["en-ro", "English speaker", "Romanian captions"],
 ];
 export const PROFILES = [["fast", "Quickest", "Shortest delay"], ["quality", "Best quality", "Smoother sentences"]];
+
+// ---- rows and cards (Settings, Setup): one row per setting, label left, control right ----
+
+// A card: a header with a title, an optional status word and one control (a switch or a button),
+// then rows. el.status(text, tone) sets the coloured word; el.body holds the rows.
+export function card(title, { control = null, cls = "" } = {}, ...kids) {
+  const st = h("span.sx-st", { "aria-live": "polite", hidden: true });
+  const body = h("div.sx-body", ...kids);
+  const el = h(`section.sx-card${cls}`, h("div.sx-head", h("h3.sx-title", title), st, h("span.sx-sp"), control), body);
+  el.status = (text, tone = "") => { st.textContent = text || ""; st.dataset.tone = tone; st.hidden = !text; };
+  el.body = body;
+  return el;
+}
+
+// A setting row. hint: one short line under the label, always shown. info: the longer "why",
+// behind a small "i" button. el.say(text, tone) shows a message under the label (a refusal, or
+// "applies next time you press Start"); el.tick() flashes "Saved".
+export function row(label, control, { hint = "", info = "", cls = "" } = {}) {
+  const hintEl = h("small.sx-hint", hint);
+  hintEl.hidden = !hint;
+  const infoEl = h("small.sx-info", { hidden: true }, info);
+  const msg = h("small.sx-msg", { "aria-live": "polite", hidden: true });
+  const tick = h("span.sx-tick", { "aria-live": "polite" });
+  const iBtn = info ? h("button.sx-i", { type: "button", "aria-expanded": "false", "aria-label": `About: ${label}`, title: info,
+    onclick: () => { infoEl.hidden = !infoEl.hidden; iBtn.setAttribute("aria-expanded", String(!infoEl.hidden)); } }, "i") : null;
+  const el = h(`div.sx-row${cls}`,
+    h("div.sx-l", h("span.sx-name", label, iBtn), hintEl, infoEl, msg),
+    h("div.sx-c", tick, control));
+  let t = 0;
+  el.say = (text, tone = "") => { msg.textContent = text || ""; msg.dataset.tone = tone; msg.hidden = !text; };
+  el.tick = (text = "Saved") => { tick.textContent = `✓ ${text}`; clearTimeout(t); t = setTimeout(() => { tick.textContent = ""; }, 1800); };
+  el.hint = text => { hintEl.textContent = text || ""; hintEl.hidden = !text; };
+  return el;
+}
+
+// An on/off switch. The visible name is the row's label; `label` names it for screen readers.
+export function toggle(label, on, onChange) {
+  const b = h("button.sx-sw", { type: "button", role: "switch", "aria-label": label });
+  const set = v => b.setAttribute("aria-checked", String(!!v));
+  set(on);
+  b.addEventListener("click", () => { const v = b.getAttribute("aria-checked") !== "true"; set(v); onChange(v); });
+  b.set = set;
+  return b;
+}
+
+// A compact row of 2-4 choices: [[value, label, title?]]. onPick(value).
+export function seg(name, options, value, onPick, { disabled = {} } = {}) {
+  const box = h("div.sx-seg", { role: "radiogroup", "aria-label": name });
+  const btns = options.map(([v, label, title]) => {
+    const b = h("button", { type: "button", role: "radio", title: disabled[v] || title || null }, label);
+    b.value_ = v;
+    if (disabled[v]) b.disabled = true;
+    b.addEventListener("click", () => { set(v); onPick(v); });
+    return b;
+  });
+  const set = v => btns.forEach(b => b.setAttribute("aria-checked", String(b.value_ === v)));
+  set(value);
+  box.append(...btns);
+  box.set = set;
+  return box;
+}
+
+// "More options": closed by default, with a one-line summary of what is inside. Remembers
+// being open for this visit (sessionStorage key `lt.more.<id>`). el.summary(text) updates the line.
+export function more(id, title, summary, ...kids) {
+  const sum = h("small", summary);
+  const el = h("details.sx-more", h("summary", h("span", title), sum), h("div.sx-body", ...kids));
+  const key = `lt.more.${id}`;
+  try { el.open = sessionStorage.getItem(key) === "1"; } catch { /* private mode */ }
+  el.addEventListener("toggle", () => { try { sessionStorage.setItem(key, el.open ? "1" : "0"); } catch { /* */ } });
+  el.summary = text => { sum.textContent = text || ""; };
+  return el;
+}
+
+// A small live level bar (the sound meter's colours). el.paint(db | null).
+export function levelBar(n = 20) {
+  const el = h("span.fx-lvl", { "aria-hidden": "true" }, ...Array.from({ length: n }, () => h("i")));
+  el.paint = db => {
+    const lit = db == null ? 0 : Math.round(Math.max(0, Math.min(1, (db + 60) / 60)) * n);
+    [...el.children].forEach((s, i) => {
+      const segDb = -60 + (i + 1) * (60 / n);
+      s.className = i < lit ? `on ${segDb > -3 ? "clip" : segDb > -10 ? "hot" : segDb > -30 ? "good" : ""}` : "";
+    });
+  };
+  return el;
+}

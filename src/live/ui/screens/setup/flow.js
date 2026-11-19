@@ -16,12 +16,10 @@
 //                          that can't be changed, 400 @settings_invalid {detail: {key: reason}}
 
 export const STEPS = [
-  { id: "check", title: "This Mac" },
-  { id: "download", title: "Download" },
-  { id: "mic", title: "Microphone" },
-  { id: "sound", title: "Sound input" },
-  { id: "pp", title: "ProPresenter" },
-  { id: "lang", title: "Usual language" },
+  { id: "download", title: "Download" },      // what to download (this Mac's limits), then the download
+  { id: "sound", title: "Sound" },            // the microphone permission, then the input
+  { id: "pp", title: "Big screen" },
+  { id: "lang", title: "Speaker" },
 ];
 
 // the limits model_setup.py checks: GiB of memory, GB (10^9) of disk
@@ -189,13 +187,15 @@ function refusedText(d) {
   return "Could not save. Try again.";
 }
 
+// May the app hear the sound inputs? Anything but a "no" or "not asked yet" ("unknown": this
+// version can't tell, and the sound check that follows will).
+export const micOk = mic => !["denied", "undetermined", "restricted"].includes(mic);
+
 // Can the operator press Next on this step?
 export function canNext(step, ctx) {
   switch (step) {
-    case "check": return !!ctx.profile;
-    case "download": return !!ctx.modelsReady;
-    case "mic": return ctx.mic === "granted" || ctx.mic === "unknown";
-    case "sound": return !!ctx.heard || !!ctx.noMeter;
+    case "download": return !!ctx.profile && !!ctx.modelsReady;
+    case "sound": return micOk(ctx.mic) && (!!ctx.heard || !!ctx.noMeter);
     case "pp": return !!ctx.ppOk || !!ctx.ppSkipped || ctx.ppWhere === "none";
     case "lang": return !!ctx.mode;
     default: return false;

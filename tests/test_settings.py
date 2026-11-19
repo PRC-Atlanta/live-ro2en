@@ -80,11 +80,21 @@ def test_base_layer_is_defaults_yaml_when_live_home_is_set(home, monkeypatch):
     assert paths.base_config(ROOT).name == "config.yaml" and paths.user_dir(ROOT) == ROOT / "user"
 
 
+def test_a_saved_key_that_no_longer_exists_is_dropped_on_load(home):
+    """ui.show_latency / ui.show_counts were removed (nothing read them): an old file still loads."""
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "settings.yaml").write_text("schema_version: 1\nui:\n  show_latency: true\nlive:\n  hold_s: 2.0\n")
+    live = make_live(home)
+    v = client(live).get("/api/settings").json()
+    assert v["values"]["live.hold_s"] == 2.0 and "ui.show_latency" not in v["values"]
+    assert not live.settings_notes
+
+
 def test_settings_survive_a_restart(home):
     live = make_live(home)
     c = client(live)
     r = c.put("/api/settings", json={"values": {"live.hold_s": 2.0, "propresenter.port": 50002,
-                                                "live.hold_min_words": 6, "ui.show_latency": True}}, headers=ME)
+                                                "live.hold_min_words": 6, "safety.filter_words": False}}, headers=ME)
     assert r.status_code == 200, r.text
     check(r.json(), shape("/api/settings", "PUT"))
     assert live.lc["hold_s"] == 2.0 and live.lc["hold_min_words"] == 6     # applied now, no restart
@@ -98,8 +108,8 @@ def test_settings_survive_a_restart(home):
     v = client(again).get("/api/settings").json()
     check(v, shape("/api/settings"))
     assert v["values"]["live.hold_s"] == 2.0 and v["values"]["propresenter.port"] == 50002
-    assert v["values"]["ui.show_latency"] is True and v["defaults"]["live.hold_s"] == 1.2
-    assert set(v["overrides"]) == {"live.hold_s", "propresenter.port", "live.hold_min_words", "ui.show_latency"}
+    assert v["values"]["safety.filter_words"] is False and v["defaults"]["live.hold_s"] == 1.2
+    assert set(v["overrides"]) == {"live.hold_s", "propresenter.port", "live.hold_min_words", "safety.filter_words"}
     # the user's value wins over the quality profile's own hold_min_words
     assert again.cfg["profiles"]["quality"]["hold_min_words"] == 6 and again.lc["hold_min_words"] == 6
 

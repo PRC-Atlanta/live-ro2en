@@ -447,3 +447,29 @@ kbd { font: 600 12px var(--num); color: var(--cyan-hi); background: #050b0e; bor
 .mon-empty { color: var(--mute); font-style: italic; padding: 16px; margin: 0; }
 .mon-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: 10px; }
 @media (max-height: 600px) { .mon { height: calc(100vh - 60px); } }
+/* Help: symptom groups, shortcuts in two columns, the ProPresenter steps folded away */
+.hgroup { margin: 12px 0 2px; font: 600 11px var(--font); letter-spacing: .14em; text-transform: uppercase; color: var(--cyan); }
+.hcard h3 + .hgroup { margin-top: 4px; }
+.hgroup + .symptom { border-top: 0; }
+.hkeys { margin: 0; columns: 2 300px; column-gap: 28px; font-size: 14px; }
+.hkeys div { display: flex; gap: 12px; align-items: baseline; padding: 5px 0; break-inside: avoid; border-top: 1px solid rgba(15,42,51,.8); }
+.hkeys dt { flex: 0 0 96px; }
+.hkeys dd { margin: 0; color: var(--label); }
+.hpp { border-top: 0; }
+/* Monitor: the delay strip and the Numbers drawer (moved here from Settings → Advanced) */
+.mon-stats { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 4px 16px; padding-bottom: 8px; }
+.mon-delay { flex: 1 1 260px; font: 600 12px var(--num); letter-spacing: .04em; color: var(--label); padding-top: 4px; }
+.mon-nums { font-size: 13px; color: var(--label); }
+.mon-nums[open] { flex-basis: 100%; }
+.mon-nums summary { cursor: pointer; color: var(--cyan); padding: 4px 0; list-style: none; }
+.mon-nums summary::-webkit-details-marker { display: none; }
+.mon-nums summary::before { content: "▸ "; color: var(--cyan-dim); }
+.mon-nums[open] summary::before { content: "▾ "; }
+.mon-nums summary:focus-visible { outline: 2px solid var(--cyan-hi); outline-offset: 2px; }
+.mon-nums-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 18px; max-height: 36vh; overflow: auto;
+  padding: 8px 12px; border: 1px solid #0f2a33; border-radius: 4px; background: linear-gradient(#0c1d25, #0a171e); }
+.mon-nums-body h4 { margin: 0 0 4px; font: 600 11px var(--font); letter-spacing: .12em; text-transform: uppercase; color: var(--mute); }
+.mon-nums-body table { width: 100%; border-collapse: collapse; }
+.mon-nums-body td { padding: 3px 0; border-bottom: 1px solid #0f2a33; }
+.mon-nums-body td:last-child { text-align: right; font-family: var(--num); color: var(--cyan-hi); padding-left: 10px; white-space: nowrap; }
+.mon-nums-body pre { margin: 0; font: 12px ui-monospace, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }

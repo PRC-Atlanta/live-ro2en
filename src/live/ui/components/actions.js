@@ -5,7 +5,7 @@ import { S } from "../i18n/strings.en.js";
 import { apiUrl } from "../core/api.js";
 
 // banner/action ids that open a screen instead of calling the backend
-const ROUTES = { help: "#help", settings: "#settings", setup: "#setup", after: "#after", names: "#settings" };
+const ROUTES = { help: "#help", settings: "#settings", setup: "#setup", names: "#settings" };
 
 export function routeFor(id) { return ROUTES[id] || null; }
 

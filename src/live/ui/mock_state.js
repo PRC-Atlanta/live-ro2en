@@ -79,7 +79,7 @@ export function startMock(store, name = "live") {
   return setInterval(tick, 250);
 }
 
-// ---- S5b: mock backend for the Setup, Settings and After screens ---------------------------
+// ---- S5b: mock backend for the Setup and Settings screens ---------------------------
 // screens/setup/kit.js call() routes /api/* here when ?mock=... is set. Every answer has the
 // real backend's shape and status (src/live/routes/*.py; contract.json types, checked by
 // tests/test_ui_mock_contract.py), including 400/404/409 refusals and 501 for planned endpoints.
@@ -152,8 +152,6 @@ const MOCK_FIELDS = {
   "display.network": { group: "propresenter", type: "bool", apply: "now" },
   "display.show_hidden": { group: "propresenter", type: "bool", apply: "now" },
   "display.remote": { group: "propresenter", type: "bool", apply: "now" },
-  "ui.show_latency": { group: "advanced", type: "bool", apply: "now", default: false },
-  "ui.show_counts": { group: "advanced", type: "bool", apply: "now", default: false },
 };
 const MOCK_DEFAULTS = {
   "live.input_device": null, "live.input_gain_db": 0, "live.input_gain_auto": true, "live.input_gain_target_db": -20, "live.language_mode": "auto", "live.profile": "quality", "live.autostart": false, "safety.filter_words": true,
@@ -164,7 +162,6 @@ const MOCK_DEFAULTS = {
   "propresenter.health_every_s": 5, "live.keep_both_translators": "auto", "live.engine_restarts": 2,
   "propresenter.enabled": true, "display.size": "large", "display.lines": 2, "display.colors": "white_on_black",
   "display.network": false, "display.show_hidden": false, "display.remote": false,
-  "ui.show_latency": false, "ui.show_counts": false,
   "ai.enabled": false, "ai.timeout_s": 2.5,
   "voice.enabled": false, "voice.en.enabled": true, "voice.speed": 1.25, "voice.speed_max": 1.5, "voice.port": 8767,
 };
